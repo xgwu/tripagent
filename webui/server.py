@@ -25,6 +25,52 @@ _route_lock = threading.Lock()
 _route_cache = None
 SHARES_DIR = os.path.join(ROOT, "data", "shares")
 
+# ---- POI 实拍照片（P3：高德 place/text photos 字段，磁盘缓存，302 跳转图库直链） ----
+PHOTO_CACHE_PATH = os.path.join(ROOT, "data", "photo_cache.json")
+_photo_lock = threading.Lock()
+_photo_cache = None
+_ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州", "WH": "武汉"}
+_CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027"}
+
+
+def _load_photo_cache() -> dict:
+    global _photo_cache
+    if _photo_cache is None:
+        try:
+            with open(PHOTO_CACHE_PATH, encoding="utf-8") as f:
+                _photo_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _photo_cache = {}
+    return _photo_cache
+
+
+def _save_photo_cache():
+    global _photo_cache
+    try:
+        with open(PHOTO_CACHE_PATH, "w", encoding="utf-8") as f:
+            json.dump(_photo_cache, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+
+def _amap_photo(name: str, city: str, key: str) -> str | None:
+    """高德 place/text（extensions=all）取该 POI 实拍图第一张，http 统一升级 https。"""
+    url = (f"https://restapi.amap.com/v3/place/text"
+           f"?keywords={urllib.parse.quote(name)}&city={_CITYCODE.get(city, '')}"
+           f"&key={key}&extensions=all&offset=1&page=1")
+    with _NO_PROXY_OPENER.open(url, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if data.get("status") != "1":
+        return None
+    for poi in data.get("pois") or []:
+        for ph in poi.get("photos") or []:
+            link = ph.get("url") or ""
+            if link.startswith("http://"):
+                link = "https://" + link[7:]
+            if link.startswith("https://"):
+                return link
+    return None
+
 
 def _load_route_cache() -> dict:
     global _route_cache
@@ -242,7 +288,7 @@ def city_meta(name: str) -> dict:
             "name": name,
             "n_pois": len(city["pois"]),
             "n_closed": sum(1 for p in city["pois"] if p.get("closed_days")),
-            "pois": {p["id"]: {"name": p["name"], "lat": p["lat"], "lng": p["lng"]}
+            "pois": {p["id"]: {"id": p["id"], "name": p["name"], "lat": p["lat"], "lng": p["lng"]}
                      for p in city["pois"]},
         }
     return CITY_META[name]
@@ -307,6 +353,35 @@ class Handler(BaseHTTPRequestHandler):
                 except OSError:
                     pass
             return self._json({"ok": True, **r})
+        if u.path == "/api/photo":  # P3：POI 实拍缩略图（302 → 高德图库直链；404 → 前端回退瓦片）
+            pid = q.get("id", "")
+            prefix = pid[:2].upper() if len(pid) > 2 else ""
+            if prefix not in _ID_PREFIX_CITY:
+                return self._json({"ok": False, "error": "参数错误（id）"}, code=400)
+            with _photo_lock:
+                cache = _load_photo_cache()
+                url = cache.get(pid)
+            if url is None:  # 未缓存：现查一次并落盘（空串标记无图，避免重复打 API）
+                cname = _ID_PREFIX_CITY[prefix]
+                name = next((p["name"] for p in poi_db.load_city(cname)["pois"]
+                             if p["id"] == pid), None)
+                url = ""
+                if name and CFG.get("amap_key"):
+                    try:
+                        url = _amap_photo(name, cname, CFG["amap_key"]) or ""
+                    except Exception:  # noqa: 网络异常 → 前端回退瓦片
+                        url = ""
+                with _photo_lock:
+                    cache = _load_photo_cache()
+                    cache[pid] = url
+                    _save_photo_cache()
+            if url:
+                self.send_response(302)
+                self.send_header("Location", url)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            return self._json({"ok": False, "error": "无实拍图"}, code=404)
         m = re.match(r"^/api/share/([A-Za-z0-9_-]{4,32})$", u.path)  # P1-2：读取分享
         if m:
             path = os.path.join(SHARES_DIR, m.group(1) + ".json")
