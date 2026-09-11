@@ -48,6 +48,7 @@ def amap_pair(key, o, d):
 
 def main():
     use_l2 = "--no-l2" not in sys.argv
+    auto = "--auto" in sys.argv  # 自动检测：缓存中无记录的 POI 视为新点（与 NEW_IDS 并集）
     key = os.environ.get("AMAP_KEY", "")
     if use_l2 and not key:
         from src.config import load_config
@@ -59,6 +60,11 @@ def main():
         pois = json.load(io.open(os.path.join(DATA, f"{city}_pois.json"), encoding="utf-8"))["pois"]
         pos = {p["id"]: (p["lat"], p["lng"]) for p in pois}
         new_ids = [i for i in NEW_IDS[city] if i in pos]
+        if auto:
+            auto_ids = [i for i in pos if i not in minutes]
+            for i in auto_ids:
+                if i not in new_ids:
+                    new_ids.append(i)
         if not new_ids:
             print(f"{city}: 无新增点，跳过")
             continue
@@ -119,9 +125,12 @@ def main():
                 save_cache(cache)
             n_l2 += city_l2
             print(f"{city}: L2 高德更新 {city_l2} 对")
-    # 统计新点覆盖率
+    # 统计新点覆盖率（--auto 时统计全部无记录点）
     miss = 0
-    for city, ids in NEW_IDS.items():
+    for city in CITIES:
+        pois = json.load(io.open(os.path.join(DATA, f"{city}_pois.json"), encoding="utf-8"))["pois"]
+        ids = ([p["id"] for p in pois if p["id"] not in minutes] if auto
+               else [i for i in NEW_IDS[city]])
         for a in ids:
             row = minutes.get(a, {})
             for b in ids:
