@@ -84,6 +84,20 @@ async function boot(){
   $("city").value="上海"; // 默认城市
   chip();
   $("city").addEventListener("change",chip);
+  llmBadge();
+  // P1-2：?share=<id> → 直接渲染已保存的行程快照
+  const sid=new URLSearchParams(location.search).get("share");
+  if(sid){
+    try{
+      const s=await (await fetch("/api/share/"+encodeURIComponent(sid))).json();
+      if(s.result){
+        $("status").innerHTML='<span class="badge b-blue">🔗 已加载分享的行程</span>';
+        render({city_meta:s.city_meta||{pois:{}},result:s.result});
+        return;
+      }
+    }catch(e){/* 回退正常模式 */}
+    $("status").innerHTML='<span class="badge b-amber">分享链接无效，已回退正常模式</span>';
+  }
 }
 function llmBadge(){
   if(CITY.llm)$("llmbadge").innerHTML='<span class="badge b-green">LLM 已接入</span>';
@@ -118,19 +132,24 @@ function render({city_meta,result:r,days_source}){
   const it=r.itinerary;
   const closedV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("当日闭馆")).length;
   const retV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("返回酒店")).length;
+  // P1-4：闭馆日提示 —— 从剔除记录里汇总「当日闭馆」被正确避开的 POI
+  const avoided=(it.dropped_pois||[]).filter(x=>(x.reason||"").includes("当日闭馆"));
   let h=`<div class="panel"><div class="summary">
     <span class="badge b-blue">${r.mode==="m2_toptw"?"M2 库内直选+TOPTW":r.mode.startsWith("m7")?"M7 经验提案"+(r.mode==="m7_proposal"?"":"（降级）"):r.mode}</span>
     ${days_source==="query"?`<span class="badge b-green">📅 需求识别 ${r.days} 天</span>`:days_source==="default"?'<span class="badge b-amber">📅 需求未提天数 · 默认 2 天</span>':""}
+    ${r.date0?`<span class="badge b-blue" title="已按出发日期启用闭馆日硬约束">📅 ${r.date0} 出发</span>`:'<span class="badge b-amber" title="填写出发日期可自动避开周一闭馆等">📅 未填日期（闭馆约束未启用）</span>'}
     ${r.grounding?`<span class="badge ${r.grounding.grounding_rate>=0.8?"b-green":"b-amber"}">🎯 落地率 ${Math.round(r.grounding.grounding_rate*100)}%</span>`:""}
     ${r.grounding&&r.grounding.gaps.length?`<span class="badge b-amber" title="${r.grounding.gaps.map(g=>g.name).join("、")}">📚 库缺口 ${r.grounding.gaps.length}</span>`:""}
     <span class="badge ${it.total_violations===0?"b-green":"b-red"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
+    ${avoided.length?`<span class="badge b-green" title="当日闭馆已自动避开：${avoided.map(x=>x.name).join("、")}">🏛 已避开闭馆 ${avoided.length} 处</span>`:""}
     ${r.hotel?`<span class="badge b-amber">🏨 ${r.hotel.name}</span>`:""}
     ${r.n_dup_across_days===0?'<span class="badge b-green">跨天重复 0</span>':`<span class="badge b-amber">跨天重复 ${r.n_dup_across_days}（已剥除）</span>`}
     <span class="badge b-blue">耗时 ${r.latency_s}s</span>
     ${r.candidates!=null?`<span class="badge b-blue">候选池 ${r.candidates}</span>`:""}
     ${closedV?`<span class="badge b-red">闭馆违规 ${closedV}</span>`:""}
     ${retV?`<span class="badge b-red">返程违规 ${retV}</span>`:""}
-    <button id="exportBtn" style="margin-left:auto" onclick="openDoc()">📥 导出行程单</button>
+    <button id="shareBtn" style="margin-left:auto" onclick="shareDoc()">🔗 分享</button>
+    <button id="exportBtn" onclick="openDoc()">📥 导出行程单</button>
   </div>
   <p class="note">「${r.query}」</p>
   <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div></div>`;
@@ -154,7 +173,7 @@ function dayCard(d){
     `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${ICON[s.type]||"📍"}</span><span>${s.name}${s.type==="poi"&&s.arrive?` <span class="note">（到 ${s.arrive}）</span>`:""}</span></div>`).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
-  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${viol}${drop}</div>`;
+  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${viol}${drop}</div>`;
 }
 
 function drawMap(meta,r){
@@ -230,11 +249,43 @@ async function renderAMap(meta,r){
       new Promise(res=>setTimeout(()=>res(false),12000))
     ]);
     if(!ok){map.destroy();AMAP_OBJ=null;return false;}
+    // P1-1：异步绘制实际路网（骑行/步行），失败自动保留虚线直线兜底
+    drawRealRoutes(map,meta,r,token);
     return true;
   }catch(e){
     try{map&&map.destroy()}catch(_){}
     AMAP_OBJ=null;return false;
   }
+}
+
+function routeMode(query){
+  return /骑行|骑车|单车|自行车|cycling|bike/i.test(query||"")?"riding":"walking";
+}
+async function drawRealRoutes(map,meta,r,token){
+  if(!CITY.amap_key)return;
+  const mode=routeMode(r.query);
+  const legs=[];
+  for(const d of (r.itinerary.days||[])){
+    const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+    const pts=[];
+    if(r.hotel)pts.push([r.hotel.lng,r.hotel.lat]);
+    for(const x of (d.timeline||[]))if(x.type==="poi"&&meta.pois[x.id])pts.push([meta.pois[x.id].lng,meta.pois[x.id].lat]);
+    if(r.hotel&&pts.length>1)pts.push([r.hotel.lng,r.hotel.lat]);
+    if(pts.length>1)legs.push({color,pts});
+  }
+  await Promise.all(legs.map(async({color,pts})=>{
+    for(let i=0;i<pts.length-1;i++){
+      let poly=null;
+      try{
+        const res=await fetch(`/api/route?mode=${mode}&o=${pts[i].join(",")}&d=${pts[i+1].join(",")}`);
+        const dd=await res.json();
+        if(dd.ok&&dd.points&&dd.points.length>1)poly=dd.points;
+      }catch(e){/* 回退直线 */}
+      if(token!==MAP_TOKEN)return; // 快速连续规划时放弃过期渲染
+      if(poly)map.add(new AMap.Polyline({path:poly,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,bubble:true}));
+    }
+  }));
+  if(token===MAP_TOKEN)map.setFitView(null,false,[40,40,40,40]);
 }
 function Day_Icon(d){return "📍";}
 function buildDoc(meta,r){
@@ -244,9 +295,10 @@ function buildDoc(meta,r){
     const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
     const rows=(d.timeline||[]).map(s=>
       `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${ICON[s.type]||"📍"}</td><td>${s.name}</td></tr>`).join("");
-    return `<div class="day"><h3 style="background:${color}">Day ${d.day}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
+    return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
     <table>${rows}</table></div>`;
   }).join("");
+  const avoided=(it.dropped_pois||[]).filter(x=>(x.reason||"").includes("当日闭馆"));
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>TripAgent 行程单｜${r.query.slice(0,20)}</title>
 <style>
   body{font-family:"Microsoft YaHei",sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#1f2937}
@@ -269,6 +321,8 @@ function buildDoc(meta,r){
 <div class="badges">
   <span class="badge ${it.total_violations===0?"g":"r"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
   ${r.grounding?`<span class="badge a">🎯 落地率 ${Math.round(r.grounding.grounding_rate*100)}%</span>`:""}
+  ${r.date0?`<span class="badge g">📅 ${r.date0} 出发 · 闭馆约束已启用</span>`:""}
+  ${avoided.length?`<span class="badge g">🏛 已避开闭馆 ${avoided.length} 处（${avoided.map(x=>x.name).join("、")}）</span>`:""}
   <span class="badge g">跨天重复 ${r.n_dup_across_days??0}</span>
   <span class="badge a">候选池 ${r.candidates}</span>
 </div>
@@ -283,6 +337,32 @@ function openDoc(){
   const url=URL.createObjectURL(blob);
   window.open(url,"_blank"); // 新标签打开，右上角打印按钮可存为 PDF
   setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+// P1-2：分享短链 —— 快照存服务端，链接可发给任何人打开即见行程
+async function shareDoc(){
+  if(!LAST)return;
+  const btn=$("shareBtn");
+  btn.disabled=true;btn.textContent="⏳ 生成中…";
+  try{
+    const res=await fetch("/api/share",{method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({city_meta:LAST.city_meta,result:LAST.result})});
+    const d=await res.json();
+    if(d.ok){
+      const url=`${location.origin}/?share=${d.id}`;
+      let copied=false;
+      try{await navigator.clipboard.writeText(url);copied=true;}catch(e){}
+      $("status").innerHTML=copied
+        ?`<span class="badge b-green">🔗 分享链接已复制到剪贴板</span>`
+        :`<span class="badge b-green">🔗 分享链接：</span><a href="${url}" target="_blank">${url}</a>`;
+    }else{
+      $("status").innerHTML='<span class="badge b-red">分享失败：'+(d.error||"未知错误")+"</span>";
+    }
+  }catch(e){
+    $("status").innerHTML='<span class="badge b-red">分享失败：'+e+"</span>";
+  }
+  btn.disabled=false;btn.textContent="🔗 分享";
 }
 
 boot();

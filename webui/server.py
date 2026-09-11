@@ -8,13 +8,80 @@
 
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）
 """
-import io, json, os, re, sys, threading, time, urllib.parse
+import io, json, os, re, sys, threading, time, urllib.parse, uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from src import poi_db, m1_planner, llm_client  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
+
+# ---- 直连 opener：本机代理会拦截外网 API，urllib 需显式绕过 ----
+_NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+# ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
+ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
+_route_lock = threading.Lock()
+_route_cache = None
+SHARES_DIR = os.path.join(ROOT, "data", "shares")
+
+
+def _load_route_cache() -> dict:
+    global _route_cache
+    if _route_cache is None:
+        try:
+            with open(ROUTE_CACHE_PATH, encoding="utf-8") as f:
+                _route_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _route_cache = {}
+    return _route_cache
+
+
+def _norm_ll(s: str) -> str:
+    """坐标按 4 位小数归一化（≈11m），提高缓存命中率。"""
+    try:
+        lng, lat = (float(x) for x in s.split(","))
+        return f"{round(lng, 4):.4f},{round(lat, 4):.4f}"
+    except (ValueError, AttributeError):
+        return s
+
+
+def _amap_route(mode: str, o: str, d: str, key: str) -> dict | None:
+    """高德路径规划：walking(v3) / riding(v4)。返回 {distance_m, duration_s, points}。"""
+    if mode == "riding":
+        url = (f"https://restapi.amap.com/v4/direction/bicycling"
+               f"?origin={o}&destination={d}&key={key}")
+    else:
+        url = (f"https://restapi.amap.com/v3/direction/walking"
+               f"?origin={o}&destination={d}&key={key}")
+    with _NO_PROXY_OPENER.open(url, timeout=10) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if mode == "riding":
+        if data.get("errcode") != 0:
+            return None
+        paths = (data.get("data") or {}).get("paths") or []
+    else:
+        if data.get("status") != "1":
+            return None
+        paths = (data.get("route") or {}).get("paths") or []
+    path = paths[0] if paths else None
+    if not path:
+        return None
+    points = []
+    for step in path.get("steps") or []:
+        for pair in (step.get("polyline") or "").split(";"):
+            if not pair or "," not in pair:
+                continue
+            lng, _, lat = pair.partition(",")
+            try:
+                points.append([round(float(lng), 6), round(float(lat), 6)])
+            except ValueError:
+                continue
+    if len(points) < 2:
+        return None
+    return {"distance_m": int(float(path.get("distance") or 0)),
+            "duration_s": int(float(path.get("duration") or 0)),
+            "points": points}
 
 _CN_NUM = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5}
 
@@ -131,6 +198,48 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"cities": [city_meta(c) for c in CITIES],
                                "llm": llm_client.llm_available(),
                                "amap_key": CFG.get("amap_js_key") or CFG.get("amap_key", "")})
+        if u.path == "/api/route":  # P1-1：实际路网路径（骑行/步行），带磁盘缓存
+            mode = q.get("mode", "walking")
+            o, d = _norm_ll(q.get("o") or ""), _norm_ll(q.get("d") or "")
+            key = CFG.get("amap_key", "")
+            if mode not in ("walking", "riding") or not o or not d:
+                return self._json({"ok": False, "error": "参数错误（mode/o/d）"}, code=400)
+            if not key:
+                return self._json({"ok": False, "error": "服务端未配置高德 Key"}, code=400)
+            ck = f"{mode}|{o}|{d}"
+            with _route_lock:
+                hit = _load_route_cache().get(ck)
+            if hit:
+                return self._json({"ok": True, "cached": True, **hit})
+            try:
+                r = _amap_route(mode, o, d, key)
+            except Exception as e:  # noqa: 网络/服务异常 → 前端回退直线
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}"})
+            if not r:
+                return self._json({"ok": False, "error": "路径规划失败"})
+            with _route_lock:
+                cache = _load_route_cache()
+                cache[ck] = r
+                try:
+                    with open(ROUTE_CACHE_PATH, "w", encoding="utf-8") as f:
+                        json.dump(cache, f, ensure_ascii=False)
+                except OSError:
+                    pass
+            return self._json({"ok": True, **r})
+        m = re.match(r"^/api/share/([A-Za-z0-9_-]{4,32})$", u.path)  # P1-2：读取分享
+        if m:
+            path = os.path.join(SHARES_DIR, m.group(1) + ".json")
+            try:
+                with open(path, "rb") as f:
+                    body = f.read()
+            except OSError:
+                return self._json({"ok": False, "error": "分享不存在或已过期"}, code=404)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if u.path == "/api/stats":
             with _stats_lock:
                 st = dict(_stats)
@@ -209,6 +318,31 @@ class Handler(BaseHTTPRequestHandler):
                 import traceback
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}",
                                    "trace": traceback.format_exc()[-900:]}, code=500)
+        return self._json({"error": "not found"}, code=404)
+
+    def do_POST(self):
+        u = urllib.parse.urlparse(self.path)
+        if u.path == "/api/share":  # P1-2：保存行程快照，返回短 id
+            ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
+                 self.client_address[0]
+            if not rate_allow(ip):
+                return self._json({"ok": False, "error": "请求过于频繁，请稍后再试"}, code=429)
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                payload = json.loads(self.rfile.read(n).decode("utf-8")) if 0 < n <= 3_000_000 else None
+            except (ValueError, json.JSONDecodeError):
+                payload = None
+            if not isinstance(payload, dict) or not isinstance(payload.get("result"), dict):
+                return self._json({"ok": False, "error": "分享内容格式错误"}, code=400)
+            os.makedirs(SHARES_DIR, exist_ok=True)
+            sid = uuid.uuid4().hex[:8]
+            try:
+                with open(os.path.join(SHARES_DIR, sid + ".json"), "w", encoding="utf-8") as f:
+                    json.dump({"city_meta": payload.get("city_meta") or {},
+                               "result": payload["result"]}, f, ensure_ascii=False)
+            except OSError as e:
+                return self._json({"ok": False, "error": f"保存失败: {e}"}, code=500)
+            return self._json({"ok": True, "id": sid})
         return self._json({"error": "not found"}, code=404)
 
     def log_message(self, fmt, *args):  # 静默默认访问日志

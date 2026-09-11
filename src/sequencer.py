@@ -163,7 +163,8 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
             violations.append({"poi": "返程", "day": day_no,
                                "reason": f'返回酒店时刻{_fmt(t)}超出当日活动时间上限 {city["day_end"]}'})
     return {"timeline": timeline, "travel_km": travel_km, "travel_h": travel_h,
-            "violations": violations, "repairs": repairs, "finish": _fmt(t)}
+            "violations": violations, "repairs": repairs, "finish": _fmt(t),
+            "weekday": weekday}  # P1-4：周几随天透出，前端展示闭馆日语境
 
 
 def _fmt(h: float) -> str:
