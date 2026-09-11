@@ -744,6 +744,280 @@
    "family_ok": true,
    "note": "江南名刹+龙华塔，素斋有名；龙华路2853号",
    "closed_days": []
+  },
+  {
+   "id": "SH033",
+   "name": "世博文化公园（双子山）",
+   "category": "nature",
+   "tags": [
+    "自然",
+    "滨江",
+    "亲子"
+   ],
+   "lat": 31.179629,
+   "lng": 121.477068,
+   "duration_h": 3.0,
+   "open": "06:00",
+   "close": "21:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "pudong",
+   "family_ok": true,
+   "note": "浦东后滩；双子山登高看浦江、温室花园，登双子山需小程序免费预约",
+   "closed_days": []
+  },
+  {
+   "id": "SH034",
+   "name": "共青森林公园",
+   "category": "nature",
+   "tags": [
+    "自然",
+    "森林",
+    "野趣"
+   ],
+   "lat": 31.3049,
+   "lng": 121.5435,
+   "duration_h": 3.0,
+   "open": "06:00",
+   "close": "18:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "市区难得的森林型公园，烧烤/游船/亲子野趣；军工路2000号，2021年起免费",
+   "closed_days": []
+  },
+  {
+   "id": "SH035",
+   "name": "张园",
+   "category": "photo",
+   "tags": [
+    "石库门",
+    "街区",
+    "逛街"
+   ],
+   "lat": 31.2362,
+   "lng": 121.4648,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "茂名北路百年石库门建筑群改造街区，展览+品牌+弄堂打卡，连南京西路商圈",
+   "closed_days": []
+  },
+  {
+   "id": "SH036",
+   "name": "上海邮政博物馆",
+   "category": "culture",
+   "tags": [
+    "博物馆",
+    "历史",
+    "室内",
+    "免费"
+   ],
+   "lat": 31.2444,
+   "lng": 121.4848,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "天潼路395号百年邮政大楼，免费免预约；仅周三/四/六/日开放（周三四走北苏州路入口）",
+   "closed_days": [
+    "周一",
+    "周二",
+    "周五"
+   ]
+  },
+  {
+   "id": "SH037",
+   "name": "广富林文化遗址",
+   "category": "history",
+   "tags": [
+    "遗址",
+    "公园",
+    "历史"
+   ],
+   "lat": 31.0805,
+   "lng": 121.199,
+   "duration_h": 4.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 30,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "松江'上海之根'；水下博物馆+遗址公园（公园免费、展示馆收费）",
+   "closed_days": []
+  },
+  {
+   "id": "SH038",
+   "name": "上海天文馆",
+   "category": "family",
+   "tags": [
+    "科普",
+    "亲子",
+    "室内"
+   ],
+   "lat": 30.9165,
+   "lng": 121.887,
+   "duration_h": 4.0,
+   "open": "09:30",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 30,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "临港大道380号全球最大天文馆；周一闭馆（国定假日除外），门票需提前约；可与海昌同日",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "SH039",
+   "name": "上海汽车博物馆",
+   "category": "family",
+   "tags": [
+    "博物馆",
+    "亲子",
+    "室内"
+   ],
+   "lat": 31.278709,
+   "lng": 121.170248,
+   "duration_h": 2.5,
+   "open": "09:30",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 55,
+   "rating": 5,
+   "area": "west",
+   "family_ok": true,
+   "note": "安亭博园路7565号古董车珍藏+四楼摩都儿童乐园；周一闭馆（节假日除外）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "SH040",
+   "name": "朵云书院·旗舰店",
+   "category": "art",
+   "tags": [
+    "书店",
+    "高空景观",
+    "室内"
+   ],
+   "lat": 31.233492,
+   "lng": 121.50556,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "pudong",
+   "family_ok": true,
+   "note": "上海中心大厦52层239米高空书店（需预约），可俯瞰浦江两岸",
+   "closed_days": []
+  },
+  {
+   "id": "SH041",
+   "name": "前滩太古里",
+   "category": "shopping",
+   "tags": [
+    "商圈",
+    "滨江",
+    "逛街"
+   ],
+   "lat": 31.152823,
+   "lng": 121.481489,
+   "duration_h": 2.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "pudong",
+   "family_ok": true,
+   "note": "前滩滨江新商圈，屋顶天空环路人少景好，适合傍晚",
+   "closed_days": []
+  },
+  {
+   "id": "SH042",
+   "name": "今潮8弄",
+   "category": "nightlife",
+   "tags": [
+    "街区",
+    "展览",
+    "夜生活"
+   ],
+   "lat": 31.2528,
+   "lng": 121.4808,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "四川北路石库门弄堂艺术街区，展览+市集+夜景灯光",
+   "closed_days": []
+  },
+  {
+   "id": "SH043",
+   "name": "光明邨大酒家（淮海中路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "本帮菜",
+    "点心",
+    "老字号"
+   ],
+   "lat": 31.2208,
+   "lng": 121.4635,
+   "duration_h": 0.8,
+   "open": "07:00",
+   "close": "20:00",
+   "best_time": "lunch",
+   "price": 90,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "淮海中路588号，鲜肉月饼/蟹粉小笼常年排队，熟菜窗口与堂食分开",
+   "closed_days": []
+  },
+  {
+   "id": "SH044",
+   "name": "鲜得来排骨年糕（云南南路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "小吃",
+    "老字号"
+   ],
+   "lat": 31.2245,
+   "lng": 121.4755,
+   "duration_h": 0.8,
+   "open": "10:00",
+   "close": "21:00",
+   "best_time": "lunch",
+   "price": 35,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "云南南路46号'排骨年糕'鼻祖，人均约35",
+   "closed_days": []
   }
  ]
 }

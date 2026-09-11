@@ -21,7 +21,7 @@ from build_travel_cache import (  # noqa: E402
 DATA = os.path.join(ROOT, "data")
 CITIES = ["上海", "南京", "杭州", "武汉", "苏州"]
 NEW_IDS = {
-    "上海": ["SH029", "SH030", "SH031", "SH032"],
+    "上海": ["SH029", "SH030", "SH031", "SH032", "SH033", "SH034", "SH035", "SH036", "SH037", "SH038", "SH039", "SH040", "SH041", "SH042", "SH043", "SH044"],
     "南京": ["NJ029", "NJ030", "NJ031", "NJ032", "NJ033"],
     "杭州": ["HZ051", "HZ052", "HZ053", "HZ054", "HZ055"],
     "武汉": ["WH029", "WH030", "WH031", "WH032", "WH033", "WH034"],
