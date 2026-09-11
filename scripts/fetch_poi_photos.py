@@ -32,10 +32,10 @@ def fetch(name: str, city: str, key: str, opener) -> str:
 
 
 def main():
-    cfg = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
-    key = cfg.get("amap_key")
+    from src.config import load_config
+    key = load_config().get("amap_key")
     if not key:
-        print("config.json 缺少 amap_key")
+        print("secrets.json/config.json 缺少 amap_key")
         sys.exit(1)
     cache = {}
     if os.path.exists(CACHE):

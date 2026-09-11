@@ -130,9 +130,8 @@ def main():
     dry = "--dry" in sys.argv
     key = os.environ.get("AMAP_KEY", "")
     if not key:
-        cfg = os.path.join(ROOT, "config.json")
-        if os.path.exists(cfg):
-            key = json.load(io.open(cfg, encoding="utf-8")).get("amap_key", "")
+        from src.config import load_config
+        key = load_config().get("amap_key", "")
     path = os.path.join(DATA, f"{CITY}_pois.json")
     city = json.load(io.open(path, encoding="utf-8"))
     pois = city["pois"]

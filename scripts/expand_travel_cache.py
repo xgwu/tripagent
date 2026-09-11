@@ -50,7 +50,8 @@ def main():
     use_l2 = "--no-l2" not in sys.argv
     key = os.environ.get("AMAP_KEY", "")
     if use_l2 and not key:
-        key = json.load(io.open(os.path.join(ROOT, "config.json"), encoding="utf-8")).get("amap_key", "")
+        from src.config import load_config
+        key = load_config().get("amap_key", "")
     cache = load_cache()
     minutes = cache["minutes"]
     n_l1 = n_l2 = n_new_pairs = 0

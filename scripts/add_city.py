@@ -14,7 +14,7 @@
 - 采集来的 POI 营业信息是高德快照（closed_days 置空、note 标注「待核实」），
   正式使用前建议人工核实闭馆日（scripts/backfill_closed_days.py 可辅助）。
 - 城市名拼音首字母前缀自动推断（内置常见城市表），推断不出需显式 --prefix。
-- 需要 config.json 的 amap_key。
+- 需要 secrets.json（或 config.json）的 amap_key。
 
 用法：
   python scripts/add_city.py 成都                       # 自动推断前缀 CD
@@ -274,10 +274,10 @@ def main():
     args = ap.parse_args()
     city = args.city
 
-    cfg = json.load(open(os.path.join(ROOT, "config.json"), encoding="utf-8"))
-    key = cfg.get("amap_key")
+    from src.config import load_config
+    key = load_config().get("amap_key")
     if not key:
-        raise SystemExit("❌ config.json 缺少 amap_key")
+        raise SystemExit("❌ secrets.json/config.json 缺少 amap_key")
     prefix = args.prefix or PREFIX_MAP.get(city)
     if not prefix:
         raise SystemExit(f"❌ 无法推断 {city} 的 ID 前缀，请用 --prefix 指定（如 CD）")

@@ -30,10 +30,11 @@ def main():
     args = ap.parse_args()
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cfg_path = os.path.join(root, "config.json")
-    if os.path.exists(cfg_path) and not os.environ.get("DEEPSEEK_API_KEY"):
-        cfg = json.load(open(cfg_path, encoding="utf-8"))
-        os.environ.setdefault("DEEPSEEK_API_KEY", cfg.get("deepseek_api_key", ""))
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        from src.config import load_config
+        os.environ.setdefault("DEEPSEEK_API_KEY", load_config().get("deepseek_api_key", ""))
 
     rows = []
     for city_name, query, days, anchor_id in CASES:

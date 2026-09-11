@@ -42,7 +42,10 @@ def haversine_km(a, b):
 
 
 def main():
-    key = json.load(io.open(os.path.join(ROOT, "config.json"), encoding="utf-8"))["amap_key"]
+    import sys
+    sys.path.insert(0, ROOT)
+    from src.config import load_config
+    key = load_config().get("amap_key")
     by_id = {}
     for city in ["上海", "南京", "杭州", "武汉", "苏州"]:
         path = os.path.join(DATA, f"{city}_pois.json")

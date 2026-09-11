@@ -35,13 +35,13 @@ LLM 负责创意提案，本地结构化 POI 库 + 运筹优化负责把提案�
 # 1. 依赖（唯一可选第三方依赖为 ortools）
 pip install -r requirements.txt
 
-# 2. 配置密钥（config.json 不进 git，见 .gitignore）
+# 2. 配置密钥：复制 secrets.example.json 为 secrets.json 并填入真实值（secrets.json 不进 git）
 {
   "deepseek_api_key": "sk-...",   # DeepSeek LLM（缺省走离线兜底）
   "amap_key": "...",              # 高德 Web 服务 Key（路径规划/静态图）
-  "amap_js_key": "...",           # 高德 JS API Key（前端底图）
-  "m1_model": "deepseek-chat"
+  "amap_js_key": "..."            # 高德 JS API Key（前端底图）
 }
+# 业务配置（模型名、功能开关等）放 config.json，随 git 提交
 
 # 3. 启动（默认 8765；云端读 PORT 环境变量并绑 0.0.0.0）
 python webui/server.py 8765
