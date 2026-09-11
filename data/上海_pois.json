@@ -211,7 +211,9 @@
     "photo",
     "文艺",
     "小众",
-    "citywalk"
+    "citywalk",
+    "咖啡",
+    "小马路"
    ],
    "lat": 31.207,
    "lng": 121.437,
@@ -345,7 +347,9 @@
     "艺术",
     "室内",
     "雨天",
-    "文艺"
+    "文艺",
+    "滨江",
+    "骑行"
    ],
    "lat": 31.179,
    "lng": 121.464,
@@ -571,7 +575,9 @@
    "tags": [
     "photo",
     "夜景",
-    "轻松"
+    "轻松",
+    "骑行",
+    "咖啡"
    ],
    "lat": 31.239,
    "lng": 121.501,
@@ -1017,6 +1023,410 @@
    "area": "central",
    "family_ok": true,
    "note": "云南南路46号'排骨年糕'鼻祖，人均约35",
+   "closed_days": []
+  },
+  {
+   "id": "SH045",
+   "name": "南翔馒头店（豫园店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "小笼",
+    "老字号"
+   ],
+   "lat": 31.226577,
+   "lng": 121.49151,
+   "duration_h": 0.8,
+   "open": "08:30",
+   "close": "20:30",
+   "best_time": "lunch",
+   "price": 80,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "豫园路85号，'小笼包鼻祖'，一楼外带常年排队",
+   "closed_days": []
+  },
+  {
+   "id": "SH046",
+   "name": "绿波廊（豫园店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "本帮菜",
+    "老字号"
+   ],
+   "lat": 31.226432,
+   "lng": 121.491868,
+   "duration_h": 1.0,
+   "open": "10:00",
+   "close": "21:00",
+   "best_time": "lunch",
+   "price": 150,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "豫园老路137号，国宴本帮菜，桂花拉糕/蟹粉小笼",
+   "closed_days": []
+  },
+  {
+   "id": "SH047",
+   "name": "宁波汤团店（豫园店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "汤团",
+    "老字号"
+   ],
+   "lat": 31.2264,
+   "lng": 121.4915,
+   "duration_h": 0.6,
+   "open": "08:00",
+   "close": "20:00",
+   "best_time": "any",
+   "price": 25,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "豫园商城内，黑洋酥汤团百年老店，人均25",
+   "closed_days": []
+  },
+  {
+   "id": "SH048",
+   "name": "松月楼素菜馆",
+   "category": "food",
+   "tags": [
+    "美食",
+    "素食",
+    "老字号"
+   ],
+   "lat": 31.226326,
+   "lng": 121.490939,
+   "duration_h": 0.8,
+   "open": "10:30",
+   "close": "20:00",
+   "best_time": "lunch",
+   "price": 60,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "城隍庙旁百年素菜馆，素菜包出名",
+   "closed_days": []
+  },
+  {
+   "id": "SH049",
+   "name": "小绍兴鸡粥店（云南南路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "鸡粥",
+    "老字号"
+   ],
+   "lat": 31.2241,
+   "lng": 121.4753,
+   "duration_h": 0.8,
+   "open": "07:00",
+   "close": "21:00",
+   "best_time": "lunch",
+   "price": 45,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "云南南路69号，白斩鸡+鸡粥，与鲜得来同街可串",
+   "closed_days": []
+  },
+  {
+   "id": "SH050",
+   "name": "小杨生煎（吴江路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "生煎",
+    "老字号"
+   ],
+   "lat": 31.2349,
+   "lng": 121.4594,
+   "duration_h": 0.6,
+   "open": "10:00",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 30,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "吴江路美食街，'大满贯'全发面生煎鼻祖",
+   "closed_days": []
+  },
+  {
+   "id": "SH051",
+   "name": "王家沙点心店（南京西路总店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "点心",
+    "老字号"
+   ],
+   "lat": 31.2336,
+   "lng": 121.4647,
+   "duration_h": 0.6,
+   "open": "07:30",
+   "close": "20:00",
+   "best_time": "any",
+   "price": 40,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "南京西路805号，蟹粉锅贴/鲜肉月饼，紧邻张园",
+   "closed_days": []
+  },
+  {
+   "id": "SH052",
+   "name": "泰康食品（南京东路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "点心",
+    "老字号"
+   ],
+   "lat": 31.2356,
+   "lng": 121.4792,
+   "duration_h": 0.5,
+   "open": "08:00",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 35,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "南京东路766号，鲜肉月饼/蝴蝶酥伴手礼",
+   "closed_days": []
+  },
+  {
+   "id": "SH053",
+   "name": "国际饭店西饼屋",
+   "category": "food",
+   "tags": [
+    "美食",
+    "蝴蝶酥",
+    "老字号"
+   ],
+   "lat": 31.2347,
+   "lng": 121.4681,
+   "duration_h": 0.4,
+   "open": "08:00",
+   "close": "20:00",
+   "best_time": "any",
+   "price": 45,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "黄河路28号，'蝴蝶酥天花板'，排队伴手礼地标",
+   "closed_days": []
+  },
+  {
+   "id": "SH054",
+   "name": "阿娘面馆（思南路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "面馆",
+    "老字号"
+   ],
+   "lat": 31.2183,
+   "lng": 121.4658,
+   "duration_h": 0.7,
+   "open": "07:30",
+   "close": "19:30",
+   "best_time": "lunch",
+   "price": 40,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "思南路36号，黄鱼面传奇小店，与思南公馆同街区",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "SH055",
+   "name": "% Arabica（武康路店）",
+   "category": "food",
+   "tags": [
+    "咖啡",
+    "网红店",
+    "休闲"
+   ],
+   "lat": 31.206897,
+   "lng": 121.439072,
+   "duration_h": 0.6,
+   "open": "09:00",
+   "close": "20:00",
+   "best_time": "afternoon",
+   "price": 40,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "武康大楼旁全球网红咖啡，配武康路漫步",
+   "closed_days": []
+  },
+  {
+   "id": "SH056",
+   "name": "Seesaw Coffee（愚园路店）",
+   "category": "food",
+   "tags": [
+    "咖啡",
+    "网红店",
+    "休闲"
+   ],
+   "lat": 31.220496,
+   "lng": 121.43514,
+   "duration_h": 0.6,
+   "open": "09:00",
+   "close": "21:00",
+   "best_time": "afternoon",
+   "price": 40,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "愚园路创意园区内本土精品咖啡代表",
+   "closed_days": []
+  },
+  {
+   "id": "SH057",
+   "name": "O.P.S. CAFE",
+   "category": "food",
+   "tags": [
+    "咖啡",
+    "网红店",
+    "休闲"
+   ],
+   "lat": 31.205,
+   "lng": 121.436,
+   "duration_h": 0.6,
+   "open": "10:00",
+   "close": "19:00",
+   "best_time": "afternoon",
+   "price": 50,
+   "rating": 5,
+   "area": "west",
+   "family_ok": true,
+   "note": "沪上精品咖啡口碑榜首（季节限定菜单），近衡复街区",
+   "closed_days": [
+    "周二"
+   ]
+  },
+  {
+   "id": "SH058",
+   "name": "静安雕塑公园",
+   "category": "nature",
+   "tags": [
+    "公园",
+    "亲子",
+    "休闲"
+   ],
+   "lat": 31.2288,
+   "lng": 121.4525,
+   "duration_h": 1.5,
+   "open": "05:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "自然博物馆旁开放式雕塑公园，樱花季热门，可两点串联",
+   "closed_days": []
+  },
+  {
+   "id": "SH059",
+   "name": "绿之丘（杨浦滨江）",
+   "category": "photo",
+   "tags": [
+    "滨江",
+    "骑行",
+    "建筑",
+    "网红店"
+   ],
+   "lat": 31.259,
+   "lng": 121.5295,
+   "duration_h": 1.0,
+   "open": "09:00",
+   "close": "20:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "杨树浦路1500号烟草仓库改造'空中花园'，杨浦骑行线网红打卡点",
+   "closed_days": []
+  },
+  {
+   "id": "SH060",
+   "name": "上海国际时尚中心",
+   "category": "relax",
+   "tags": [
+    "滨江",
+    "骑行",
+    "工业遗存",
+    "休闲"
+   ],
+   "lat": 31.2631,
+   "lng": 121.533,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "杨树浦路2866号原裕丰纱厂改造，杨浦滨江骑行线配套（餐饮/ outlet）",
+   "closed_days": []
+  },
+  {
+   "id": "SH061",
+   "name": "油罐艺术中心",
+   "category": "art",
+   "tags": [
+    "艺术",
+    "展览",
+    "滨江"
+   ],
+   "lat": 31.1758,
+   "lng": 121.4562,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "21:00",
+   "best_time": "afternoon",
+   "price": 80,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "西岸龙腾大道2380号航油罐改造美术馆，特展售票；西岸骑行线上",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "SH062",
+   "name": "K11购物艺术中心",
+   "category": "shopping",
+   "tags": [
+    "商场",
+    "艺术",
+    "逛街"
+   ],
+   "lat": 31.2241,
+   "lng": 121.4703,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "淮海中路300号，'购物中心+美术馆'混合业态，常设艺术展",
    "closed_days": []
   }
  ]
