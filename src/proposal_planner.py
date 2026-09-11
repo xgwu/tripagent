@@ -12,19 +12,23 @@ from src import poi_db, llm_client, m1_planner, m2_planner, offline_planner
 from src import hotel as hotel_mod
 
 PROPOSE_SYSTEM = """你是一位资深旅行规划专家，深谙中国主要旅游城市的经典玩法与本地体验节奏。
-请基于你的旅行知识自由设计行程——可以提及任何你知识中真实存在的地点，不受任何列表限制。
+请结合你的旅行知识自由设计行程——用户提示词中会给出系统已收录的地点清单，同等体验下优先从中选用，
+也可补充少量清单外的真实特色地点（不得虚构不存在的地点）。
 注意基本常识（如多数博物馆周一闭馆、热门景点需预留排队时间）。"""
 
 PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 用户需求：{query}
 {date_line}
-自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去）。
+自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去），每天 4-6 个停留点。
 路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。
+本系统已收录以下{city}地点（落地有保障，同等体验下请优先选用；也可少量补充清单外的特色地点，但不要虚构清单内地点的分店）：
+{library_hint}
 严格输出 JSON：
 {{"days": [{{"day": 1, "theme": "主题", "reason": "整体思路", "stops": [{{"name": "灵隐寺", "note": "为什么去"}}]}}]}}"""
 
 MATCH_SYSTEM = """你是 POI 匹配助手。给定用户行程中的地点名和 POI 库清单，判断每个地点对应库中哪个 POI。
-没有可靠对应的输出 null，宁缺毋滥。"""
+同一地点的别称、旧称、近似名称、同品牌不同分店（如「XX（苏州河店）」对应库内「XX（武康路店）」）都应匹配到库中最接近的一项；
+只有当库中确实没有该地点或其近似项时才输出 null。"""
 
 MATCH_PROMPT = """## 行程中的地点
 {stops}
@@ -39,6 +43,28 @@ def _norm(s: str) -> str:
     return re.sub(r"[\s·・（）()\-—_、，。…「」『』]", "", (s or "")).lower()
 
 
+def _branch_variants(name: str) -> list:
+    """分店名归一化变体：剥离「（XX店）」类括号后缀与尾部「总店/分店」，用于同品牌跨分店匹配。
+
+    如「% Arabica（苏州河店）」→「% Arabica」，可包含匹配到库内「% Arabica（武康路店）」。
+    """
+    out = []
+    base = re.sub(r"[（(][^（）()]*店[）)]$", "", name).strip()
+    base = re.sub(r"(总店|分店)$", "", base).strip()
+    if base and base != name:
+        out.append(base)
+    return out
+
+
+def _library_hint(all_pois: dict) -> str:
+    """库内地点菜单（按类目分组），注入提案提示词引导优先选用库内点。"""
+    groups = {}
+    for p in all_pois.values():
+        groups.setdefault(p["category"], []).append(p["name"])
+    return "\n".join(f"- {cat}：{'、'.join(names)}"
+                     for cat, names in sorted(groups.items()))
+
+
 def _ground_one(name: str, all_pois: dict, by_name: list) -> tuple:
     """单点落地：返回 (poi_id|None, method)。四级：精确→包含→模糊。"""
     key = _norm(name)
@@ -48,10 +74,15 @@ def _ground_one(name: str, all_pois: dict, by_name: list) -> tuple:
         if _norm(p["name"]) == key:
             return p["id"], "exact"
     cands = []
-    for p in by_name:  # 包含（双向，取评分高者）
-        pn = _norm(p["name"])
-        if len(pn) >= 2 and (pn in key or key in pn):
-            cands.append(p)
+    # 包含（双向，取评分高者）；分店归一化变体一并参与（同品牌跨分店）
+    for nm in [name] + _branch_variants(name):
+        kn = _norm(nm)
+        if not kn:
+            continue
+        for p in by_name:
+            pn = _norm(p["name"])
+            if len(pn) >= 2 and (pn in kn or kn in pn):
+                cands.append(p)
     if cands:
         return max(cands, key=lambda p: p["rating"])["id"], "contain"
     best, ratio = None, 0.0
@@ -150,13 +181,16 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         r["mode"] = r["mode"] + " → m7_degraded"
         return r
     t0 = time.time()
-    # ---- A 提案：世界知识自由生成（不设防，允许库外）----
+    # ---- A 提案：世界知识自由生成（允许库外补充；注入库内菜单引导优先选用）----
+    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
+    hint = _library_hint(all_pois)
     wd1 = poi_db.trip_weekday(date0, 1) if date0 else None
     date_line = (f"出发日期：{date0}（第 1 天为{wd1}），请结合常见闭馆常识安排顺序。\n" if date0 else "")
     raw = llm_client.chat([
         {"role": "system", "content": PROPOSE_SYSTEM},
         {"role": "user", "content": PROPOSE_PROMPT.format(city=city["city"], days=days,
-                                                          query=query, date_line=date_line)}],
+                                                          query=query, date_line=date_line,
+                                                          library_hint=hint)}],
         temperature=0.2, seed=42)
     proposal = llm_client.parse_json_safe(raw)
     if not proposal.get("days"):
@@ -166,7 +200,6 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         return r
 
     # ---- B 落地：匹配回 POI 库 ----
-    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     day_map, themes, grounding = _ground(proposal, city, all_pois, days)
     # 天数保障：提案/落地后不足请求天数（LLM 少给一组或落地失败清空某天）→
     # 用离线规划从剩余未落地候选补齐缺口日
