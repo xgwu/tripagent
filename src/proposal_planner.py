@@ -8,7 +8,7 @@
 """
 import difflib, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src import poi_db, llm_client, m1_planner, m2_planner
+from src import poi_db, llm_client, m1_planner, m2_planner, offline_planner
 from src import hotel as hotel_mod
 
 PROPOSE_SYSTEM = """你是一位资深旅行规划专家，深谙中国主要旅游城市的经典玩法与本地体验节奏。
@@ -167,6 +167,22 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     # ---- B 落地：匹配回 POI 库 ----
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     day_map, themes, grounding = _ground(proposal, city, all_pois, days)
+    # 天数保障：提案/落地后不足请求天数（LLM 少给一组或落地失败清空某天）→
+    # 用离线规划从剩余未落地候选补齐缺口日
+    if day_map:
+        missing = [d for d in range(1, days + 1) if d not in day_map]
+        if missing:
+            used = {pid for ids in day_map.values() for pid in ids}
+            rest = [p for i, p in all_pois.items() if i not in used]
+            if rest:
+                extra_map, extra_themes = offline_planner.plan_days(city, rest, query, len(missing))
+                for k, ed in enumerate(sorted(extra_map)):
+                    if k >= len(missing):
+                        break
+                    day_map[missing[k]] = extra_map[ed]
+                    if ed in extra_themes:
+                        themes[missing[k]] = extra_themes[ed]
+                grounding["days_topped_up"] = missing
     if not day_map:  # 全部落地失败 → M2 兜底
         r = m2_planner.plan(city, query, days, use_llm=True, date0=date0,
                             hotel_text=hotel_text, time_limit_s=time_limit_s,
