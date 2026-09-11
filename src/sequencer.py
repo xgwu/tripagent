@@ -11,13 +11,42 @@ from . import poi_db
 DAY_END_SLOT = "21:30"
 MAX_MEAL_WAIT_H = 1.5     # 美食 POI 早到餐窗的最多等待时长，超过则判违规交修复链剔除
 FOOD_PREF_WIN = {"lunch": "lunch", "dinner": "dinner", "evening": "dinner"}  # best_time → 首选餐窗
-CYCLE_DAY_KM_CAP = 15.0   # 骑行主题每日交通里程预算（km）：游玩骑行≠拉练，超预算剔除远点
-_CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
+
+# ---- 主题画像：按出行方式设定每日交通里程预算（km），游玩≠拉练，超预算剔除远点 ----
+# 优先级从上到下（一个查询命中多个主题时取最严格匹配项之前先按此序）
+THEME_PROFILES = [
+    ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 15.0),
+    ("hiking", re.compile(r"徒步|暴走|city\s*walk|遛弯", re.IGNORECASE), 8.0),
+    ("family", re.compile(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃", re.IGNORECASE), 12.0),
+]
+
+
+def detect_theme(query: str | None) -> str | None:
+    """从需求文字识别出行主题（cycling/hiking/family），无匹配返回 None。"""
+    if not query:
+        return None
+    for name, pat, _cap in THEME_PROFILES:
+        if pat.search(query):
+            return name
+    return None
+
+
+def theme_km_cap(query: str | None) -> float | None:
+    """需求命中主题画像 → 返回每日里程预算（km）；否则 None。"""
+    if not query:
+        return None
+    for _name, pat, cap in THEME_PROFILES:
+        if pat.search(query):
+            return cap
+    return None
 
 
 def cycle_km_cap(query: str | None) -> float | None:
-    """查询含骑行意图 → 返回每日里程预算（km）；否则 None。"""
-    return CYCLE_DAY_KM_CAP if query and _CYCLE_RE.search(query) else None
+    """兼容保留：等价于 theme_km_cap（骑行命中即 15km，否则 None）。"""
+    return 15.0 if query and _CYCLE_RE.search(query) else None
+
+
+_CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
 
 
 def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = None,
@@ -250,8 +279,9 @@ def _repair_by_drop(day_pois: list, city: dict, day_no: int, max_drop: int = 3,
 
 
 def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
-                   hotel: dict | None, cap: float):
-    """骑行里程预算修复：当日交通里程超预算 → 迭代剔除「最远腿」POI（贡献最长绕行的点）再重排。"""
+                   hotel: dict | None, cap: float, theme: str | None = None):
+    """主题里程预算修复：当日交通里程超预算 → 迭代剔除「最远腿」POI（贡献最长绕行的点）再重排。"""
+    label = {"cycling": "骑行", "hiking": "徒步", "family": "亲子"}.get(theme, "骑行")
     pois = list(day_pois)
     dropped = []
     while len(pois) > 2:
@@ -266,7 +296,7 @@ def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
         bad = max(pois, key=_far_leg)
         pois.remove(bad)
         dropped.append({"id": bad["id"], "name": bad["name"],
-                        "reason": f"骑行里程超预算（>{cap:.0f} km/天），剔除远点收敛路线"})
+                        "reason": f"{label}里程超预算（>{cap:.0f} km/天），剔除远点收敛路线"})
     tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
     tl["dropped"] = dropped
     return tl
@@ -281,16 +311,17 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
     """
     result_days, all_violations, total_km = [], [], 0.0
     all_dropped = []
-    cap = cycle_km_cap(query)
+    cap = theme_km_cap(query)
+    theme = detect_theme(query)
     for d in sorted(day_map):
         ids = day_map[d]
         pois = [all_pois[i] for i in ids if i in all_pois]
         wd = poi_db.trip_weekday(date0, d) if date0 else None
         seq = pois if order_given else order_day(pois, hotel=hotel, city=city)
         tl = _build_timeline(seq, city, d, wd, hotel)
-        # 骑行主题：先做每日里程预算收敛，再做硬约束修复（两者正交）
+        # 主题画像：先做每日里程预算收敛，再做硬约束修复（两者正交）
         if cap and tl["travel_km"] > cap and len(pois) > 2:
-            tl = _cap_km_repair(pois, city, d, wd, hotel, cap)
+            tl = _cap_km_repair(pois, city, d, wd, hotel, cap, theme)
         if tl["violations"]:
             # 一级修复：放弃原顺序，贪婪重排
             repaired = order_day(pois, hotel=hotel, city=city)

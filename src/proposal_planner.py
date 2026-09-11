@@ -217,6 +217,27 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                     if ed in extra_themes:
                         themes[missing[k]] = extra_themes[ed]
                 grounding["days_topped_up"] = missing
+    # 单天补强：缺口剔除导致某天只剩 1-2 个点 → 从未用候选离线补足（P0-3 缺口二次提案）
+    if day_map:
+        MIN_STOPS = 3
+        used = {pid for ids in day_map.values() for pid in ids}
+        topped = []
+        for d in range(1, days + 1):
+            while len(day_map.get(d, [])) < MIN_STOPS:
+                rest = [p for i, p in all_pois.items() if i not in used]
+                if not rest:
+                    break
+                extra_map, _et = offline_planner.plan_days(city, rest, query, 1)
+                new = [pid for pid in extra_map.get(1, []) if pid not in used]
+                if not new:  # 候选耗尽或规划器无法给出新点
+                    break
+                need = MIN_STOPS - len(day_map.get(d, []))
+                day_map[d] = day_map.get(d, []) + new[:need]
+                used.update(new[:need])
+                if d not in topped:
+                    topped.append(d)
+        if topped:
+            grounding["days_stops_topped_up"] = topped
     if not day_map:  # 全部落地失败 → M2 兜底
         r = m2_planner.plan(city, query, days, use_llm=True, date0=date0,
                             hotel_text=hotel_text, time_limit_s=time_limit_s,
