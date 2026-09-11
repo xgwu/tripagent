@@ -8,7 +8,7 @@
 
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）
 """
-import io, json, os, re, sys, threading, time, urllib.parse, uuid
+import hashlib, io, json, os, re, sys, threading, time, urllib.parse, uuid
 from datetime import date as _date, timedelta as _td
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -25,6 +25,53 @@ ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
 _route_lock = threading.Lock()
 _route_cache = None
 SHARES_DIR = os.path.join(ROOT, "data", "shares")
+
+# ---- P0-3 LLM 规划结果缓存（同 query+city+days+date0+hotel+mode 7 天内秒回） ----
+LLM_CACHE_PATH = os.path.join(ROOT, "data", "llm_cache.json")
+LLM_CACHE_TTL_S = 7 * 86400
+_llm_cache: dict | None = None
+
+
+def _load_llm_cache() -> dict:
+    global _llm_cache
+    if _llm_cache is None:
+        try:
+            with open(LLM_CACHE_PATH, encoding="utf-8") as f:
+                _llm_cache = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            _llm_cache = {}
+    return _llm_cache
+
+
+def _llm_cache_key(cname: str, query: str, days: int, date0: str | None,
+                   hotel_text: str | None, mode: str) -> str:
+    raw = "|".join([cname, query, str(days), date0 or "", hotel_text or "", mode])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()
+
+
+def _llm_cache_get(key: str):
+    """命中且未过期返回结果副本（打上 cache_hit），否则 None。"""
+    with PLAN_LOCK:
+        ent = _load_llm_cache().get(key)
+    if not ent or time.time() - ent.get("ts", 0) > LLM_CACHE_TTL_S:
+        return None
+    r = json.loads(json.dumps(ent["result"], ensure_ascii=False))  # 深拷贝防调用方改写
+    r["cache_hit"] = True
+    return r
+
+
+def _llm_cache_put(key: str, result: dict) -> None:
+    with PLAN_LOCK:
+        c = _load_llm_cache()
+        c[key] = {"ts": time.time(), "result": result}
+        # 只保留最近 300 条，防无限膨胀
+        if len(c) > 300:
+            for k in sorted(c, key=lambda k: c[k]["ts"])[: len(c) - 300]:
+                c.pop(k, None)
+        tmp = LLM_CACHE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(c, f, ensure_ascii=False)
+        os.replace(tmp, LLM_CACHE_PATH)
 
 # ---- POI 实拍照片（P3：高德 place/text photos 字段，磁盘缓存，302 跳转图库直链） ----
 PHOTO_CACHE_PATH = os.path.join(ROOT, "data", "photo_cache.json")
@@ -576,6 +623,19 @@ class Handler(BaseHTTPRequestHandler):
                     planner = m2_planner if m2_planner is not None else m1_planner
                 if planner is None:
                     planner = m1_planner
+                # P0-3 LLM 结果缓存：m7+LLM 路径且非访客 Key 时，7 天内同参数直接秒回（?fresh=1 跳过）
+                cache_key = None
+                if use_llm and mode == "m7" and not llm_key and q.get("fresh", "0") != "1":
+                    cache_key = _llm_cache_key(cname, query, days, date0, hotel_text, mode)
+                    cached = _llm_cache_get(cache_key)
+                    if cached is not None:
+                        stats_bump("plan_cache_hit")
+                        stats_latency(cached.get("latency_s", 0))
+                        return self._json({"ok": True, "city_meta": city_meta(cname), "result": cached,
+                                           "days_source": days_src,
+                                           "parsed": {"city": cname, "date0": date0,
+                                                      "hotel_text": hotel_text,
+                                                      "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}})
                 if llm_key:
                     # 临时注入访客 Key → 规划 → 恢复环境（锁内串行，防并发互相覆盖）
                     with PLAN_LOCK:
@@ -589,12 +649,18 @@ class Handler(BaseHTTPRequestHandler):
                                 os.environ.pop("DEEPSEEK_API_KEY", None)
                             else:
                                 os.environ["DEEPSEEK_API_KEY"] = old
+                    cache_key = None  # 访客 Key 结果不落缓存
                 else:
                     r = planner.plan(city, query, days, use_llm=use_llm,
                                      date0=date0, hotel_text=hotel_text)
                 stats_latency(r.get("latency_s", 0))
                 if r.get("mode") not in ("offline_fallback",):
                     stats_bump("plan_llm")
+                    if cache_key:  # 只缓存真实 LLM 结果（离线兜底不缓存）
+                        try:
+                            _llm_cache_put(cache_key, r)
+                        except OSError:
+                            pass
                 return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
                                    "days_source": days_src,
                                    "parsed": {"city": cname, "date0": date0,

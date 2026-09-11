@@ -23,6 +23,8 @@ textarea{resize:vertical;min-height:64px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
 button{background:var(--blue);color:#fff;border:0;border-radius:9px;padding:10px 26px;font-size:15px;font-weight:600;cursor:pointer}
 button:disabled{background:#9db8d9;cursor:not-allowed}
+.secbtn{background:#fff;color:var(--blue);border:1px solid var(--blue);padding:9px 18px;font-size:14px;font-weight:500}
+.secbtn:hover{background:var(--blue-l)}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .chip{background:var(--blue-l);color:var(--blue);border-radius:14px;padding:3px 12px;font-size:12.5px;cursor:pointer}
 .radio{display:flex;gap:14px;align-items:center;font-size:13.5px}
@@ -42,6 +44,28 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 .map svg{width:100%;background:#f2f4f7;border:1px solid var(--line);border-radius:8px}
 .two{display:grid;grid-template-columns:0.85fr 1.15fr;gap:16px}
 @media(max-width:820px){.grid,.two{grid-template-columns:1fr}}
+/* P0-2 移动端适配：手机单列 + 触控优化 */
+@media(max-width:640px){
+  .wrap{padding:12px 12px 40px}
+  h1{font-size:19px} .sub{display:none}
+  .panel{padding:14px 12px;border-radius:10px}
+  button{padding:11px 20px;font-size:14.5px}
+  .secbtn{padding:10px 14px;font-size:13.5px}
+  .summary{gap:6px}
+  .summary .badge{font-size:11px;padding:1px 7px}
+  .summary button{flex:1 1 auto;min-height:40px}
+  .daycard{border-radius:10px}
+  .dayhead{flex-wrap:wrap;padding:9px 12px;font-size:13.5px;gap:6px 10px}
+  .dayhead span{font-size:11.5px;width:100%}
+  .tl{padding:4px 10px 10px}
+  .tlrow{flex-wrap:wrap;gap:4px 8px;font-size:13px;padding:7px 0}
+  .time{min-width:auto;font-size:12px}
+  .poiimg{width:76px;height:52px}
+  .swapbtn{margin-left:0;padding:4px 10px;font-size:12px}
+  .viol,.drop{margin:0 10px 10px;font-size:12px}
+  #amapbox{height:300px!important}
+  .note{font-size:12px}
+}
 .note{color:var(--mut);font-size:12.5px}
 .hint{font-size:12px;color:var(--mut);margin-top:4px}
 .swapbtn{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11px;cursor:pointer;margin-left:auto;flex-shrink:0}
@@ -142,12 +166,15 @@ function render({city_meta,result:r,days_source,parsed}){
     ${avoided.length?`<span class="badge b-green" title="当日闭馆已自动避开：${avoided.map(x=>x.name).join("、")}">🏛 已避开闭馆 ${avoided.length} 处</span>`:""}
     ${r.hotel?`<span class="badge b-amber">🏨 ${r.hotel.name}</span>`:""}
     ${r.n_dup_across_days===0?'<span class="badge b-green">跨天重复 0</span>':`<span class="badge b-amber">跨天重复 ${r.n_dup_across_days}（已剥除）</span>`}
+    ${r.cache_hit?'<span class="badge b-green" title="相同需求 7 天内命中本地缓存，秒回且不消耗 LLM 额度">⚡ 缓存秒回</span>':""}
     <span class="badge b-blue">耗时 ${r.latency_s}s</span>
     ${r.candidates!=null?`<span class="badge b-blue">候选池 ${r.candidates}</span>`:""}
     ${closedV?`<span class="badge b-red">闭馆违规 ${closedV}</span>`:""}
     ${retV?`<span class="badge b-red">返程违规 ${retV}</span>`:""}
     <button id="shareBtn" style="margin-left:auto" onclick="shareDoc()">🔗 分享</button>
     <button id="exportBtn" onclick="openDoc()">📥 导出行程单</button>
+    <button class="secbtn" onclick="exportICS()">📅 加入日历</button>
+    <button class="secbtn" onclick="exportPNG()">🖼 存长图</button>
   </div>
   <p class="note">「${r.query}」</p>
   <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div></div>`;
@@ -392,6 +419,105 @@ function openDoc(){
   const url=URL.createObjectURL(blob);
   window.open(url,"_blank"); // 新标签打开，右上角打印按钮可存为 PDF
   setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+// ===== P0-1 行程导出：ICS 日历 + Canvas 长图 =====
+function _icsEsc(s){return (s||"").replace(/\\/g,"\\\\").replace(/;/g,"\\;").replace(/,/g,"\\,").replace(/\r?\n/g,"\\n");}
+function _download(name,blob){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);a.download=name;
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+}
+async function exportICS(){
+  if(!LAST)return;
+  const r=LAST.result,it=r.itinerary;
+  let d0=r.date0;
+  if(!d0){ // 无出发日期时询问（ICS 需要锚定日期）
+    d0=prompt("行程将写入日历，请输入出发日期（YYYY-MM-DD）：",
+      new Date().toISOString().slice(0,10));
+    if(!d0)return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d0)){alert("日期格式应为 YYYY-MM-DD");return;}
+  }
+  const base=new Date(d0+"T00:00:00");
+  const pad=n=>String(n).padStart(2,"0");
+  const evs=[];
+  (it.days||[]).forEach(d=>{
+    const day=new Date(base);day.setDate(day.getDate()+d.day-1);
+    const ymd=`${day.getFullYear()}${pad(day.getMonth()+1)}${pad(day.getDate())}`;
+    (d.timeline||[]).forEach((s,i)=>{
+      const st=(s.start||"09:00").replace(":",""),en=(s.end||s.start||"10:00").replace(":","");
+      evs.push(["BEGIN:VEVENT",
+        `UID:tripagent-${d.day}-${i}-${ymd}@tripagent.app`,
+        `DTSTART:${ymd}T${st}00`,
+        `DTEND:${ymd}T${en}00`,
+        `SUMMARY:${_icsEsc(`Day${d.day} ${s.name}`)}`,
+        `DESCRIPTION:${_icsEsc(`主题：${d.theme||"行程"}｜交通约 ${Math.round(d.travel_km*10)/10}km`+(r.query?`｜需求：${r.query}`:""))}`,
+        "END:VEVENT"]);
+    });
+  });
+  const fold=l=>l.length<=73?l:l.slice(0,73)+"\r\n "+l.slice(73);
+  const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//TripAgent//Itinerary//CN","CALSCALE:GREGORIAN",
+    ...evs.flat().map(fold),"END:VCALENDAR"].join("\r\n");
+  _download(`TripAgent行程-${(LAST.city_meta.name||"trip")}-${d0}.ics`,new Blob([ics],{type:"text/calendar;charset=utf-8"}));
+  $("status").innerHTML='<span class="badge b-green">📅 ICS 已下载，导入手机日历即可按时间提醒</span>';
+}
+function exportPNG(){
+  if(!LAST)return;
+  const r=LAST.result,it=r.itinerary,meta=LAST.city_meta;
+  const W=750,SC=2,colors=DAY_COLORS,m=32,lh=26;
+  const c=document.createElement("canvas");
+  const x2=c.getContext("2d");
+  x2.font='13px "Microsoft YaHei",sans-serif';
+  const wrap=(txt,max)=>{const out=[];let line="";for(const ch of txt){if(x2.measureText(line+ch).width>max){out.push(line);line=ch;}else line+=ch;}if(line)out.push(line);return out;};
+  // 预计算高度
+  let H=150;
+  (it.days||[]).forEach(d=>{
+    H+=44+8+(d.timeline||[]).length*(lh+10)+18;
+    (d.violations||[]).forEach(()=>H+=20);
+  });
+  H+=56;
+  c.width=W*SC;c.height=H*SC;x2.scale(SC,SC);
+  const bg="#f7f8fa";x2.fillStyle=bg;x2.fillRect(0,0,W,H);
+  // 头部
+  x2.fillStyle="#1a5fb4";x2.font='600 26px "Microsoft YaHei",sans-serif';
+  x2.fillText("🧭 TripAgent 行程单",m,52);
+  x2.fillStyle="#52606d";x2.font='13px "Microsoft YaHei",sans-serif';
+  const head=[`目的地：${meta.name||""}｜${(it.days||[]).length} 天${r.date0?`｜${r.date0} 出发`:""}${r.hotel?`｜住宿：${r.hotel.name}`:""}`,
+    `需求：${r.query||""}`].map(t=>wrap(t,W-2*m)).flat();
+  head.forEach((t,i)=>x2.fillText(t,m,84+i*22));
+  let y=110+head.length*22;
+  // 日卡
+  (it.days||[]).forEach(d=>{
+    const col=colors[(d.day-1)%colors.length];
+    x2.fillStyle=col;x2.font='600 17px "Microsoft YaHei",sans-serif';
+    const ht=`Day ${d.day}${d.weekday?"｜"+d.weekday:""}｜${d.theme||""}`;
+    const km=`交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}`;
+    x2.fillText(ht,m,y+24);
+    x2.font='12px "Microsoft YaHei",sans-serif';x2.fillStyle="#ffffffcc";
+    const kw=x2.measureText(km).width;
+    x2.fillText(km,W-m-kw,y+24);
+    y+=44+8;
+    (d.timeline||[]).forEach(s=>{
+      x2.fillStyle="#52606d";x2.font='12.5px "Microsoft YaHei",sans-serif';
+      x2.fillText(`${s.start}–${s.end}`,m,y+16);
+      x2.fillStyle="#1f2933";x2.font='13.5px "Microsoft YaHei",sans-serif';
+      const nm=s.name+(s.type==="poi"&&s.arrive?`（到 ${s.arrive}）`:"")+(s.type==="meal"?" 🍽":s.type==="hotel"?" 🏨":"");
+      wrap(nm,W-2*m-120).forEach((t,i)=>x2.fillText(t,m+110,y+16+i*18));
+      y+=lh+10+Math.max(0,(wrap(nm,W-2*m-120).length-1))*18;
+      x2.strokeStyle="#e4e7eb";x2.lineWidth=0.5;
+      x2.beginPath();x2.moveTo(m+104,y-2);x2.lineTo(W-m,y-2);x2.stroke();
+    });
+    (d.violations||[]).forEach(v=>{
+      x2.fillStyle="#c0392b";x2.font='12px "Microsoft YaHei",sans-serif';
+      wrap(`⚠ ${v.poi}：${v.reason}`,W-2*m).forEach(t=>{x2.fillText(t,m,y+14);y+=20;});
+    });
+    y+=18;
+  });
+  x2.fillStyle="#888780";x2.font='11.5px "Microsoft YaHei",sans-serif';
+  x2.fillText("由 TripAgent 生成 · 检索 → LLM 库内选择 → 优化求解（时间为估算，出发前请确认开放情况）",m,H-24);
+  c.toBlob(b=>{_download(`TripAgent行程-${meta.name||""}.png`,b);},"image/png");
+  $("status").innerHTML='<span class="badge b-green">🖼 长图已保存到下载目录</span>';
 }
 
 // P2-1 反馈闭环：不喜欢某点 → 同类目邻近换点并重排当天
