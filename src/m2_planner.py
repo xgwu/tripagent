@@ -60,6 +60,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                     soft_w: float) -> dict:
     """阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）。M2/M7/跨天重平衡共用。"""
     final_day_map, solver_dropped, solved_days = {}, [], {}
+    mains_dropped = []  # 提案主选被求解器剔除（世界知识被时间预算否决——闭环信号）
     used_all = {i for ids in day_map.values() for i in ids}
     used_backup = set()
     n_mains = n_mains_kept = 0
@@ -101,15 +102,21 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
         if ok and ordered:
             final_day_map[d] = ordered
             solved_days[d] = True
+            kept = set(ordered)
             n_mains += len(day_map[d])
-            n_mains_kept += sum(1 for i in day_map[d] if i in set(ordered))
-            solver_dropped.extend({"id": x, "name": all_pois[x]["name"],
-                                   "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"}
-                                  for x in dropped)
+            n_mains_kept += sum(1 for i in day_map[d] if i in kept)
+            for x in dropped:
+                if x in day_map[d]:  # 主选被剔（备选池被剔是正常行为，不闭环）
+                    mains_dropped.append({"id": x, "name": all_pois[x]["name"],
+                                          "day": d,
+                                          "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"})
+                solver_dropped.append({"id": x, "name": all_pois[x]["name"],
+                                       "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"})
         else:  # 求解失败 → M1 贪婪链路兜底
             final_day_map[d] = day_map[d]
             solved_days[d] = False
     return {"final_day_map": final_day_map, "solver_dropped": solver_dropped,
+            "mains_dropped": mains_dropped,
             "solved_days": solved_days, "n_mains": n_mains,
             "n_mains_kept": n_mains_kept, "n_llm_alts": n_llm_alts}
 
@@ -199,6 +206,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                           date0, hotel, time_limit_s, main_bonus, soft_w)
     final_day_map = res["final_day_map"]
     solver_dropped, solved_days = res["solver_dropped"], res["solved_days"]
+    mains_dropped = res["mains_dropped"]
     n_mains, n_mains_kept, n_llm_alts = res["n_mains"], res["n_mains_kept"], res["n_llm_alts"]
 
     # ---- 阶段2.5：跨天重平衡（确定性局部搜索，0 LLM 成本）----
@@ -214,7 +222,9 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                                    main_bonus, soft_w)
             if res2["n_mains_kept"] == res2["n_mains"]:
                 final_day_map = res2["final_day_map"]
-                solver_dropped, solved_days = res2["solver_dropped"], res2["solved_days"]
+                solver_dropped = res2["solver_dropped"]
+                mains_dropped = res2["mains_dropped"]
+                solved_days = res2["solved_days"]
                 n_mains, n_mains_kept = res2["n_mains"], res2["n_mains_kept"]
             else:
                 n_day_moves = 0  # 重求解掉点 → 放弃本次重平衡，沿用原解
@@ -239,7 +249,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     if use_llm:
         regen, ok = _regen_reasons(city, query, itin, all_pois)
         if ok:
-            # 逐键合并：重生成只覆盖 reason，保留原 theme
+            # 逐键合并：theme+reason 都以最终时间轴重生成结果为准
             for k, v in regen.items():
                 themes[k] = {**themes.get(k, {}), **v}
             reasons_regen = True
@@ -257,19 +267,21 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "n_day_moves": n_day_moves,
             "toptw_solved_days": sum(1 for v in solved_days.values() if v),
             "toptw_dropped": solver_dropped,
+            "mains_dropped": mains_dropped,
             "violations_after_solver": n_viol_after_solver,
             "reasons_regen": reasons_regen,
             "latency_s": round(time.time() - t0, 1),
             "itinerary": itin}
 
 
-REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请为每一天重写 2~3 句「选择理由」，
-必须与时间轴完全一致（只能提到时间轴里实际存在的 POI），体现本地人的体验节奏。
+REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请为每一天重写「主题」和 2~3 句「选择理由」，
+必须与时间轴完全一致（主题和理由都只能提到时间轴里实际存在的 POI），体现本地人的体验节奏。
+注意：不要把时间轴里不存在的地点写进主题（例如时间轴没有宋城就不能叫「宋城怀古」）。
 用户需求：{query}
 
 {timeline}
 
-严格输出 JSON：{{"days": [{{"day": 1, "reason": "..."}}]}}"""
+严格输出 JSON：{{"days": [{{"day": 1, "theme": "6~12字主题", "reason": "..."}}]}}"""
 
 
 def _regen_reasons(city, query, itin, all_pois):
@@ -289,7 +301,12 @@ def _regen_reasons(city, query, itin, all_pois):
         out = {}
         for d in parsed.get("days", []):
             if d.get("reason"):
-                out[d.get("day")] = {"reason": d["reason"]}
+                # theme+reason 都基于最终时间轴重生成（修复主题残留被剔主选点的问题）
+                entry = {"reason": d["reason"]}
+                t = d.get("theme")
+                if isinstance(t, str) and t.strip():
+                    entry["theme"] = t.strip()[:20]
+                out[d.get("day")] = entry
         return out, bool(out)
     except Exception:  # noqa
         return {}, False

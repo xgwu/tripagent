@@ -403,8 +403,13 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     r = _compose_m7(city, query, days, day_map, themes, date0, hotel,
                     anchor_poi, grounding, alt_map, time_limit_s, main_bonus, soft_w)
     # 闭环第二触发点：约束剔除过多 → 带剔除原因反馈修正 → 重落地重求解（一轮）
+    # 注意口径：每日 dropped 只有修复链剔除；主选被 TOPTW 剔除在 r["mains_dropped"]——
+    # 求解器剔掉 LLM 主选 = 世界知识被时间预算否决（如宋城/迪士尼），是最需要闭环的信号
     drops = [{"name": dr.get("name", ""), "reason": dr.get("reason", ""), "day": d.get("day")}
              for d in r["itinerary"]["days"] for dr in d.get("dropped", [])]
+    seen_d = {x["name"] for x in drops}
+    drops += [{"name": x.get("name", ""), "reason": x.get("reason", ""), "day": x.get("day")}
+              for x in r.get("mains_dropped", []) if x.get("name") not in seen_d]
     if rounds_used < MAX_REVISE_ROUNDS and len(drops) >= DROP_FEEDBACK_MIN:
         revised = _revise_proposal(city, query, days, proposal,
                                    grounding["gaps"], drops, hint)
@@ -420,6 +425,10 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                                      time_limit_s, main_bonus, soft_w)
                     d2 = [{"name": dr.get("name", "")}
                           for d in r2["itinerary"]["days"] for dr in d.get("dropped", [])]
+                    seen_d2 = {x["name"] for x in d2}
+                    d2 += [{"name": x.get("name", "")}
+                           for x in r2.get("mains_dropped", [])
+                           if x.get("name") not in seen_d2]
                     if len(d2) < len(drops):  # 修正确实减少剔除才采纳，防震荡
                         r = r2
                         proposal, grounding, alt_map = revised, g2, alt_map2
