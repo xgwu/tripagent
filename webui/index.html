@@ -186,7 +186,7 @@ function dayCard(d,meta){
     const p=isPoi&&meta&&meta.pois[s.id];
     const img=isPoi?poiThumb(p):"";
     const swap=isPoi?`<button class="swapbtn" title="不喜欢？换成附近的同类地点" onclick="swapPoi(${d.day},'${s.id}')">🔁 换一个</button>`:"";
-    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${ICON[s.type]||"📍"}</span><span style="flex:1">${s.name}${isPoi&&s.arrive?` <span class="note">（到 ${s.arrive}）</span>`:""}</span>${img}${swap}</div>`;
+    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${s.type==="poi"?"":(ICON[s.type]||"")}</span><span style="flex:1">${s.name}${isPoi&&s.arrive?` <span class="note">（到 ${s.arrive}）</span>`:""}</span>${img}${swap}</div>`;
   }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
@@ -344,7 +344,7 @@ function buildDoc(meta,r){
     const rows=(d.timeline||[]).map(s=>{
       const p=s.type==="poi"&&meta&&meta.pois[s.id];
       const img=s.type==="poi"?poiThumb(p):"";
-      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${ICON[s.type]||"📍"}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
+      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":(ICON[s.type]||"")}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
     }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
     <table>${rows}</table></div>`;
