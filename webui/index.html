@@ -82,7 +82,7 @@ const SAMPLES=["{c}2天经典深度游，喜欢历史文化、寺庙和博物馆
 
 async function boot(){
   const r=await (await fetch("/api/cities")).json();
-  CITY.cities=r.cities; CITY.llm=r.llm;
+  CITY.cities=r.cities; CITY.llm=r.llm; CITY.amap_key=r.amap_key||"";
   $("city").innerHTML=r.cities.map(c=>`<option value="${c.name}">${c.name}（${c.n_pois} 个 POI，${c.n_closed} 个有闭馆日）</option>`).join("");
   chip();
   $("city").addEventListener("change",chip);
@@ -180,6 +180,65 @@ function drawMap(meta,r){
   s+="</svg>";
   return s+`<p class="hint" style="margin-top:6px">🗺 同色 = 同一天动线（虚线为顺序，圆点为 POI，⭐ 为酒店）</p>`;
 }
+
+// ===== 高德地图渲染（JS API 1.4.15；失败自动回退 SVG 手绘图） =====
+let AMAP_OBJ=null;let MAP_TOKEN=0; // 快速连续规划时防止异步渲染竞态
+function loadAMap(key){
+  if(window.AMap)return Promise.resolve(true);
+  if(!key)return Promise.resolve(false);
+  return new Promise(res=>{
+    const s=document.createElement("script");
+    s.src=`https://webapi.amap.com/maps?v=1.4.15&key=${encodeURIComponent(key)}`;
+    s.onload=()=>res(!!window.AMap);
+    s.onerror=()=>res(false);
+    document.head.appendChild(s);
+    setTimeout(()=>res(!!window.AMap),10000); // 网络超时兜底
+  });
+}
+async function renderAMap(meta,r){
+  const token=++MAP_TOKEN;
+  if(!await loadAMap(CITY.amap_key))return false;
+  const el=$("map");if(!el||token!==MAP_TOKEN)return true;
+  el.innerHTML='<div id="amapbox" style="width:100%;height:480px;border:1px solid var(--line);border-radius:8px;overflow:hidden"></div>';
+  let map;
+  try{
+    if(AMAP_OBJ&&AMAP_OBJ.destroy)AMAP_OBJ.destroy(); // 释放上一张地图
+    map=new AMap.Map("amapbox",{zoom:12,mapStyle:"amap://styles/whitesmoke",resizeEnable:true});
+    AMAP_OBJ=map;
+    const overlays=[];
+    for(const d of (r.itinerary.days||[])){
+      const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+      const seq=(d.timeline||[]).filter(x=>x.type==="poi"&&meta.pois[x.id]);
+      seq.forEach((x,i)=>{
+        const p=meta.pois[x.id];
+        const m=new AMap.Marker({position:[p.lng,p.lat],anchor:"bottom-center",
+          content:`<div style="position:relative;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))"><div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff"></div><span style="position:absolute;left:0;top:0;width:24px;height:20px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700">${i+1}</span></div>`});
+        m.on("mouseover",()=>m.setLabel({content:`<div style="padding:2px 8px;font-size:12px">📍 Day ${d.day}·${i+1}｜${x.name}</div>`,direction:"top",offset:new AMap.Pixel(0,-6)}));
+        m.on("mouseout",()=>m.setLabel(null));
+        overlays.push(m);
+      });
+      const path=seq.map(x=>{const p=meta.pois[x.id];return [p.lng,p.lat];});
+      if(path.length>1)overlays.push(new AMap.Polyline({path,strokeColor:color,strokeWeight:4,strokeOpacity:.75,strokeStyle:"dashed",strokeDasharray:[8,5],bubble:true}));
+    }
+    if(r.hotel){
+      overlays.push(new AMap.Marker({position:[r.hotel.lng,r.hotel.lat],anchor:"bottom-center",
+        content:`<div style="font-size:22px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))">🏨</div>`}));
+    }
+    map.add(overlays);
+    map.setFitView(null,false,[40,40,40,40]);
+    // 瓦片就绪检测：key 类型不对/无效时 complete 永不触发 → 8s 后回退 SVG
+    const ok=await Promise.race([
+      new Promise(res=>map.on("complete",()=>res(true))),
+      new Promise(res=>setTimeout(()=>res(false),8000))
+    ]);
+    if(!ok){map.destroy();AMAP_OBJ=null;return false;}
+    return true;
+  }catch(e){
+    try{map&&map.destroy()}catch(_){}
+    AMAP_OBJ=null;return false;
+  }
+}
+function Day_Icon(d){return "📍";}
 function buildDoc(meta,r){
   const it=r.itinerary;
   const date=r.date0?`｜${r.date0} 出发`:"";

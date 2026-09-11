@@ -114,7 +114,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._html(os.path.join(WEBUI_DIR, "index.html"))
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
-                               "llm": llm_client.llm_available()})
+                               "llm": llm_client.llm_available(),
+                               "amap_key": CFG.get("amap_key", "")})
         if u.path == "/api/stats":
             with _stats_lock:
                 st = dict(_stats)
@@ -190,7 +191,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global CFG
     cfg = load_config()
+    CFG = cfg
     # 云端部署：PORT 环境变量注入 + 绑 0.0.0.0；本地：argv[1] 或默认 8765
     port = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8765))
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
