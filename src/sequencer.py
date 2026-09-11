@@ -26,7 +26,7 @@ def is_full_day(p: dict) -> bool:
 THEME_PROFILES = [
     ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 15.0),
     ("hiking", re.compile(r"徒步|暴走|city\s*walk|遛弯", re.IGNORECASE), 8.0),
-    ("family", re.compile(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃", re.IGNORECASE), 15.0),
+    ("family", re.compile(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃", re.IGNORECASE), 20.0),
 ]
 
 
