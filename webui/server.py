@@ -138,7 +138,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": f"未知城市 {cname}"}, code=400)
                 city = poi_db.load_city(cname)
                 query = q.get("query") or f"{cname}2天经典深度游"
-                days = max(1, min(4, int(q.get("days", "2"))))
+                days = max(1, min(5, int(q.get("days", "2"))))
                 date0 = q.get("date") or None
                 hotel_text = q.get("hotel") or None
                 llm_key = self.headers.get("X-LLM-Key", "").strip()  # 访客自带 Key（不落盘）
