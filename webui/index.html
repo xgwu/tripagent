@@ -223,6 +223,13 @@ function drawMap(meta,r){
 
 // ===== 高德地图渲染（JS API 1.4.15；失败自动回退 SVG 手绘图） =====
 let AMAP_OBJ=null;let MAP_TOKEN=0; // 快速连续规划时防止异步渲染竞态
+let DAY_LINES={},DAY_VIS={}; // 按天路线折线引用与显隐状态
+function toggleDayLine(day){
+  DAY_VIS[day]=!DAY_VIS[day];
+  (DAY_LINES[day]||[]).forEach(l=>DAY_VIS[day]?l.show():l.hide());
+  const b=document.querySelector(`#dayfilter button[data-day="${day}"]`);
+  if(b)b.style.opacity=DAY_VIS[day]?1:.35;
+}
 function loadAMap(key){
   if(window.AMap)return Promise.resolve(true);
   if(!key)return Promise.resolve(false);
@@ -239,7 +246,7 @@ async function renderAMap(meta,r){
   const token=++MAP_TOKEN;
   if(!await loadAMap(CITY.amap_key))return false;
   const el=$("map");if(!el||token!==MAP_TOKEN)return true;
-  el.innerHTML='<div id="amapbox" style="width:100%;height:480px;border:1px solid var(--line);border-radius:8px;overflow:hidden"></div>';
+  el.innerHTML='<div id="dayfilter" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center"></div><div id="amapbox" style="width:100%;height:480px;border:1px solid var(--line);border-radius:8px;overflow:hidden"></div>';
   let map;
   try{
     if(AMAP_OBJ&&AMAP_OBJ.destroy)AMAP_OBJ.destroy(); // 释放上一张地图
@@ -271,6 +278,14 @@ async function renderAMap(meta,r){
       new Promise(res=>setTimeout(()=>res(false),12000))
     ]);
     if(!ok){map.destroy();AMAP_OBJ=null;return false;}
+    // 按天显隐路线：生成 Day 色块开关（折线引用由 drawRealRoutes 异步挂到 DAY_LINES）
+    DAY_LINES={};DAY_VIS={};
+    const df=document.getElementById("dayfilter");
+    if(df)df.innerHTML=(r.itinerary.days||[]).map(d=>{
+      const c=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+      DAY_VIS[d.day]=true;
+      return `<button data-day="${d.day}" onclick="toggleDayLine(${d.day})" style="cursor:pointer;border:1px solid ${c};background:${c};color:#fff;border-radius:14px;padding:2px 12px;font-size:12px">Day ${d.day} 路线</button>`;
+    }).join("")+'<span style="font-size:12px;color:#888">点击开关各天路线</span>';
     // P1-1：异步绘制实际路网（骑行/步行）；某段失败则该段无线（不画直线兜底）
     drawRealRoutes(map,meta,r,token);
     return true;
@@ -293,9 +308,9 @@ async function drawRealRoutes(map,meta,r,token){
     if(r.hotel)pts.push([r.hotel.lng,r.hotel.lat]);
     for(const x of (d.timeline||[]))if(x.type==="poi"&&meta.pois[x.id])pts.push([meta.pois[x.id].lng,meta.pois[x.id].lat]);
     if(r.hotel&&pts.length>1)pts.push([r.hotel.lng,r.hotel.lat]);
-    if(pts.length>1)legs.push({color,pts});
+    if(pts.length>1)legs.push({day:d.day,color,pts});
   }
-  await Promise.all(legs.map(async({color,pts})=>{
+  await Promise.all(legs.map(async({day,color,pts})=>{
     for(let i=0;i<pts.length-1;i++){
       let poly=null;
       try{
@@ -304,7 +319,12 @@ async function drawRealRoutes(map,meta,r,token){
         if(dd.ok&&dd.points&&dd.points.length>1)poly=dd.points;
       }catch(e){/* 回退直线 */}
       if(token!==MAP_TOKEN)return; // 快速连续规划时放弃过期渲染
-      if(poly)map.add(new AMap.Polyline({path:poly,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,bubble:true}));
+      if(poly){
+        const line=new AMap.Polyline({path:poly,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,bubble:true});
+        map.add(line);
+        (DAY_LINES[day]=DAY_LINES[day]||[]).push(line);
+        if(DAY_VIS[day]===false)line.hide(); // 渲染期间用户已关闭该天
+      }
     }
   }));
   if(token===MAP_TOKEN)map.setFitView(null,false,[40,40,40,40]);
