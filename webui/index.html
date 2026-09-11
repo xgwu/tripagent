@@ -67,6 +67,7 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
   .note{font-size:12px}
 }
 .note{color:var(--mut);font-size:12.5px}
+.dayreason{padding:0 12px 10px;color:var(--mut);font-size:12.5px;line-height:1.65}
 .hint{font-size:12px;color:var(--mut);margin-top:4px}
 .swapbtn{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11px;cursor:pointer;margin-left:auto;flex-shrink:0}
 .swapbtn:hover{color:var(--blue);border-color:var(--blue)}
@@ -217,7 +218,7 @@ function dayCard(d,meta){
   }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
-  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${viol}${drop}</div>`;
+  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${d.reason?`<div class="dayreason">${d.reason}</div>`:""}${viol}${drop}</div>`;
 }
 
 function drawMap(meta,r){
@@ -374,7 +375,7 @@ function buildDoc(meta,r){
       return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":(ICON[s.type]||"")}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
     }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
-    <table>${rows}</table></div>`;
+    ${d.reason?`<p style="margin:10px 2px;color:#6b7280;font-size:13px;line-height:1.7">${d.reason}</p>`:""}<table>${rows}</table></div>`;
   }).join("");
   const avoided=(it.dropped_pois||[]).filter(x=>(x.reason||"").includes("当日闭馆"));
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>TripAgent 行程单｜${r.query.slice(0,20)}</title>
@@ -474,6 +475,7 @@ function exportPNG(){
   let H=150;
   (it.days||[]).forEach(d=>{
     H+=44+8+(d.timeline||[]).length*(lh+10)+18;
+    if(d.reason){x2.font='12px "Microsoft YaHei",sans-serif';H+=wrap(d.reason,W-2*m).length*19+6;}
     (d.violations||[]).forEach(()=>H+=20);
   });
   H+=56;
@@ -508,6 +510,11 @@ function exportPNG(){
       x2.strokeStyle="#e4e7eb";x2.lineWidth=0.5;
       x2.beginPath();x2.moveTo(m+104,y-2);x2.lineTo(W-m,y-2);x2.stroke();
     });
+    if(d.reason){
+      x2.fillStyle="#6b7280";x2.font='12px "Microsoft YaHei",sans-serif';
+      wrap(d.reason,W-2*m).forEach(t=>{x2.fillText(t,m,y+14);y+=19;});
+      y+=6;
+    }
     (d.violations||[]).forEach(v=>{
       x2.fillStyle="#c0392b";x2.font='12px "Microsoft YaHei",sans-serif';
       wrap(`⚠ ${v.poi}：${v.reason}`,W-2*m).forEach(t=>{x2.fillText(t,m,y+14);y+=20;});
