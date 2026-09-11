@@ -26,7 +26,7 @@ def is_full_day(p: dict) -> bool:
 THEME_PROFILES = [
     ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 15.0),
     ("hiking", re.compile(r"徒步|暴走|city\s*walk|遛弯", re.IGNORECASE), 8.0),
-    ("family", re.compile(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃", re.IGNORECASE), 12.0),
+    ("family", re.compile(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃", re.IGNORECASE), 15.0),
 ]
 
 
@@ -300,7 +300,7 @@ def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
             break
 
         # 全天大点豁免：迪士尼/海昌类（时长≥8h）须独占一天，不参与「最远腿」剔除——
-        # 否则亲子游必剔迪士尼（单程 ~19km，往返必超 12km 预算），与常识相悖；
+        # 否则亲子游必剔迪士尼（单程 ~19km，往返必超预算），与常识相悖；
         # 当天只剩余全天大点时接受里程超额（远郊大点当天交通预算必然突破，属合理例外）
         droppable = [p for p in pois if not is_full_day(p)]
         if not droppable:
