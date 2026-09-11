@@ -202,10 +202,13 @@ CITY_ALIAS = {"苏杭": ["苏州", "杭州"], "杭苏": ["杭州", "苏州"]}
 
 
 def detect_cities(query: str) -> list:
-    """P4 纯自然语言：识别需求里提到的城市（含「苏杭」类别名），单城也返回。"""
+    """P4 纯自然语言：识别需求里提到的城市（含「苏杭」类别名），单城也返回。
+
+    多城时按用户提及顺序排列（如「苏州和杭州」→ ['苏州','杭州']）。
+    """
     found = [c for c in CITIES if c in (query or "")]
     if found:
-        return found
+        return sorted(found, key=lambda c: (query or "").index(c))
     for alias, pair in CITY_ALIAS.items():
         if alias in (query or "") and not any(c in query for c in pair):
             return pair
@@ -289,6 +292,100 @@ def extract_hotel(query: str) -> str | None:
             if t and t not in CITIES and t not in CITY_ALIAS:
                 return t
     return None
+
+
+# ---- P5 NL 提取健壮化：正则未命中时 LLM 结构化抽取兜底 ----
+NL_CACHE_PATH = os.path.join(ROOT, "data", "nl_cache.json")
+NL_CACHE_TTL_S = 7 * 86400
+_nl_cache: dict | None = None
+
+
+def _nl_cache_get(qkey: str):
+    global _nl_cache
+    if _nl_cache is None:
+        try:
+            with open(NL_CACHE_PATH, encoding="utf-8") as f:
+                _nl_cache = json.load(f)
+        except Exception:  # noqa
+            _nl_cache = {}
+    ent = _nl_cache.get(qkey)
+    if not ent or time.time() - ent.get("ts", 0) > NL_CACHE_TTL_S:
+        return None
+    return ent.get("v", {})  # 空 dict = 曾抽不到，避免重复打 LLM
+
+
+def _nl_cache_put(qkey: str, val: dict) -> None:
+    global _nl_cache
+    if _nl_cache is None:
+        _nl_cache = {}
+    _nl_cache[qkey] = {"ts": time.time(), "v": val}
+    tmp = NL_CACHE_PATH + ".tmp"
+    try:
+        json.dump(_nl_cache, open(tmp, "w", encoding="utf-8"), ensure_ascii=False)
+        os.replace(tmp, NL_CACHE_PATH)
+    except OSError:
+        pass
+
+
+def llm_extract(query: str) -> dict | None:
+    """LLM 结构化抽取兜底：正则未命中的 city/days/date0/hotel 从 DeepSeek 拿。
+
+    - 仅在 LLM 可用时调用（llm=0 离线路径永不触发，CI/eval 不受影响）
+    - 结果按 sha1(query) 缓存 7 天（含「抽不到」的空结果，防重复消耗 token）
+    - 任何异常静默返回 None，规划流程回退正则/默认值
+    """
+    import hashlib
+    from src import llm_client
+    if not (query or "").strip() or not llm_client.llm_available():
+        return None
+    qkey = hashlib.sha1(query.encode("utf-8")).hexdigest()
+    hit = _nl_cache_get(qkey)
+    if hit is not None:
+        return hit or None
+    today = _date.today().isoformat()
+    sys_p = (
+        "你是旅行需求的参数抽取器。从用户需求中抽取以下字段，只输出 JSON："
+        '{"city": "目的地城市名或null", "days": 行程天数整数或null, '
+        '"date0": "出发日期YYYY-MM-DD或null", "hotel": "住宿酒店名或区域名或null", '
+        '"multi_cities": ["多城联游时的城市列表或null"]}。'
+        "规则：相对日期（明天/下周六/月底/国庆等）以今天为基准换算；"
+        "「住的地方离西湖近点」这类模糊住宿描述抽出区域名（如 西湖）；"
+        "「玩一周」=7天但上限按5算；没有明确信息就填 null，不要猜。"
+        f"今天是 {today}。"
+    )
+    try:
+        txt = llm_client.chat([{"role": "system", "content": sys_p},
+                               {"role": "user", "content": query}],
+                              temperature=0.0, timeout=15, retries=1)
+        obj = json.loads(txt) if isinstance(txt, str) else (txt or {})
+    except Exception:  # noqa: 网络限流/解析失败 → 静默回退
+        return None
+    out: dict = {}
+    if isinstance(obj, dict):
+        c = obj.get("city")
+        if isinstance(c, str) and c.strip():
+            out["city_raw"] = c.strip()[:12]
+            if c.strip() in CITIES:
+                out["city"] = c.strip()
+        mc = obj.get("multi_cities")
+        if isinstance(mc, list):
+            mc = [x for x in mc if isinstance(x, str) and x.strip() in CITIES]
+            if len(mc) >= 2:
+                out["multi_cities"] = mc
+        d = obj.get("days")
+        if isinstance(d, int) and 1 <= d <= 5:
+            out["days"] = d
+        dt = obj.get("date0")
+        if isinstance(dt, str):
+            try:
+                out["date0"] = _date.fromisoformat(dt).isoformat()
+            except ValueError:
+                pass
+        h = obj.get("hotel")
+        if isinstance(h, str) and h.strip():
+            out["hotel"] = h.strip()[:24]
+    _nl_cache_put(qkey, out)
+    return out or None
 
 
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
@@ -547,12 +644,23 @@ class Handler(BaseHTTPRequestHandler):
             stats_bump("plan_total")
             try:
                 query = q.get("query") or ""
+                # ---- P5 NL 提取健壮化：正则未命中时 LLM 结构化抽取兜底（llm=0 离线路径不触发） ----
+                nl = llm_extract(query) if (q.get("llm", "1") == "1" and query) else None
                 # ---- P4 纯自然语言：城市可从需求文字识别，未提及用默认城市 ----
                 multi = detect_multi_city(query)
+                if not multi and nl and nl.get("multi_cities"):
+                    multi = nl["multi_cities"]
                 cname = (q.get("city") or "").strip()
+                found = detect_cities(query) if not cname else []
                 if not cname:
-                    found = detect_cities(query)
-                    cname = found[0] if found else DEFAULT_CITY
+                    cname = found[0] if found else (nl or {}).get("city") or DEFAULT_CITY
+                    if not found and cname == DEFAULT_CITY and (nl or {}).get("city_raw") \
+                            and nl["city_raw"] not in CITIES:
+                        return self._json({"ok": False,
+                                           "error": f"暂不支持目的地「{nl['city_raw']}」"
+                                                    f"（当前支持：{'、'.join(CITIES)}），"
+                                                    "可换支持城市或直接说「上海/杭州…3天」"},
+                                          code=400)
                 if cname not in CITIES:
                     return self._json({"ok": False,
                                        "error": f"未能识别目的地城市（当前支持：{'、'.join(CITIES)}）。试试在需求里写明，如「杭州3天…」"},
@@ -561,7 +669,7 @@ class Handler(BaseHTTPRequestHandler):
                     query = f"{cname}2天经典深度游"
                 # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
                 if len(multi) >= 2:
-                    d = extract_days(query) or 2
+                    d = extract_days(query) or (nl or {}).get("days") or 2
                     days = max(1, min(5, d))
                     use_llm_m = q.get("llm", "1") == "1" and llm_client.llm_available()
                     try:
@@ -571,7 +679,7 @@ class Handler(BaseHTTPRequestHandler):
                         planner_m = m1_planner
                     stats_bump("plan_total")
                     try:
-                        m_date0 = q.get("date") or extract_date(query)
+                        m_date0 = q.get("date") or extract_date(query) or (nl or {}).get("date0")
                         r = plan_multi(multi, query, days, m_date0,
                                        use_llm=use_llm_m, planner=planner_m)
                         merged_meta = {"name": "+".join(multi), "n_pois": 0, "n_closed": 0,
@@ -600,11 +708,13 @@ class Handler(BaseHTTPRequestHandler):
                     d = extract_days(query)
                     if d:
                         days, days_src = d, "query"
+                    elif (nl or {}).get("days"):
+                        days, days_src = nl["days"], "llm"
                     else:
                         days, days_src = 2, "default"
-                # P4：日期/住宿优先显式参数，缺省时从需求文字提取
-                date0 = q.get("date") or extract_date(query)
-                hotel_text = q.get("hotel") or extract_hotel(query)
+                # P4：日期/住宿优先显式参数，缺省时从需求文字提取（正则 miss 再用 LLM 兜底）
+                date0 = q.get("date") or extract_date(query) or (nl or {}).get("date0")
+                hotel_text = q.get("hotel") or extract_hotel(query) or (nl or {}).get("hotel")
                 llm_key = self.headers.get("X-LLM-Key", "").strip()  # 访客自带 Key（不落盘）
                 use_llm = q.get("llm", "1") == "1" and bool(llm_key or llm_client.llm_available())
                 mode = q.get("mode", "m7")  # 默认走 M7 经验提案；显式 mode 保留兼容（eval 脚本）
