@@ -4,11 +4,20 @@
 输入：LLM（或基线）给出的每日 POI 集合
 输出：按贪婪最近邻 + 建议时段重排后的时间轴，附约束校验报告
 """
+import re
+
 from . import poi_db
 
 DAY_END_SLOT = "21:30"
 MAX_MEAL_WAIT_H = 1.5     # 美食 POI 早到餐窗的最多等待时长，超过则判违规交修复链剔除
 FOOD_PREF_WIN = {"lunch": "lunch", "dinner": "dinner", "evening": "dinner"}  # best_time → 首选餐窗
+CYCLE_DAY_KM_CAP = 15.0   # 骑行主题每日交通里程预算（km）：游玩骑行≠拉练，超预算剔除远点
+_CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
+
+
+def cycle_km_cap(query: str | None) -> float | None:
+    """查询含骑行意图 → 返回每日里程预算（km）；否则 None。"""
+    return CYCLE_DAY_KM_CAP if query and _CYCLE_RE.search(query) else None
 
 
 def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = None,
@@ -240,20 +249,48 @@ def _repair_by_drop(day_pois: list, city: dict, day_no: int, max_drop: int = 3,
     return tl
 
 
+def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
+                   hotel: dict | None, cap: float):
+    """骑行里程预算修复：当日交通里程超预算 → 迭代剔除「最远腿」POI（贡献最长绕行的点）再重排。"""
+    pois = list(day_pois)
+    dropped = []
+    while len(pois) > 2:
+        tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
+        if tl["travel_km"] <= cap:
+            break
+
+        def _far_leg(p, _pois=pois):
+            others = [q for q in _pois if q is not p]
+            return max((poi_db.haversine_km(p["lat"], p["lng"], q["lat"], q["lng"])
+                        for q in others), default=0.0)
+        bad = max(pois, key=_far_leg)
+        pois.remove(bad)
+        dropped.append({"id": bad["id"], "name": bad["name"],
+                        "reason": f"骑行里程超预算（>{cap:.0f} km/天），剔除远点收敛路线"})
+    tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
+    tl["dropped"] = dropped
+    return tl
+
+
 def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool = True,
-                    date0: str | None = None, hotel: dict | None = None) -> dict:
+                    date0: str | None = None, hotel: dict | None = None,
+                    query: str | None = None) -> dict:
     """day_map: {1: [poi_id,...], ...}  —— 尊重 LLM 给定顺序(order_given)，逐日排时序。
 
     date0: 行程起始日期（YYYY-MM-DD）——传入后按天推算星期，闭馆日作为硬约束校验/剔除。
     """
     result_days, all_violations, total_km = [], [], 0.0
     all_dropped = []
+    cap = cycle_km_cap(query)
     for d in sorted(day_map):
         ids = day_map[d]
         pois = [all_pois[i] for i in ids if i in all_pois]
         wd = poi_db.trip_weekday(date0, d) if date0 else None
         seq = pois if order_given else order_day(pois, hotel=hotel, city=city)
         tl = _build_timeline(seq, city, d, wd, hotel)
+        # 骑行主题：先做每日里程预算收敛，再做硬约束修复（两者正交）
+        if cap and tl["travel_km"] > cap and len(pois) > 2:
+            tl = _cap_km_repair(pois, city, d, wd, hotel, cap)
         if tl["violations"]:
             # 一级修复：放弃原顺序，贪婪重排
             repaired = order_day(pois, hotel=hotel, city=city)

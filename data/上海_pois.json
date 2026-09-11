@@ -1428,6 +1428,149 @@
    "family_ok": true,
    "note": "淮海中路300号，'购物中心+美术馆'混合业态，常设艺术展",
    "closed_days": []
+  },
+  {
+   "id": "SH063",
+   "name": "四行仓库抗战纪念馆",
+   "category": "history",
+   "tags": [
+    "历史",
+    "纪念馆",
+    "苏州河",
+    "免费",
+    "徒步"
+   ],
+   "lat": 31.2452,
+   "lng": 121.4607,
+   "duration_h": 1.0,
+   "open": "09:00",
+   "close": "16:30",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "光复路181号，苏州河北岸，'八佰'原型地，西墙弹孔遗迹，免费参观",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "SH064",
+   "name": "苏州河步道",
+   "category": "nature",
+   "tags": [
+    "骑行",
+    "徒步",
+    "步道",
+    "滨江",
+    "历史桥梁"
+   ],
+   "lat": 31.2418,
+   "lng": 121.468,
+   "duration_h": 1.0,
+   "open": "06:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "南苏州路沿河步道，串联外白渡桥/邮政博物馆等多座历史桥梁，骑行步行皆宜",
+   "closed_days": []
+  },
+  {
+   "id": "SH065",
+   "name": "前滩滨江骑行道",
+   "category": "nature",
+   "tags": [
+    "骑行",
+    "滨江",
+    "步道",
+    "草坪",
+    "亲子"
+   ],
+   "lat": 31.1789,
+   "lng": 121.4871,
+   "duration_h": 1.5,
+   "open": "06:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "pudong",
+   "family_ok": true,
+   "note": "前滩滨江骑行道，与前滩太古里相邻，浦东骑行带上新选择",
+   "closed_days": []
+  },
+  {
+   "id": "SH066",
+   "name": "永康路咖啡街",
+   "category": "relax",
+   "tags": [
+    "咖啡",
+    "街拍",
+    "城市漫步",
+    "小马路"
+   ],
+   "lat": 31.2115,
+   "lng": 121.452,
+   "duration_h": 1.0,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 50,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "徐汇永康路，百米小街聚集精品咖啡与咖啡馆，街头生活气息浓，可与安福路武康路串联",
+   "closed_days": []
+  },
+  {
+   "id": "SH067",
+   "name": "船厂1862",
+   "category": "art",
+   "tags": [
+    "艺术",
+    "工业遗迹",
+    "咖啡",
+    "滨江"
+   ],
+   "lat": 31.2398,
+   "lng": 121.503,
+   "duration_h": 1.0,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "pudong",
+   "family_ok": true,
+   "note": "陆家嘴滨江旧船厂改造的艺术空间，工业遗迹+咖啡馆，骑行滨江大道顺路歇脚",
+   "closed_days": []
+  },
+  {
+   "id": "SH068",
+   "name": "八号桥创意园",
+   "category": "art",
+   "tags": [
+    "艺术",
+    "创意园",
+    "咖啡",
+    "城市漫步"
+   ],
+   "lat": 31.2113,
+   "lng": 121.4658,
+   "duration_h": 1.0,
+   "open": "09:00",
+   "close": "21:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "建国中路8-10号，旧厂房改造设计园区，安静适合小憩，近田子坊",
+   "closed_days": []
   }
  ]
 }

@@ -103,7 +103,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             solved_days[d] = False
 
     llm_raw_violations = m1_planner._count_violations_before_repair(final_day_map, city, all_pois, date0, hotel)
-    itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0, hotel=hotel)
+    itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0, hotel=hotel, query=query)
     # 求解成功的日子理论上 0 违规；记录实际（含餐块偏移后的）违规
     n_viol_after_solver = sum(len(d["violations"]) for d in itin["days"] if solved_days.get(d["day"]))
 
@@ -112,7 +112,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
         day_map2, subs = m1_planner._feedback_loop(city, cands, query, days,
                                                    final_day_map, solver_dropped, all_pois)
         if day_map2:
-            itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel)
+            itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel, query=query)
             if itin2["total_violations"] == 0:
                 itin2["substitutes"] = subs
                 itin = itin2

@@ -111,7 +111,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 
     # 库内选择模式下 invalid_ids 恒为 0 —— 这就是要验证的指标
     llm_raw_violations = _count_violations_before_repair(day_map, city, all_pois, date0, hotel)
-    itin = sequencer.build_itinerary(day_map, city, all_pois, date0=date0, hotel=hotel)
+    itin = sequencer.build_itinerary(day_map, city, all_pois, date0=date0, hotel=hotel, query=query)
 
     # Agent Loop 闭环：修复剔除的 POI → LLM 从候选池推荐替代 → 复检可行则补入
     substitutes = []
@@ -119,7 +119,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         day_map2, substitutes = _feedback_loop(city, cands, query, days, day_map,
                                                itin["dropped_pois"], all_pois)
         if day_map2:
-            itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel)
+            itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel, query=query)
             if itin2["total_violations"] == 0:
                 itin2["substitutes"] = substitutes
                 itin = itin2
