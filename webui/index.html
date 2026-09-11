@@ -257,8 +257,7 @@ async function renderAMap(meta,r){
         m.on("mouseout",()=>m.setLabel(null));
         overlays.push(m);
       });
-      const path=seq.map(x=>{const p=meta.pois[x.id];return [p.lng,p.lat];});
-      if(path.length>1)overlays.push(new AMap.Polyline({path,strokeColor:color,strokeWeight:4,strokeOpacity:.75,strokeStyle:"dashed",strokeDasharray:[8,5],bubble:true}));
+      // 只画实际交通路线（drawRealRoutes 异步叠加），不再画点位间直线连接
     }
     if(r.hotel){
       overlays.push(new AMap.Marker({position:[r.hotel.lng,r.hotel.lat],anchor:"bottom-center",
@@ -272,7 +271,7 @@ async function renderAMap(meta,r){
       new Promise(res=>setTimeout(()=>res(false),12000))
     ]);
     if(!ok){map.destroy();AMAP_OBJ=null;return false;}
-    // P1-1：异步绘制实际路网（骑行/步行），失败自动保留虚线直线兜底
+    // P1-1：异步绘制实际路网（骑行/步行）；某段失败则该段无线（不画直线兜底）
     drawRealRoutes(map,meta,r,token);
     return true;
   }catch(e){
