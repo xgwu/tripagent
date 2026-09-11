@@ -21,6 +21,7 @@
 - **住宿锚点三级匹配**（eaf0dd6/9efc2ee）：「住迪士尼附近」不再高德裸搜命中市区店铺——L0 库内地标匹配（rating≥4）优先；锚点硬保障（注入+TOPTW forced 必选）做成开关 `anchor_hard_guarantee`（e4bd445，**默认关**——世界知识主导，评测脚本内显式开启）。
 - **亲子里程预算调参**（c2d3472/db00b6d）：THEME_PROFILES family 12→20 km/天。
 - **健壮化**：extract_days「N日」天数识别修复（44f9db1）；正则未命中时 LLM 结构化抽取兜底（2d5203a）；武汉 POI 34→50（b1695f8）；密钥剥离至 secrets.json（gitignore），config.json 回归 git（7b207aa）。
+- **跨天重平衡（对照 Google 论文 stage-2 局部搜索）**：各日 TOPTW 独立求解后，确定性「移动 POI 到更近日簇」局部搜索——接受条件 0 违规 + 0 修复剔除 + 总里程改善>0.5km，每次移动扣 2km 相似度罚分（尊重 LLM 初稿）；全天大点与 forced 锚点不动，重求解掉点则整体回滚（`m2_planner._crossday_rebalance`，`n_day_moves` 透出，单元测试 `scripts/test_crossday_rebalance.py`）。注：检索型备选经 `_build_day_pool` 本就并入 M7 池（与 alternates 双源），无需额外改动。
 - **前端文案透出**（1287255）：每日 reason 文案（LLM 对齐最终时间轴重生成）渲染到网页 Day 卡、分享 HTML、PNG 长图三处（长图预计算高度纳入文案行数）。
 - **回归评测**（`scripts/eval_regression.py`）：12 固化用例（含上海亲子必含迪士尼两例），支持离线确定性（CI）与 `--llm` 全链路两种模式；当前离线 12/12、LLM 12/12。
 - **部署**：WebUI 常驻入口 `https://tripagent-planner2.app.workbuddy.host/`（Python 单端口 http 服务）。

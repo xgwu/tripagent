@@ -54,23 +54,11 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                    if (anchor and hotel_mod.hard_guarantee_enabled()) else None)
 
 
-def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
-            use_llm: bool = True, date0: str | None = None, hotel: dict | None = None,
-            time_limit_s: float = toptw.TIME_LIMIT_S,
-            main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
-            meta: dict | None = None, mode: str = "m2_toptw",
-            forced_ids: set | None = None, alt_map: dict | None = None) -> dict:
-    """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。
-
-    alt_map: {day: [poi_id]} LLM 备选（M7 提案 alternates）——并入当日求解池但
-    不进主选 rank（低利润权重），求解器可在时间充裕/主选不可行时换入。
-    """
-    meta = meta or {}
-    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
-    cands = retrieval.recall(city, query)
-    t0 = time.time()
-
-    # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
+def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands: list,
+                    alt_map: dict | None, forced_ids: set | None, date0: str | None,
+                    hotel: dict | None, time_limit_s: float, main_bonus: float,
+                    soft_w: float) -> dict:
+    """阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）。M2/M7/跨天重平衡共用。"""
     final_day_map, solver_dropped, solved_days = {}, [], {}
     used_all = {i for ids in day_map.values() for i in ids}
     used_backup = set()
@@ -121,6 +109,115 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
         else:  # 求解失败 → M1 贪婪链路兜底
             final_day_map[d] = day_map[d]
             solved_days[d] = False
+    return {"final_day_map": final_day_map, "solver_dropped": solver_dropped,
+            "solved_days": solved_days, "n_mains": n_mains,
+            "n_mains_kept": n_mains_kept, "n_llm_alts": n_llm_alts}
+
+
+# ---- 阶段2.5：跨天重平衡（Google《Optimizing LLM-based trip planning》stage-2 局部搜索的轻量版）----
+# 各日 TOPTW 独立求解后，个别 POI 可能落在地理上更邻另一天簇的位置；此处做确定性
+# 「移动 POI 到更近的一天」局部搜索：0 违规 + 0 修复剔除 + 总里程改善超过阈值才接受，
+# 并对每次移动扣相似度罚分（尊重 LLM 初稿，避免无意义搬运）。
+MOVE_PENALTY_KM = 2.0   # 每次跨天移动的相似度惩罚（折算 km）
+MIN_IMPROVE_KM = 0.5    # 接受移动所需的最小总里程改善
+MAX_REBALANCE_SWEEPS = 2
+
+
+def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | None,
+                        hotel: dict | None, query: str, forced_ids: set | None = None,
+                        max_sweeps: int = MAX_REBALANCE_SWEEPS) -> tuple[dict, int]:
+    """跨天局部搜索：把 POI 从当前天移动到使其总里程更小的天。
+
+    约束：不动全天大点（is_full_day，主题锚）与 forced 锚点；供出点后天至少保留 1 点；
+    接受条件 = 移动后全行程 0 违规、0 修复剔除，且总里程 + 罚分 < 原值 - MIN_IMPROVE_KM。
+    返回 (新 day_map, 实际移动次数)。
+    """
+    days = sorted(day_map)
+    if len(days) < 2:
+        return day_map, 0
+    forced = forced_ids or set()
+
+    def metric(dm):
+        itin = sequencer.build_itinerary(dm, city, all_pois, date0=date0, hotel=hotel,
+                                         query=query)
+        return (itin["total_travel_km"], itin["total_violations"], len(itin["dropped_pois"]))
+
+    best_km, viol, n_drop = metric(day_map)
+    if viol or n_drop:  # 已有违规/剔除 → 交由既有修复链处理，不在此折腾
+        return day_map, 0
+    n_moves = 0
+    for _ in range(max_sweeps):
+        improved = False
+        for i in days:
+            donor = day_map.get(i, [])
+            movable = [pid for pid in donor
+                       if pid not in forced and pid in all_pois
+                       and not sequencer.is_full_day(all_pois[pid])]
+            if len(donor) < 2 or not movable:
+                continue
+            for pid in movable:
+                for j in days:
+                    if j == i or not day_map.get(j):
+                        continue
+                    cand = {k: list(v) for k, v in day_map.items()}
+                    cand[i].remove(pid)
+                    cand[j].append(pid)
+                    km, v2, nd2 = metric(cand)
+                    if v2 == 0 and nd2 == 0 and km + MOVE_PENALTY_KM < best_km - MIN_IMPROVE_KM:
+                        day_map = cand
+                        best_km = km
+                        n_moves += 1
+                        improved = True
+                        break
+                if improved:
+                    break
+            if improved:
+                break
+        if not improved:
+            break
+    return day_map, n_moves
+
+
+def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
+            use_llm: bool = True, date0: str | None = None, hotel: dict | None = None,
+            time_limit_s: float = toptw.TIME_LIMIT_S,
+            main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
+            meta: dict | None = None, mode: str = "m2_toptw",
+            forced_ids: set | None = None, alt_map: dict | None = None) -> dict:
+    """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。
+
+    alt_map: {day: [poi_id]} LLM 备选（M7 提案 alternates）——并入当日求解池但
+    不进主选 rank（低利润权重），求解器可在时间充裕/主选不可行时换入。
+    """
+    meta = meta or {}
+    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
+    cands = retrieval.recall(city, query)
+    t0 = time.time()
+
+    # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
+    res = _solve_all_days(city, query, day_map, all_pois, cands, alt_map, forced_ids,
+                          date0, hotel, time_limit_s, main_bonus, soft_w)
+    final_day_map = res["final_day_map"]
+    solver_dropped, solved_days = res["solver_dropped"], res["solved_days"]
+    n_mains, n_mains_kept, n_llm_alts = res["n_mains"], res["n_mains_kept"], res["n_llm_alts"]
+
+    # ---- 阶段2.5：跨天重平衡（确定性局部搜索，0 LLM 成本）----
+    n_day_moves = 0
+    if len(final_day_map) >= 2 and sum(solved_days.values()) == len(final_day_map):
+        reb_map, n_day_moves = _crossday_rebalance(final_day_map, city, all_pois,
+                                                   date0, hotel, query,
+                                                   forced_ids=forced_ids)
+        if n_day_moves:
+            # 移动后整体重求解（备选已消费过，不再并入）；主选必须全保留才接受
+            res2 = _solve_all_days(city, query, reb_map, all_pois, cands, None,
+                                   forced_ids, date0, hotel, time_limit_s,
+                                   main_bonus, soft_w)
+            if res2["n_mains_kept"] == res2["n_mains"]:
+                final_day_map = res2["final_day_map"]
+                solver_dropped, solved_days = res2["solver_dropped"], res2["solved_days"]
+                n_mains, n_mains_kept = res2["n_mains"], res2["n_mains_kept"]
+            else:
+                n_day_moves = 0  # 重求解掉点 → 放弃本次重平衡，沿用原解
 
     llm_raw_violations = m1_planner._count_violations_before_repair(final_day_map, city, all_pois, date0, hotel)
     itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0, hotel=hotel, query=query)
@@ -157,6 +254,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "llm_raw_violations": llm_raw_violations,
             "mains_kept": f"{n_mains_kept}/{n_mains}" if n_mains else "n/a",
             "n_llm_alts": n_llm_alts,
+            "n_day_moves": n_day_moves,
             "toptw_solved_days": sum(1 for v in solved_days.values() if v),
             "toptw_dropped": solver_dropped,
             "violations_after_solver": n_viol_after_solver,
