@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TripAgent · AI 行程规划</title>
+<style>
+:root{--blue:#1a5fb4;--blue-l:#eef4fc;--green:#1d7a4c;--green-l:#eaf6f0;--red:#c0392b;--red-l:#fdf0ee;
+--amber:#b7791f;--amber-l:#fdf6e7;--ink:#1f2933;--mut:#52606d;--line:#e4e7eb;--bg:#f7f8fa}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Microsoft YaHei",sans-serif;color:var(--ink);background:var(--bg);line-height:1.65}
+.wrap{max-width:1080px;margin:0 auto;padding:24px 20px 60px}
+header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:22px;color:var(--blue)} .sub{color:var(--mut);font-size:13px}
+.badge{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:600}
+.b-blue{background:var(--blue-l);color:var(--blue)} .b-green{background:var(--green-l);color:var(--green)}
+.b-red{background:var(--red-l);color:var(--red)} .b-amber{background:var(--amber-l);color:var(--amber)}
+.panel{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px}
+label{font-size:12.5px;color:var(--mut);display:block;margin-bottom:3px;font-weight:600}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit;background:#fff}
+textarea{resize:vertical;min-height:64px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+button{background:var(--blue);color:#fff;border:0;border-radius:9px;padding:10px 26px;font-size:15px;font-weight:600;cursor:pointer}
+button:disabled{background:#9db8d9;cursor:not-allowed}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.chip{background:var(--blue-l);color:var(--blue);border-radius:14px;padding:3px 12px;font-size:12.5px;cursor:pointer}
+.radio{display:flex;gap:14px;align-items:center;font-size:13.5px}
+.radio label{display:flex;gap:4px;align-items:center;margin:0;font-weight:500;color:var(--ink);cursor:pointer}
+#status{color:var(--mut);font-size:13px}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:sp 0.8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+.summary{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.daycard{border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:14px;background:#fff}
+.dayhead{padding:10px 16px;color:#fff;font-weight:600;font-size:14.5px;display:flex;gap:10px;align-items:center}
+.tl{padding:6px 16px 12px}
+.tlrow{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13.5px;align-items:baseline}
+.tlrow:last-child{border-bottom:0}
+.time{color:var(--mut);font-size:12.5px;min-width:88px;font-variant-numeric:tabular-nums}
+.viol{background:var(--red-l);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 16px 12px}
+.drop{background:var(--amber-l);color:var(--amber);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 16px 12px}
+.map svg{width:100%;background:#f2f4f7;border:1px solid var(--line);border-radius:8px}
+.two{display:grid;grid-template-columns:1.15fr 0.85fr;gap:16px}
+@media(max-width:820px){.grid,.two{grid-template-columns:1fr}}
+.note{color:var(--mut);font-size:12.5px}
+.hint{font-size:12px;color:var(--mut);margin-top:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><h1>🧭 TripAgent</h1><span class="sub">检索 → LLM 库内选择 → TOPTW 求解 · 幻觉结构性归零</span><span id="llmbadge"></span></header>
+
+<div class="panel">
+  <div class="grid">
+    <div><label>城市</label><select id="city"></select></div>
+    <div><label>行程天数</label><select id="days"><option value="1">1 天</option><option value="2" selected>2 天</option><option value="3">3 天</option></select></div>
+    <div><label>出发日期（可选，启用闭馆日约束）</label><input type="date" id="date"></div>
+    <div><label>住宿锚点（可选，酒店名或「名称@lng,lat」）</label><input id="hotel" placeholder="如：西湖国宾馆"></div>
+  </div>
+  <div style="margin-top:12px"><label>旅行需求</label>
+    <textarea id="query" placeholder="例：带5岁孩子去杭州玩2天，不要太累，最好有动物或者博物馆"></textarea>
+    <div class="chips" id="chips"></div>
+  </div>
+  <div class="row">
+    <div class="radio"><label><input type="radio" name="mode" value="m2" checked>M2（TOPTW 求解）</label>
+      <label><input type="radio" name="mode" value="m7">M7（经验提案）</label>
+      <label><input type="radio" name="mode" value="m1">M1（贪婪+修复）</label></div>
+    <button id="go">✨ 生成行程</button><span id="status"></span>
+  </div>
+</div>
+
+<div id="out"></div>
+</div>
+
+<script>
+const DAY_COLORS=["#1a5fb4","#1d7a4c","#b7791f","#c0392b","#6b46c1"];
+const ICON={poi:"📍",meal:"🍽",hotel:"🏨"};
+let CITY={};let LAST=null; // 最近一次规划结果（导出行程单用）
+const $=id=>document.getElementById(id);
+
+const SAMPLES=["{c}2天经典深度游，喜欢历史文化、寺庙和博物馆","带5岁孩子去{c}玩2天，不要太累，最好有动物或者博物馆","{c}2天美食之旅，想吃地道本地菜，顺便逛逛老街","{c}下雨天玩2天，想多安排室内场馆"];
+
+async function boot(){
+  const r=await (await fetch("/api/cities")).json();
+  CITY.cities=r.cities; CITY.llm=r.llm;
+  $("city").innerHTML=r.cities.map(c=>`<option value="${c.name}">${c.name}（${c.n_pois} 个 POI，${c.n_closed} 个有闭馆日）</option>`).join("");
+  chip();
+  $("city").addEventListener("change",chip);
+}
+function llmBadge(){
+  if(CITY.llm)$("llmbadge").innerHTML='<span class="badge b-green">LLM 已接入</span>';
+  else $("llmbadge").innerHTML='<span class="badge b-amber">未配置 Key → 离线兜底模式</span>';
+}
+function chip(){
+  const c=$("city").value;
+  $("chips").innerHTML=SAMPLES.map(s=>`<span class="chip" data-q="${s.replaceAll("{c}",c)}">${s.replaceAll("{c}","").slice(0,18)}…</span>`).join("");
+  document.querySelectorAll(".chip").forEach(el=>el.onclick=()=>{$("query").value=el.dataset.q;});
+}
+
+$("go").onclick=async()=>{
+  const q=$("query").value.trim()||`${$("city").value}2天经典深度游`;
+  const mode=document.querySelector('input[name=mode]:checked').value;
+  const p=new URLSearchParams({city:$("city").value,query:q,days:$("days").value,
+    mode,llm:CITY.llm?"1":"0"});
+  if($("date").value)p.set("date",$("date").value);
+  if($("hotel").value.trim())p.set("hotel",$("hotel").value.trim());
+  $("go").disabled=true;
+  $("status").innerHTML='<span class="spin"></span>规划中：检索 → '+(CITY.llm?"LLM 库内选择":"离线规则兜底")+" → "+(mode==="m2"?"TOPTW 求解":"贪婪排序")+" → 修复链…";
+  $("out").innerHTML="";
+  try{
+    const res=await (await fetch("/api/plan?"+p.toString())).json();
+    if(!res.ok){$("status").innerHTML='<span class="badge b-red">❌ '+res.error+"</span>";return;}
+    $("status").textContent="完成";
+    render(res);
+  }catch(e){$("status").innerHTML='<span class="badge b-red">请求失败：'+e+"</span>";}
+  $("go").disabled=false;
+};
+
+function render({city_meta,result:r}){
+  LAST={city_meta,result:r};
+  const it=r.itinerary;
+  const closedV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("当日闭馆")).length;
+  const retV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("返回酒店")).length;
+  let h=`<div class="panel"><div class="summary">
+    <span class="badge b-blue">${r.mode==="m2_toptw"?"M2 库内直选+TOPTW":r.mode.startsWith("m7")?"M7 经验提案"+(r.mode==="m7_proposal"?"":"（降级）"):r.mode}</span>
+    ${r.grounding?`<span class="badge ${r.grounding.grounding_rate>=0.8?"b-green":"b-amber"}">🎯 落地率 ${Math.round(r.grounding.grounding_rate*100)}%</span>`:""}
+    ${r.grounding&&r.grounding.gaps.length?`<span class="badge b-amber" title="${r.grounding.gaps.map(g=>g.name).join("、")}">📚 库缺口 ${r.grounding.gaps.length}</span>`:""}
+    <span class="badge ${it.total_violations===0?"b-green":"b-red"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
+    ${r.hotel?`<span class="badge b-amber">🏨 ${r.hotel.name}</span>`:""}
+    ${r.n_dup_across_days===0?'<span class="badge b-green">跨天重复 0</span>':`<span class="badge b-amber">跨天重复 ${r.n_dup_across_days}（已剥除）</span>`}
+    <span class="badge b-blue">耗时 ${r.latency_s}s</span>
+    ${r.candidates!=null?`<span class="badge b-blue">候选池 ${r.candidates}</span>`:""}
+    ${closedV?`<span class="badge b-red">闭馆违规 ${closedV}</span>`:""}
+    ${retV?`<span class="badge b-red">返程违规 ${retV}</span>`:""}
+    <button id="exportBtn" style="margin-left:auto" onclick="openDoc()">📥 导出行程单</button>
+  </div>
+  <p class="note">「${r.query}」</p>
+  <div class="two" style="margin-top:12px"><div id="days"></div><div class="map" id="map"></div></div>
+  <div style="margin-top:16px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+      <b>📄 行程单</b>
+      <button onclick="printDoc()">🖨 打印 / 存为 PDF</button>
+      <button onclick="openDoc()">📥 新标签打开</button>
+    </div>
+    <iframe id="docframe" title="行程单预览" style="width:100%;height:760px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+  </div></div>`;
+  $("out").innerHTML=h;
+  $("days").innerHTML=it.days.map(d=>dayCard(d)).join("");
+  $("map").innerHTML=drawMap(city_meta,r);
+  $("docframe").srcdoc=buildDoc(city_meta,r); // 行程单直接内嵌展示
+}
+
+function dayCard(d){
+  const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+  const rows=(d.timeline||[]).map(s=>
+    `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${ICON[s.type]||"📍"}</span><span>${s.name}${s.type==="poi"&&s.arrive?` <span class="note">（到 ${s.arrive}）</span>`:""}</span></div>`).join("");
+  const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
+  const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
+  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${viol}${drop}</div>`;
+}
+
+function drawMap(meta,r){
+  const ps=Object.values(meta.pois);
+  if(!ps.length)return "";
+  const W=440,H=340,pad=0.03;
+  const minLa=Math.min(...ps.map(p=>p.lat)),maxLa=Math.max(...ps.map(p=>p.lat));
+  const minLn=Math.min(...ps.map(p=>p.lng)),maxLn=Math.max(...ps.map(p=>p.lng));
+  const xy=(lat,lng)=>[ (lng-minLn)/((maxLn-minLn)||1)*(W-56)+38, (1-(lat-minLa)/((maxLa-minLa)||1))*(H-44)+26 ];
+  let s=`<svg viewBox="0 0 ${W} ${H}">`;
+  const it=r.itinerary||{};
+  for(const d of (it.days||[])){
+    const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+    const pts=(d.timeline||[]).filter(x=>x.type==="poi"&&meta.pois[x.id]).map(x=>xy(meta.pois[x.id].lat,meta.pois[x.id].lng));
+    if(pts.length>1)s+=`<polyline points="${pts.map(p=>p.join(",")).join(" ")}" fill="none" stroke="${color}" stroke-width="1.6" opacity="0.5" stroke-dasharray="5 3"/>`;
+    for(const [x,y] of pts)s+=`<circle cx="${x}" cy="${y}" r="4.5" fill="${color}" stroke="#fff" stroke-width="1.2"/>`;
+  }
+  if(r.hotel){const [x,y]=xy(r.hotel.lat,r.hotel.lng);
+    s+=`<path d="M ${x} ${y-9} L ${x+2.7} ${y-2.7} L ${x+9} ${y-2.7} L ${x+3.9} ${y+1.7} L ${x+5.6} ${y+8.4} L ${x} ${y+4.3} L ${x-5.6} ${y+8.4} L ${x-3.9} ${y+1.7} L ${x-9} ${y-2.7} L ${x-2.7} ${y-2.7} Z" fill="#b7791f" stroke="#fff" stroke-width="1"/>
+    <text x="${x+12}" y="${y+4}" font-size="11" fill="#b7791f">🏨</text>`;}
+  s+="</svg>";
+  return s+`<p class="hint" style="margin-top:6px">🗺 同色 = 同一天动线（虚线为顺序，圆点为 POI，⭐ 为酒店）</p>`;
+}
+function buildDoc(meta,r){
+  const it=r.itinerary;
+  const date=r.date0?`｜${r.date0} 出发`:"";
+  const cards=it.days.map(d=>{
+    const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+    const rows=(d.timeline||[]).map(s=>
+      `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${ICON[s.type]||"📍"}</td><td>${s.name}</td></tr>`).join("");
+    return `<div class="day"><h3 style="background:${color}">Day ${d.day}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
+    <table>${rows}</table></div>`;
+  }).join("");
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>TripAgent 行程单｜${r.query.slice(0,20)}</title>
+<style>
+  body{font-family:"Microsoft YaHei",sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#1f2937}
+  h1{font-size:22px;margin-bottom:4px}.meta{color:#6b7280;font-size:13px;margin-bottom:16px}
+  .badges{margin-bottom:16px}.badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:12px;margin-right:6px;background:#eef2f7}
+  .g{background:#e6f4ea;color:#1d7a4c}.r{background:#fdecec;color:#c0392b}.a{background:#fef3e2;color:#b7791f}
+  .day{margin-bottom:18px;page-break-inside:avoid}
+  h3{color:#fff;padding:8px 12px;border-radius:6px;font-size:15px;margin:0 0 0}
+  h3 span{float:right;font-weight:400;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  td{padding:6px 10px;border-bottom:1px solid #f0f0f0}
+  td.t{width:110px;color:#6b7280;font-variant-numeric:tabular-nums}td.i{width:24px}
+  .tip{color:#9ca3af;font-size:12px;margin-top:20px;border-top:1px solid #eee;padding-top:10px}
+  .print{position:fixed;top:14px;right:14px}
+  @media print{.print{display:none}}
+</style></head><body>
+<button class="print" onclick="window.print()">🖨 打印 / 存为 PDF</button>
+<h1>🗺 TripAgent 行程单${date}</h1>
+<p class="meta">「${r.query}」｜${r.days} 天｜${r.mode==="m2_toptw"?"LLM 库内选择 + TOPTW 求解":r.mode.startsWith("m7")?"世界知识提案 + 落地匹配 + TOPTW":"LLM 库内选择 + 贪婪排序"}${r.hotel?`｜住宿：${r.hotel.name}`:""}</p>
+<div class="badges">
+  <span class="badge ${it.total_violations===0?"g":"r"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
+  ${r.grounding?`<span class="badge a">🎯 落地率 ${Math.round(r.grounding.grounding_rate*100)}%</span>`:""}
+  <span class="badge g">跨天重复 ${r.n_dup_across_days??0}</span>
+  <span class="badge a">候选池 ${r.candidates}</span>
+</div>
+${cards}
+<p class="tip">由 TripAgent 生成（检索 → LLM 库内选择 → 优化求解 → 修复链）；时间为估算，出发前请再确认景点当日开放情况。</p>
+</body></html>`;
+}
+
+function printDoc(){
+  const f=$("docframe");
+  if(f&&f.contentWindow)f.contentWindow.print();
+}
+function openDoc(){
+  if(!LAST)return;
+  const blob=new Blob([buildDoc(LAST.city_meta,LAST.result)],{type:"text/html"});
+  const url=URL.createObjectURL(blob);
+  window.open(url,"_blank"); // 新标签打开，右上角打印按钮可存为 PDF
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+boot();
+</script>
+</body>
+</html>

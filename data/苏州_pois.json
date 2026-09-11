@@ -1,0 +1,707 @@
+{
+ "city": "苏州",
+ "center": {
+  "lat": 31.313,
+  "lng": 120.624
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "SZ001",
+   "name": "拙政园",
+   "category": "culture",
+   "tags": [
+    "园林",
+    "经典",
+    "世界遗产",
+    "历史"
+   ],
+   "lat": 31.3251,
+   "lng": 120.6292,
+   "duration_h": 2.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 80,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "江南园林之首，实名预约分时入园",
+   "closed_days": []
+  },
+  {
+   "id": "SZ002",
+   "name": "苏州博物馆（本馆）",
+   "category": "culture",
+   "tags": [
+    "博物馆",
+    "经典",
+    "室内",
+    "雨天",
+    "建筑"
+   ],
+   "lat": 31.3241,
+   "lng": 120.6266,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "贝聿铭封笔之作，片石假山是名场面，周一闭馆",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "SZ003",
+   "name": "狮子林",
+   "category": "culture",
+   "tags": [
+    "园林",
+    "经典",
+    "亲子"
+   ],
+   "lat": 31.3243,
+   "lng": 120.6231,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 40,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "假山迷宫，孩子钻山洞的天堂",
+   "closed_days": []
+  },
+  {
+   "id": "SZ004",
+   "name": "平江路历史街区",
+   "category": "culture",
+   "tags": [
+    "历史",
+    "经典",
+    "photo",
+    "小吃",
+    "文艺"
+   ],
+   "lat": 31.318,
+   "lng": 120.629,
+   "duration_h": 2.0,
+   "open": "00:00",
+   "close": "23:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "小桥流水人家，评弹博物馆与猫的天空之城",
+   "closed_days": []
+  },
+  {
+   "id": "SZ005",
+   "name": "山塘街（七里山塘）",
+   "category": "culture",
+   "tags": [
+    "历史",
+    "夜景",
+    "夜生活",
+    "经典"
+   ],
+   "lat": 31.321,
+   "lng": 120.588,
+   "duration_h": 2.0,
+   "open": "00:00",
+   "close": "23:00",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "阊门至虎丘，夜景游船45元",
+   "closed_days": []
+  },
+  {
+   "id": "SZ006",
+   "name": "虎丘山风景区",
+   "category": "history",
+   "tags": [
+    "历史",
+    "经典",
+    "户外"
+   ],
+   "lat": 31.328,
+   "lng": 120.572,
+   "duration_h": 2.5,
+   "open": "07:00",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 60,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "云岩寺塔比萨斜塔还斜，剑池之谜",
+   "closed_days": []
+  },
+  {
+   "id": "SZ007",
+   "name": "留园",
+   "category": "culture",
+   "tags": [
+    "园林",
+    "经典",
+    "世界遗产"
+   ],
+   "lat": 31.315,
+   "lng": 120.585,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "afternoon",
+   "price": 45,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "冠云峰太湖石，建筑空间变化最丰富",
+   "closed_days": []
+  },
+  {
+   "id": "SZ008",
+   "name": "网师园",
+   "category": "culture",
+   "tags": [
+    "园林",
+    "小众",
+    "夜生活"
+   ],
+   "lat": 31.294,
+   "lng": 120.627,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "afternoon",
+   "price": 40,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "小园极致，春季夜花园有实景演出",
+   "closed_days": []
+  },
+  {
+   "id": "SZ009",
+   "name": "金鸡湖·东方之门·诚品书店",
+   "category": "photo",
+   "tags": [
+    "photo",
+    "夜景",
+    "现代",
+    "购物",
+    "夜生活"
+   ],
+   "lat": 31.316,
+   "lng": 120.682,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "22:30",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "园区天际线+湖畔月光码头，诚品生活苏州",
+   "closed_days": []
+  },
+  {
+   "id": "SZ010",
+   "name": "寒山寺",
+   "category": "culture",
+   "tags": [
+    "寺庙",
+    "文化",
+    "经典"
+   ],
+   "lat": 31.306,
+   "lng": 120.569,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "16:30",
+   "best_time": "morning",
+   "price": 20,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "枫桥夜泊原址，听钟声祈福",
+   "closed_days": []
+  },
+  {
+   "id": "SZ011",
+   "name": "西园寺（戒幢律寺）",
+   "category": "culture",
+   "tags": [
+    "寺庙",
+    "小众",
+    "素食",
+    "轻松"
+   ],
+   "lat": 31.311,
+   "lng": 120.596,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 5,
+   "rating": 5,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "5元门票素面10元，猫店主理人网红猫",
+   "closed_days": []
+  },
+  {
+   "id": "SZ012",
+   "name": "盘门三景",
+   "category": "history",
+   "tags": [
+    "历史",
+    "小众",
+    "水陆城门"
+   ],
+   "lat": 31.288,
+   "lng": 120.608,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "afternoon",
+   "price": 40,
+   "rating": 3,
+   "area": "south",
+   "family_ok": true,
+   "note": "唯一水陆并联城门，瑞光塔",
+   "closed_days": []
+  },
+  {
+   "id": "SZ013",
+   "name": "观前街",
+   "category": "shopping",
+   "tags": [
+    "购物",
+    "美食",
+    "经典"
+   ],
+   "lat": 31.31,
+   "lng": 120.621,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "22:00",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "玄妙观+老字号美食一条街",
+   "closed_days": []
+  },
+  {
+   "id": "SZ014",
+   "name": "十全街·五卅路",
+   "category": "photo",
+   "tags": [
+    "文艺",
+    "咖啡",
+    "citywalk",
+    "小众"
+   ],
+   "lat": 31.297,
+   "lng": 120.625,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 3,
+   "area": "south",
+   "family_ok": true,
+   "note": "梧桐咖啡一条街，同德里同益里民国弄堂",
+   "closed_days": []
+  },
+  {
+   "id": "SZ015",
+   "name": "双塔市集",
+   "category": "food",
+   "tags": [
+    "美食",
+    "小吃",
+    "本地",
+    "文艺"
+   ],
+   "lat": 31.305,
+   "lng": 120.631,
+   "duration_h": 1.0,
+   "open": "07:00",
+   "close": "21:00",
+   "best_time": "lunch",
+   "price": 30,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "菜场改造的网红市集，海棠糕+桂花糖粥",
+   "closed_days": []
+  },
+  {
+   "id": "SZ016",
+   "name": "同里古镇",
+   "category": "history",
+   "tags": [
+    "水乡",
+    "经典",
+    "历史"
+   ],
+   "lat": 31.159,
+   "lng": 120.71,
+   "duration_h": 4.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 100,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "退思园世界遗产，地铁4号线直达，建议大半天",
+   "closed_days": []
+  },
+  {
+   "id": "SZ017",
+   "name": "木渎古镇",
+   "category": "history",
+   "tags": [
+    "水乡",
+    "小众",
+    "历史"
+   ],
+   "lat": 31.262,
+   "lng": 120.519,
+   "duration_h": 3.0,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 3,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "严家花园+虹饮山房，吴中区山塘街",
+   "closed_days": []
+  },
+  {
+   "id": "SZ018",
+   "name": "天平山",
+   "category": "nature",
+   "tags": [
+    "自然",
+    "秋季",
+    "徒步",
+    "户外"
+   ],
+   "lat": 31.251,
+   "lng": 120.493,
+   "duration_h": 3.0,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 30,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "中国四大赏枫胜地，范仲淹先祖墓地",
+   "closed_days": []
+  },
+  {
+   "id": "SZ019",
+   "name": "本色美术馆",
+   "category": "art",
+   "tags": [
+    "艺术",
+    "小众",
+    "室内",
+    "雨天"
+   ],
+   "lat": 31.268,
+   "lng": 120.68,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "17:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "东方美学空间，周二闭馆",
+   "closed_days": [
+    "周二"
+   ]
+  },
+  {
+   "id": "SZ020",
+   "name": "御窑金砖博物馆",
+   "category": "culture",
+   "tags": [
+    "博物馆",
+    "小众",
+    "室内",
+    "雨天",
+    "建筑"
+   ],
+   "lat": 31.356,
+   "lng": 120.6,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "金砖烧制全流程，建筑摄影出片",
+   "closed_days": []
+  },
+  {
+   "id": "SZ021",
+   "name": "松鹤楼（观前店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "经典",
+    "老字号"
+   ],
+   "lat": 31.3105,
+   "lng": 120.6215,
+   "duration_h": 1.5,
+   "open": "11:00",
+   "close": "20:30",
+   "best_time": "lunch",
+   "price": 160,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "苏帮菜正宗：松鼠鳜鱼/响油鳝糊/蟹粉豆腐",
+   "closed_days": []
+  },
+  {
+   "id": "SZ022",
+   "name": "得月楼（观前店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "老字号"
+   ],
+   "lat": 31.311,
+   "lng": 120.62,
+   "duration_h": 1.5,
+   "open": "11:00",
+   "close": "20:30",
+   "best_time": "lunch",
+   "price": 150,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "枣泥拉糕/樱桃肉，电影《小小得月楼》",
+   "closed_days": []
+  },
+  {
+   "id": "SZ023",
+   "name": "哑巴生煎（临顿路店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "小吃",
+    "经典"
+   ],
+   "lat": 31.317,
+   "lng": 120.626,
+   "duration_h": 0.8,
+   "open": "07:00",
+   "close": "14:00",
+   "best_time": "lunch",
+   "price": 25,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "苏州生煎代表，皮薄汁多，下午不开",
+   "closed_days": []
+  },
+  {
+   "id": "SZ024",
+   "name": "同得兴精品面馆（嘉余坊店）",
+   "category": "food",
+   "tags": [
+    "美食",
+    "小吃",
+    "老字号"
+   ],
+   "lat": 31.308,
+   "lng": 120.618,
+   "duration_h": 0.8,
+   "open": "07:00",
+   "close": "14:00",
+   "best_time": "lunch",
+   "price": 50,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "枫镇大肉面（白汤），《舌尖上的中国》",
+   "closed_days": []
+  },
+  {
+   "id": "SZ025",
+   "name": "苏州中心商场·东方之门",
+   "category": "shopping",
+   "tags": [
+    "购物",
+    "现代",
+    "室内"
+   ],
+   "lat": 31.314,
+   "lng": 120.67,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "秋裤楼大裤衩商场，湖景露台餐厅",
+   "closed_days": []
+  },
+  {
+   "id": "SZ026",
+   "name": "独墅湖·基督教堂",
+   "category": "photo",
+   "tags": [
+    "photo",
+    "小众",
+    "夜景",
+    "轻松"
+   ],
+   "lat": 31.274,
+   "lng": 120.718,
+   "duration_h": 1.0,
+   "open": "00:00",
+   "close": "22:00",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 3,
+   "area": "east",
+   "family_ok": true,
+   "note": "湖畔教堂日落，白鹭伴晚霞",
+   "closed_days": []
+  },
+  {
+   "id": "SZ027",
+   "name": "艺圃",
+   "category": "culture",
+   "tags": [
+    "园林",
+    "小众",
+    "安静"
+   ],
+   "lat": 31.319,
+   "lng": 120.607,
+   "duration_h": 1.0,
+   "open": "07:30",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 10,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "世界遗产小园林，游人最少最出片",
+   "closed_days": []
+  },
+  {
+   "id": "SZ028",
+   "name": "耦园",
+   "category": "culture",
+   "tags": [
+    "园林",
+    "小众",
+    "世界遗产"
+   ],
+   "lat": 31.321,
+   "lng": 120.633,
+   "duration_h": 1.0,
+   "open": "07:30",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 25,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "三面临水，佳偶天成的爱情园林",
+   "closed_days": []
+  },
+  {
+   "id": "SZ029",
+   "name": "苏州科技馆",
+   "category": "family",
+   "tags": [
+    "科技馆",
+    "亲子",
+    "室内"
+   ],
+   "lat": 31.2944,
+   "lng": 120.5453,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 50,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "高新区金山东路85号狮山文化广场（玉如意造型，2026新开），门票50元；注意周一、周二双闭馆",
+   "closed_days": [
+    "周一",
+    "周二"
+   ]
+  },
+  {
+   "id": "SZ030",
+   "name": "上方山森林动物世界",
+   "category": "family",
+   "tags": [
+    "动物",
+    "亲子",
+    "森林"
+   ],
+   "lat": 31.257,
+   "lng": 120.581,
+   "duration_h": 3.5,
+   "open": "08:30",
+   "close": "16:30",
+   "best_time": "morning",
+   "price": 60,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "苏州动物园新址（上方山/石湖畔），华东前列的森林动物世界",
+   "closed_days": []
+  }
+ ]
+}
