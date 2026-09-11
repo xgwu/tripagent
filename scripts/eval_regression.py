@@ -18,12 +18,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import poi_db, m1_planner, proposal_planner  # noqa: E402
 
-# (城市, 查询, 期望天数, 期望落地率下限[仅 --llm 生效])
+# (城市, 查询, 期望天数, 期望落地率下限[仅 --llm 生效], 必含 POI id[可选])
 CASES = [
     ("上海", "上海2天经典深度游，喜欢历史文化、寺庙和博物馆", 2, 0.8),
     ("上海", "上海2天骑行，喜欢咖啡和美食", 2, 0.8),
     ("上海", "带5岁孩子去上海玩2天，不要太累，最好有动物或者博物馆", 2, 0.8),
     ("上海", "上海下雨天玩2天，想多安排室内场馆", 2, 0.7),
+    ("上海", "上海3日亲子游", 3, 0.8, "SH006"),  # 迪士尼：亲子游必含（全天大点豁免回归）
     ("杭州", "杭州2天骑行，喜欢咖啡和美食", 2, 0.8),
     ("杭州", "杭州2天历史文化深度游", 2, 0.8),
     ("南京", "带5岁孩子去南京玩2天，不要太累", 2, 0.8),
@@ -39,7 +40,9 @@ def main():
     print(f"{'城市':<4} {'查询':<28} {'天数':>4} {'实际':>4} {'违规':>4} {'落地率':>7} {'耗时':>6}  结果")
     print("-" * 88)
     t_all = time.time()
-    for city_name, query, want_days, min_rate in CASES:
+    for case in CASES:
+        city_name, query, want_days, min_rate = case[:4]
+        must_poi = case[4] if len(case) > 4 else None
         city = poi_db.load_city(city_name)
         planner = proposal_planner if use_llm else m1_planner
         t0 = time.time()
@@ -60,6 +63,11 @@ def main():
             problems.append(f"天数 {n_days}≠{want_days}")
         if viol != 0:
             problems.append(f"违规 {viol}")
+        if must_poi:
+            kept = {s.get("id") for d in it["days"]
+                    for s in d.get("timeline", []) if s.get("type") == "poi"}
+            if must_poi not in kept:
+                problems.append(f"缺少必含点 {must_poi}")
         if use_llm and rate < min_rate:
             problems.append(f"落地率 {rate:.0%}<{min_rate:.0%}")
         ok = "✅" if not problems else "❌ " + "；".join(problems)

@@ -47,7 +47,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                      if date0 else "")
         hotel_line = (f"住宿锚点：{hotel['name']}（每天从该酒店出发，游玩结束后返回酒店；"
                       f"第一天首站不要离酒店太远）\n" if hotel else "")
-        prompt = f"""## 用户需求\n{query}\n行程天数：{days} 天\n{date_line}{hotel_line}\n## 候选 POI 清单（只能从中选择；标注「闭馆」的点不得排在其闭馆日；同一 POI 不得出现在多天）\n{retrieval.candidate_cards(cands)}\n\n## 输出要求\n严格输出 JSON：\n{{"days": [{{"day": 1, "theme": "主题", "poi_ids": ["{cands[0]['id']}", ...], "reason": "选择理由（含体验节奏说明）"}}]}}"""
+        prompt = f"""## 用户需求\n{query}\n行程天数：{days} 天\n{date_line}{hotel_line}\n## 候选 POI 清单（只能从中选择；标注「闭馆」的点不得排在其闭馆日；同一 POI 不得出现在多天；时长≥8h 的全天型景点须独占一天，当天不排其他点）\n{retrieval.candidate_cards(cands)}\n\n## 输出要求\n严格输出 JSON：\n{{"days": [{{"day": 1, "theme": "主题", "poi_ids": ["{cands[0]['id']}", ...], "reason": "选择理由（含体验节奏说明）"}}]}}"""
         prompt_chars = len(prompt)
         try:
             raw = llm_client.chat([

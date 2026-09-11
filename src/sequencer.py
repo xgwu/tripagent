@@ -11,6 +11,15 @@ from . import poi_db
 DAY_END_SLOT = "21:30"
 MAX_MEAL_WAIT_H = 1.5     # 美食 POI 早到餐窗的最多等待时长，超过则判违规交修复链剔除
 FOOD_PREF_WIN = {"lunch": "lunch", "dinner": "dinner", "evening": "dinner"}  # best_time → 首选餐窗
+FULL_DAY_H = 8.0          # 时长 ≥8h 视为「全天大点」（迪士尼/海昌类）：须独占一天，豁免里程预算剔除
+
+
+def is_full_day(p: dict) -> bool:
+    """全天大点判定：duration_h ≥ 8（远郊主题乐园等，单程即接近/突破每日里程预算）。"""
+    try:
+        return float(p.get("duration_h") or 0) >= FULL_DAY_H
+    except (TypeError, ValueError):
+        return False
 
 # ---- 主题画像：按出行方式设定每日交通里程预算（km），游玩≠拉练，超预算剔除远点 ----
 # 优先级从上到下（一个查询命中多个主题时取最严格匹配项之前先按此序）
@@ -290,11 +299,19 @@ def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
         if tl["travel_km"] <= cap:
             break
 
+        # 全天大点豁免：迪士尼/海昌类（时长≥8h）须独占一天，不参与「最远腿」剔除——
+        # 否则亲子游必剔迪士尼（单程 ~19km，往返必超 12km 预算），与常识相悖；
+        # 当天只剩余全天大点时接受里程超额（远郊大点当天交通预算必然突破，属合理例外）
+        droppable = [p for p in pois if not is_full_day(p)]
+        if not droppable:
+            tl["dropped"] = dropped
+            return tl
+
         def _far_leg(p, _pois=pois):
             others = [q for q in _pois if q is not p]
             return max((poi_db.haversine_km(p["lat"], p["lng"], q["lat"], q["lng"])
                         for q in others), default=0.0)
-        bad = max(pois, key=_far_leg)
+        bad = max(droppable, key=_far_leg)
         pois.remove(bad)
         dropped.append({"id": bad["id"], "name": bad["name"],
                         "reason": f"{label}里程超预算（>{cap:.0f} km/天），剔除远点收敛路线"})
