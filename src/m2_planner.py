@@ -46,16 +46,19 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
               for d in r_m1["itinerary"]["days"]}
     meta = {"candidates": r_m1["candidates"], "invalid_poi_ids": r_m1["invalid_poi_ids"],
             "n_dup_across_days": r_m1.get("n_dup_across_days", 0), "hotel": r_m1.get("hotel")}
+    anchor = hotel_mod.match_landmark_poi(city, hotel_text)  # 锚点地标 → TOPTW 必选
     return compose(city, query, days, llm_day_map, themes, use_llm=use_llm,
                    date0=date0, hotel=hotel, time_limit_s=time_limit_s,
-                   main_bonus=main_bonus, soft_w=soft_w, meta=meta, mode="m2_toptw")
+                   main_bonus=main_bonus, soft_w=soft_w, meta=meta, mode="m2_toptw",
+                   forced_ids={anchor["id"]} if anchor else None)
 
 
 def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             use_llm: bool = True, date0: str | None = None, hotel: dict | None = None,
             time_limit_s: float = toptw.TIME_LIMIT_S,
             main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
-            meta: dict | None = None, mode: str = "m2_toptw") -> dict:
+            meta: dict | None = None, mode: str = "m2_toptw",
+            forced_ids: set | None = None) -> dict:
     """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。"""
     meta = meta or {}
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
@@ -89,7 +92,9 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
         ordered, dropped, ok = toptw.solve_day(pool, day_map[d], city, all_pois,
                                                time_limit_s=time_limit_s,
                                                main_bonus=main_bonus, soft_w=soft_w,
-                                               hotel=hotel)
+                                               hotel=hotel,
+                                               forced={i for i in day_map[d]
+                                                       if i in (forced_ids or set())})
         if ok and ordered:
             final_day_map[d] = ordered
             solved_days[d] = True

@@ -8,7 +8,7 @@
 """
 import difflib, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src import poi_db, llm_client, m1_planner, m2_planner, offline_planner
+from src import poi_db, llm_client, m1_planner, m2_planner, offline_planner, sequencer
 from src import hotel as hotel_mod
 
 PROPOSE_SYSTEM = """你是一位资深旅行规划专家，深谙中国主要旅游城市的经典玩法与本地体验节奏。
@@ -205,6 +205,12 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 
     # ---- B 落地：匹配回 POI 库 ----
     day_map, themes, grounding = _ground(proposal, city, all_pois, days)
+    # 住宿锚点硬保障：锚点地标未进行程时确定性注入（LLM 对 prompt 规则遵守不稳定）
+    anchor_poi = hotel_mod.match_landmark_poi(city, hotel_text)
+    if anchor_poi is not None:
+        note = hotel_mod.ensure_landmark_in_day_map(day_map, days, anchor_poi)
+        if note:
+            grounding["anchor_injected"] = note
     # 天数保障：提案/落地后不足请求天数（LLM 少给一组或落地失败清空某天）→
     # 用离线规划从剩余未落地候选补齐缺口日
     if day_map:
@@ -227,6 +233,9 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         used = {pid for ids in day_map.values() for pid in ids}
         topped = []
         for d in range(1, days + 1):
+            if any(sequencer.is_full_day(all_pois[pid])
+                   for pid in day_map.get(d, []) if pid in all_pois):
+                continue  # 全天大点（迪士尼等）独占日不补小点——补了也会被时间约束剔除
             while len(day_map.get(d, [])) < MIN_STOPS:
                 rest = [p for i, p in all_pois.items() if i not in used]
                 if not rest:
@@ -261,7 +270,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                                  "hotel": ({"name": hotel["name"], "lat": hotel["lat"],
                                             "lng": hotel["lng"], "resolved": hotel["note"]}
                                            if hotel else None)},
-                           mode="m7_proposal")
+                           mode="m7_proposal",
+                           forced_ids={anchor_poi["id"]} if anchor_poi else None)
     r["proposal"] = proposal
     r["grounding"] = grounding
     r["latency_s"] = round(time.time() - t0, 1)  # A+B+C 全链路耗时

@@ -32,14 +32,16 @@ SLOT_WINDOWS = {
 def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
               time_limit_s: float = TIME_LIMIT_S,
               main_bonus: float = MAIN_BONUS, soft_w: float = SOFT_W,
-              hotel: dict | None = None):
+              hotel: dict | None = None, forced: set | None = None):
     """单日 TOPTW。
 
     candidates: 备选池（parsed POI，含主选与备选）
     day_ids:    LLM 主选（有序，顺序代表优先级）
     hotel:      M6 住宿锚点 —— 传入则作为 depot（每日强制从酒店出发并返回）
+    forced:     必选点集合（如住宿锚点地标）——利润放大至不可舍弃，时间可行性仍由求解器硬约束保证
     返回: (ordered_ids, dropped_ids, solved_flag)
     """
+    forced = forced or set()
     if not candidates:
         return [], [], True
 
@@ -64,6 +66,8 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
         pr = RATING_W * p["rating"] + RANK_BONUS * rank.get(p["id"], 0)
         if p["id"] in rank:
             pr += main_bonus
+        if p["id"] in forced:
+            pr += 1_000_000  # 必选点（住宿锚点地标）：舍弃代价远超任何组合收益
         return pr
 
     nodes = list(candidates)

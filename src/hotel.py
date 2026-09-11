@@ -26,6 +26,38 @@ def _base_hotel(name: str, lat: float, lng: float, resolved: str) -> dict:
             "note": f"住宿锚点（{resolved}）", "closed_days": []}
 
 
+def match_landmark_poi(city: dict, text: str | None) -> dict | None:
+    """L0：库内地标匹配。text 与 POI 名互相包含即命中，返回原始 POI dict 或 None。
+
+    评分门槛 rating≥4 防止「西湖」误配「西湖船宴(江桥店)」这类同名小店。
+    供 resolve_hotel 取坐标、以及排程链做「锚点地标必进行程」硬保障。
+    """
+    t = (text or "").strip()
+    if not t or len(t) < 2:
+        return None
+    hits = [p for p in city["pois"]
+            if p.get("rating", 0) >= 4 and (t in p["name"] or p["name"] in t)]
+    if not hits:
+        return None
+    return max(hits, key=lambda p: (p.get("rating", 0), -len(p["name"])))
+
+
+def ensure_landmark_in_day_map(day_map: dict, days: int, poi: dict | None) -> str | None:
+    """住宿锚点硬保障：锚点地标不在任何一天时注入点最少的一天队首（返回注入说明或 None）。
+
+    LLM 提案对「住迪士尼附近→必排迪士尼」的遵守不稳定，落地后必须兜底；
+    注入后由时间约束/全天大点豁免自然收敛为该地标独占一天。
+    """
+    if not poi:
+        return None
+    used = {pid for ids in day_map.values() for pid in ids}
+    if poi["id"] in used:
+        return None
+    tgt = min(range(1, days + 1), key=lambda d: (len(day_map.get(d, [])), d))
+    day_map[tgt] = [poi["id"]] + day_map.get(tgt, [])
+    return f"{poi['name']}（住宿锚点地标，注入 Day {tgt}）"
+
+
 def resolve_hotel(city: dict, text: str | None) -> dict | None:
     """解析酒店锚点。text 为空返回 None；「名称@lng,lat」直取坐标。
 
@@ -41,17 +73,10 @@ def resolve_hotel(city: dict, text: str | None) -> dict | None:
 
     key = os.environ.get("AMAP_KEY", "")
 
-    # L0：库内地标匹配（名称互相包含即可，「迪士尼附近」「住外滩」都能命中）；
-    # 评分门槛 rating≥4 防止「西湖」误配「西湖船宴(江桥店)」这类同名小店
-    t = (text or "").strip()
-    if t:
-        hits = [p for p in city["pois"]
-                if len(t) >= 2 and p.get("rating", 0) >= 4
-                and (t in p["name"] or p["name"] in t)]
-        if hits:
-            best = max(hits, key=lambda p: (p.get("rating", 0), -len(p["name"])))
-            return _base_hotel(f"{best['name']}（住宿锚点）", best["lat"], best["lng"],
-                               "库内地标")
+    best = match_landmark_poi(city, text)
+    if best:
+        return _base_hotel(f"{best['name']}（住宿锚点）", best["lat"], best["lng"],
+                           "库内地标")
 
     if key:  # L1：高德地点搜索（POI 库无酒店类，酒店是外部锚点）
         try:
