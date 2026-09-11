@@ -27,7 +27,11 @@ def _base_hotel(name: str, lat: float, lng: float, resolved: str) -> dict:
 
 
 def resolve_hotel(city: dict, text: str | None) -> dict | None:
-    """解析酒店锚点。text 为空返回 None；「名称@lng,lat」直取坐标。"""
+    """解析酒店锚点。text 为空返回 None；「名称@lng,lat」直取坐标。
+
+    L0 库内地标：「迪士尼附近」这类描述先匹配 POI 库（「迪士尼」⊂「上海迪士尼度假区」），
+    命中即以该地标坐标为锚——高德裸搜「迪士尼」会命中市区授权店铺，锚点错到十万八千里。
+    """
     if not text:
         return None
     if "@" in text:  # 显式坐标：--hotel "西湖国宾馆@120.13,30.24"
@@ -36,6 +40,19 @@ def resolve_hotel(city: dict, text: str | None) -> dict | None:
         return _base_hotel(name or "酒店", float(lat_s), float(lng_s), "显式坐标")
 
     key = os.environ.get("AMAP_KEY", "")
+
+    # L0：库内地标匹配（名称互相包含即可，「迪士尼附近」「住外滩」都能命中）；
+    # 评分门槛 rating≥4 防止「西湖」误配「西湖船宴(江桥店)」这类同名小店
+    t = (text or "").strip()
+    if t:
+        hits = [p for p in city["pois"]
+                if len(t) >= 2 and p.get("rating", 0) >= 4
+                and (t in p["name"] or p["name"] in t)]
+        if hits:
+            best = max(hits, key=lambda p: (p.get("rating", 0), -len(p["name"])))
+            return _base_hotel(f"{best['name']}（住宿锚点）", best["lat"], best["lng"],
+                               "库内地标")
+
     if key:  # L1：高德地点搜索（POI 库无酒店类，酒店是外部锚点）
         try:
             url = AMAP_PLACE.format(kw=urllib.parse.quote(text),

@@ -25,6 +25,7 @@ CASES = [
     ("上海", "带5岁孩子去上海玩2天，不要太累，最好有动物或者博物馆", 2, 0.8),
     ("上海", "上海下雨天玩2天，想多安排室内场馆", 2, 0.7),
     ("上海", "上海3日亲子游", 3, 0.8, "SH006"),  # 迪士尼：亲子游必含（全天大点豁免回归）
+    ("上海", "上海3日亲子游，住迪士尼附近酒店", 3, 0.8, "SH006", "迪士尼"),  # 住宿锚点地标匹配
     ("杭州", "杭州2天骑行，喜欢咖啡和美食", 2, 0.8),
     ("杭州", "杭州2天历史文化深度游", 2, 0.8),
     ("南京", "带5岁孩子去南京玩2天，不要太累", 2, 0.8),
@@ -43,11 +44,13 @@ def main():
     for case in CASES:
         city_name, query, want_days, min_rate = case[:4]
         must_poi = case[4] if len(case) > 4 else None
+        hotel_text = case[5] if len(case) > 5 else None
         city = poi_db.load_city(city_name)
         planner = proposal_planner if use_llm else m1_planner
         t0 = time.time()
         try:
-            r = planner.plan(city, query, want_days, use_llm=use_llm)
+            r = planner.plan(city, query, want_days, use_llm=use_llm,
+                             hotel_text=hotel_text)
         except Exception as e:  # noqa
             print(f"{city_name:<4} {query:<28}    --    --    --       --     ❌ 异常 {type(e).__name__}: {e}")
             n_fail += 1
