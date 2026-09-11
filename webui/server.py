@@ -556,14 +556,29 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": "候选池已空，无点可换"})
                 same_cat = [p for p in cands if p["category"] == replaced["category"]]
                 pool = same_cat or cands  # 同类目优先；没有则放宽到全部
-                pick = min(pool, key=lambda p: (
+                pool.sort(key=lambda p: (
                     poi_db.haversine_km(p["lat"], p["lng"], replaced["lat"], replaced["lng"]),
                     -p["rating"]))
-                new_ids = [pick["id"] if i == poi_id else i for i in day_ids]
                 hotel = hotel_mod.resolve_hotel(city, payload.get("hotel_text") or None)
-                it = sequencer.build_itinerary({int(day): new_ids}, city, all_pois,
-                                               order_given=False, date0=payload.get("date0") or None,
-                                               hotel=hotel, query=payload.get("query") or "")
+                date0, query = payload.get("date0") or None, payload.get("query") or ""
+                # 逐候选试排：换点不得改变当天景点数——
+                # 新点若引发闭馆/餐窗/里程违规，build_itinerary 修复链会剔点（含前置修剪），
+                # 因此只接受「零剔点且景点一一对应」的候选，按距离从近到远试到成功为止
+                pick = it = new_ids = None
+                for cand in pool[:25]:
+                    trial_ids = [cand["id"] if i == poi_id else i for i in day_ids]
+                    trial = sequencer.build_itinerary({int(day): trial_ids}, city, all_pois,
+                                                      order_given=False, date0=date0,
+                                                      hotel=hotel, query=query)
+                    d0 = trial["days"][0]
+                    tl_ids = [s["id"] for s in d0["timeline"] if s.get("type") == "poi"]
+                    if not d0.get("dropped") and len(tl_ids) == len(trial_ids) \
+                            and set(tl_ids) == set(trial_ids):
+                        pick, it, new_ids = cand, trial, trial_ids
+                        break
+                if pick is None:
+                    return self._json({"ok": False,
+                                       "error": "附近的候选点都会挤掉当天其他行程，已保留原行程；可换一天或稍后再试"})
                 return self._json({"ok": True,
                                    "swap": {"from": replaced["name"], "to": pick["name"],
                                             "same_category": bool(same_cat)},
