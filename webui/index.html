@@ -135,15 +135,7 @@ function render({city_meta,result:r}){
     <button id="exportBtn" style="margin-left:auto" onclick="openDoc()">📥 导出行程单</button>
   </div>
   <p class="note">「${r.query}」</p>
-  <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div>
-  <div style="margin-top:16px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <b>📄 行程单</b>
-      <button onclick="printDoc()">🖨 打印 / 存为 PDF</button>
-      <button onclick="openDoc()">📥 新标签打开</button>
-    </div>
-    <iframe id="docframe" title="行程单预览" onload="fitDoc(this)" style="width:100%;min-height:240px;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff;display:block"></iframe>
-  </div></div>`;
+  <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div></div>`;
   $("out").innerHTML=h;
   $("daycards").innerHTML=it.days.map(d=>dayCard(d)).join("");
   // 地图：优先高德 JS API 真实底图渲染，失败/无 Key 自动回退 SVG 手绘图
@@ -156,7 +148,6 @@ function render({city_meta,result:r}){
   }else{
     $("map").innerHTML=drawMap(city_meta,r);
   }
-  $("docframe").srcdoc=buildDoc(city_meta,r); // 行程单直接内嵌展示
 }
 
 function dayCard(d){
@@ -288,23 +279,6 @@ ${cards}
 </body></html>`;
 }
 
-function printDoc(){
-  const f=$("docframe");
-  if(f&&f.contentWindow)f.contentWindow.print();
-}
-// 行程单高度自适应内容：全部展示，不出现内部滚动框
-function fitDoc(f){
-  if(!f)return;
-  const measure=()=>{
-    try{
-      const d=f.contentDocument;
-      if(!d||!d.documentElement)return;
-      f.style.height=Math.max(d.documentElement.scrollHeight,240)+"px";
-    }catch(e){/* 同源失败时保持当前高度 */}
-  };
-  measure();
-  [60,200,600].forEach(t=>setTimeout(measure,t)); // 图片/字体加载后再校准几次
-}
 function openDoc(){
   if(!LAST)return;
   const blob=new Blob([buildDoc(LAST.city_meta,LAST.result)],{type:"text/html"});
