@@ -40,7 +40,7 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 .viol{background:var(--red-l);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 16px 12px}
 .drop{background:var(--amber-l);color:var(--amber);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 16px 12px}
 .map svg{width:100%;background:#f2f4f7;border:1px solid var(--line);border-radius:8px}
-.two{display:grid;grid-template-columns:1.15fr 0.85fr;gap:16px}
+.two{display:grid;grid-template-columns:0.85fr 1.15fr;gap:16px}
 @media(max-width:820px){.grid,.two{grid-template-columns:1fr}}
 .note{color:var(--mut);font-size:12.5px}
 .hint{font-size:12px;color:var(--mut);margin-top:4px}
@@ -135,7 +135,7 @@ function render({city_meta,result:r}){
     <button id="exportBtn" style="margin-left:auto" onclick="openDoc()">📥 导出行程单</button>
   </div>
   <p class="note">「${r.query}」</p>
-  <div class="two" style="margin-top:12px"><div id="days"></div><div class="map" id="map"></div></div>
+  <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div>
   <div style="margin-top:16px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
       <b>📄 行程单</b>
@@ -145,7 +145,7 @@ function render({city_meta,result:r}){
     <iframe id="docframe" title="行程单预览" onload="fitDoc(this)" style="width:100%;min-height:240px;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff;display:block"></iframe>
   </div></div>`;
   $("out").innerHTML=h;
-  $("days").innerHTML=it.days.map(d=>dayCard(d)).join("");
+  $("daycards").innerHTML=it.days.map(d=>dayCard(d)).join("");
   // 地图：优先高德 JS API 真实底图渲染，失败/无 Key 自动回退 SVG 手绘图
   if(CITY.amap_key){
     $("map").innerHTML='<p class="hint" style="padding:12px">🗺 高德地图加载中…</p>';
