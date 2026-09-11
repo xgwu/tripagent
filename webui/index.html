@@ -142,7 +142,7 @@ function render({city_meta,result:r}){
       <button onclick="printDoc()">🖨 打印 / 存为 PDF</button>
       <button onclick="openDoc()">📥 新标签打开</button>
     </div>
-    <iframe id="docframe" title="行程单预览" style="width:100%;height:760px;border:1px solid var(--line);border-radius:10px;background:#fff"></iframe>
+    <iframe id="docframe" title="行程单预览" onload="fitDoc(this)" style="width:100%;min-height:240px;height:auto;border:1px solid var(--line);border-radius:10px;background:#fff;display:block"></iframe>
   </div></div>`;
   $("out").innerHTML=h;
   $("days").innerHTML=it.days.map(d=>dayCard(d)).join("");
@@ -223,6 +223,19 @@ ${cards}
 function printDoc(){
   const f=$("docframe");
   if(f&&f.contentWindow)f.contentWindow.print();
+}
+// 行程单高度自适应内容：全部展示，不出现内部滚动框
+function fitDoc(f){
+  if(!f)return;
+  const measure=()=>{
+    try{
+      const d=f.contentDocument;
+      if(!d||!d.documentElement)return;
+      f.style.height=Math.max(d.documentElement.scrollHeight,240)+"px";
+    }catch(e){/* 同源失败时保持当前高度 */}
+  };
+  measure();
+  [60,200,600].forEach(t=>setTimeout(measure,t)); // 图片/字体加载后再校准几次
 }
 function openDoc(){
   if(!LAST)return;
