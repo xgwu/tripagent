@@ -93,6 +93,22 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         day_map[d] = deduped
     day_map = {d: ids for d, ids in day_map.items() if ids}
 
+    # 天数保障：LLM 偶发少给天（如请求 3 天只回 2 组）或去重后某天被清空，
+    # 用离线规划从剩余未用候选补齐缺口日，保证输出天数与请求一致
+    missing = [d for d in range(1, days + 1) if d not in day_map]
+    if missing:
+        used = {pid for ids in day_map.values() for pid in ids}
+        rest = [c for c in cands if c["id"] not in used]
+        if rest:
+            extra_map, extra_themes = offline_planner.plan_days(city, rest, query, len(missing))
+            for k, ed in enumerate(sorted(extra_map)):
+                if k >= len(missing):
+                    break
+                day_map[missing[k]] = extra_map[ed]
+                if ed in extra_themes:
+                    themes[missing[k]] = extra_themes[ed]
+            mode += "+补天"
+
     # 库内选择模式下 invalid_ids 恒为 0 —— 这就是要验证的指标
     llm_raw_violations = _count_violations_before_repair(day_map, city, all_pois, date0, hotel)
     itin = sequencer.build_itinerary(day_map, city, all_pois, date0=date0, hotel=hotel)
