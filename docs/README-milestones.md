@@ -7,6 +7,23 @@
 - **M5**（已完成 ✅）：日期感知（closed_days 建模 + 全链路约束）+ 跨城评测（eval_ab 5 城化）。
 - **M6**（已完成 ✅）：多日行程衔接 —— 酒店锚点（每日起终点）+ 跨天去重 + 求解器餐块预算。
 - **M7**（已完成 ✅）：经验提案模式 —— 回归最初架构意图：「LLM 世界知识自由提案 → 落地匹配到 POI 库 → TOPTW 求解」，防幻觉不靠限制提案、而靠落地匹配；未落地清单 = POI 库缺口探测器。
+- **M7.5**（已完成 ✅）：世界知识主导 + 混合方案对照落地（闭环反馈 P0 / 备选 alternates P1），见下节。
+
+## M7.5 新增（世界知识主导 + 《TOPTW与LLM混合方案分析》对照落地）
+
+设计取向明确为**世界知识主导选点**：LLM 凭旅行常识决定去哪，系统只负责「落地 + 约束 + 求解」，不做硬编码选点。
+
+- **提案世界知识优先**（79f4be2）：PROPOSE_PROMPT 的库内清单从「待选项」降级为「查漏补缺参考」；不得虚构，但选点品味交给 LLM。
+- **招牌体验规则**（58ba52c）：prompt 要求 LLM 用世界知识判断需求核心期待——城市招牌大点（上海迪士尼/北京环球影城/广州长隆）与亲子类需求高度匹配时须进主选、独占一天、勿放 alternates；仅明确排斥时才可不放。修复「上海3日亲子游不推迪士尼」（根因：DeepSeek 把 3 天设计为市区主题日，主选+备选均无迪士尼；落地/TOPTW 各层均正常，属提案层缺失）。
+- **全天大点豁免**（e82ac9e）：duration_h≥8 的 POI（迪士尼等）豁免主题里程预算（亲子 20km/天），单程 19km 的远点不再被 `_cap_km_repair` 剔除。
+- **闭环反馈 + 阈值重做（对照文档 P0）**（be4ef0f）：落地 gaps / 落地率<0.85 → REVISE prompt 打包未落地地点回传 LLM 修正再落地；compose 剔除≥2 → 带剔除原因回传重求解；共享 MAX_REVISE_ROUNDS=2，`grounding.revise_rounds` 透出。
+- **LLM 主选 + 备选 alternates（对照文档 P1）**（f939e5c）：提案每天新增 0-2 个 alternates 槽位；落地进 `alt_map`（不计 gaps/落地率），compose 时并入当日 TOPTW 池但不进主选 rank（低利润权重）；匹配层对住宿类库点免疫（不排酒店/商铺）。
+- **住宿锚点三级匹配**（eaf0dd6/9efc2ee）：「住迪士尼附近」不再高德裸搜命中市区店铺——L0 库内地标匹配（rating≥4）优先；锚点硬保障（注入+TOPTW forced 必选）做成开关 `anchor_hard_guarantee`（e4bd445，**默认关**——世界知识主导，评测脚本内显式开启）。
+- **亲子里程预算调参**（c2d3472/db00b6d）：THEME_PROFILES family 12→20 km/天。
+- **健壮化**：extract_days「N日」天数识别修复（44f9db1）；正则未命中时 LLM 结构化抽取兜底（2d5203a）；武汉 POI 34→50（b1695f8）；密钥剥离至 secrets.json（gitignore），config.json 回归 git（7b207aa）。
+- **前端文案透出**（1287255）：每日 reason 文案（LLM 对齐最终时间轴重生成）渲染到网页 Day 卡、分享 HTML、PNG 长图三处（长图预计算高度纳入文案行数）。
+- **回归评测**（`scripts/eval_regression.py`）：12 固化用例（含上海亲子必含迪士尼两例），支持离线确定性（CI）与 `--llm` 全链路两种模式；当前离线 12/12、LLM 12/12。
+- **部署**：WebUI 常驻入口 `https://tripagent-planner2.app.workbuddy.host/`（Python 单端口 http 服务）。
 
 ## M7 新增（经验提案模式）
 
@@ -69,9 +86,9 @@ LLM 主选（有序） ──→ 每日候选池 = 主选(高利润) + 地理邻
         最终时间轴（餐块由排序器插入） → 约束复核 → LLM 重生成每日文案
 ```
 
-**M2 运行需要 ortools**（独立 venv）：
+**M2/M7 运行需要 ortools**（WorkBuddy managed venv）：
 ```bash
-"D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent-m2/Scripts/python.exe" eval_ab.py
+/Users/wuxiaogang/.workbuddy/binaries/python/envs/default/bin/python eval_ab.py
 ```
 
 ## OR-Tools 踩坑记录（本构建 ortools · pywrapcp）
@@ -112,10 +129,16 @@ python eval_ab.py --eval-date 2026-09-14  # 周一起始，闭馆约束压力测
 python main.py "带5岁孩子去杭州玩2天，不要太累" --days 2
 python main.py "苏州2天园林深度游" --city 苏州 --date 2026-09-14 --m2   # 日期感知 + TOPTW
 python main.py "杭州2天亲子游" --hotel 西湖国宾馆 --m2                  # 酒店锚点（AMAP_KEY 自动定位）
+python main.py "上海3日亲子游" --city 上海 --days 3 --proposal          # M7 经验提案（世界知识主导）
+
+# 回归评测（12 固化用例；--llm 走真实全链路，默认离线确定性）
+python scripts/eval_regression.py
 
 # 无 Key 时自动降级离线兜底（管线冒烟用，不代表 M1 真实体验）
 python eval_ab.py --no-llm
 ```
+
+配置：`config.json`（业务配置，进 git）+ `secrets.json`（deepseek_api_key / amap_key / amap_js_key，gitignore），由 `src/config.py` 合并加载。
 
 Windows 注意：`PYTHONIOENCODING=utf-8` 已在脚本内处理 stdout；JSON 落盘均为 UTF-8。
 
@@ -146,9 +169,15 @@ src/offline_planner.py 离线兜底（地理锚点聚类），仅管线测试用
 src/sequencer.py      排序 + 硬约束校验 + 两级修复（重排/剔除）
 src/toptw.py          M2/M3 单日 TOPTW（硬时间窗 + best_time 软时间窗 + 利润函数）
 src/m2_planner.py     M2 主链路（检索→LLM 选择→求解→闭环→文案重生成）
+src/proposal_planner.py M7 提案链路（世界知识提案→落地匹配→闭环反馈→compose 复用）
+src/hotel.py          M6 酒店锚点解析（高德/L0 地标匹配/坐标/市中心兜底）
+src/config.py         config.json + secrets.json 合并加载
 src/baseline.py       旧方案基线：关键词→标签硬过滤 + 评分贪心
 src/metrics.py        评测指标（违规/路网均程/标签覆盖/时段合规/主选保留）
 eval_ab.py            三方 A/B harness（基线/M1/M2）→ HTML 报告
+eval_m7.py            M2 vs M7 五城对比评测
+scripts/eval_regression.py  12 用例固化回归（离线 CI + --llm 全链路）
+webui/                常驻 WebUI（server.py + index.html，单端口）
 ```
 
 ## 坐标与时间窗数据说明
