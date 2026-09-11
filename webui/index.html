@@ -81,6 +81,7 @@ async function boot(){
   const r=await (await fetch("/api/cities")).json();
   CITY.cities=r.cities; CITY.llm=r.llm; CITY.amap_key=r.amap_key||"";
   $("city").innerHTML=r.cities.map(c=>`<option value="${c.name}">${c.name}（${c.n_pois} 个 POI，${c.n_closed} 个有闭馆日）</option>`).join("");
+  $("city").value="上海"; // 默认城市
   chip();
   $("city").addEventListener("change",chip);
 }
