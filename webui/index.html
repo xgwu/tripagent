@@ -134,8 +134,7 @@ function chip(){
   document.querySelectorAll(".chip").forEach(el=>el.onclick=()=>{$("query").value=el.dataset.q;});
 }
 
-$("go").onclick=async()=>{
-  const q=$("query").value.trim()||"上海2天经典深度游";
+async function doPlan(q){
   const p=new URLSearchParams({query:q,llm:CITY.llm?"1":"0"});
   $("go").disabled=true;
   $("status").innerHTML='<span class="spin"></span>规划中：经验提案 → '+(CITY.llm?"库内落地":"离线兜底")+" → 求解排程 → 修复链…";
@@ -147,6 +146,33 @@ $("go").onclick=async()=>{
     render(res);
   }catch(e){$("status").innerHTML='<span class="badge b-red">请求失败：'+e+"</span>";}
   $("go").disabled=false;
+}
+
+// P1 多轮澄清：规划前 LLM 判断需求是否缺失关键信息，需要则先追问一轮
+$("go").onclick=async()=>{
+  const q=$("query").value.trim()||"上海2天经典深度游";
+  $("go").disabled=true;
+  if(!CITY.llm){await doPlan(q);return;}
+  $("status").innerHTML='<span class="spin"></span>检查需求完整性…';
+  try{
+    const c=await (await fetch("/api/clarify?"+new URLSearchParams({query:q}).toString())).json();
+    if(c.ok&&c.need&&c.question){
+      $("status").innerHTML='<span class="badge b-amber">❓ 想先确认一个问题</span>';
+      $("out").innerHTML=`<div class="panel"><div style="font-size:15px;margin-bottom:10px">❓ ${c.question}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">${c.options.map(o=>`<span class="chip" data-o="${o}">${o}</span>`).join("")}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input id="clarifyText" placeholder="或用自己的话补充…" style="flex:1;min-width:200px;padding:8px 10px;border:1px solid #d7dce3;border-radius:8px;font-size:14px">
+          <button class="secbtn" id="clarifyGo">带上回答生成</button>
+          <button class="secbtn" id="clarifySkip">不用了，直接生成</button>
+        </div></div>`;
+      document.querySelectorAll("#out .chip[data-o]").forEach(el=>el.onclick=()=>doPlan(q+"。"+el.dataset.o));
+      $("clarifyGo").onclick=()=>{const t=$("clarifyText").value.trim();doPlan(t?q+"。"+t:q);};
+      $("clarifySkip").onclick=()=>doPlan(q);
+      $("go").disabled=false;
+      return;
+    }
+  }catch(e){/* 澄清失败静默降级为直接规划 */}
+  await doPlan(q);
 };
 
 function render({city_meta,result:r,days_source,parsed}){

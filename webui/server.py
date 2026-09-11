@@ -397,6 +397,55 @@ def llm_extract(query: str) -> dict | None:
     return out or None
 
 
+def llm_clarify(query: str) -> dict | None:
+    """多轮澄清（对照文档 P1）：LLM 判断需求是否缺失会实质影响行程设计的信息。
+
+    - 仅在 LLM 可用时调用；结果按 sha1(query) 缓存 7 天（复用 NL 缓存文件）
+    - 保守策略：大多数需求不追问；最多一个问题 + 2~4 个选项
+    - 任何异常静默返回 None（前端视为无需追问，直接规划）
+    """
+    import hashlib
+    from src import llm_client
+    if not (query or "").strip() or not llm_client.llm_available():
+        return None
+    qkey = "C:" + hashlib.sha1(query.encode("utf-8")).hexdigest()
+    hit = _nl_cache_get(qkey)
+    if hit is not None:
+        return hit or None
+    sys_p = (
+        "你是旅行行程助手的澄清判断器。判断用户需求是否缺失会「实质改变行程设计」的关键信息，"
+        '只输出 JSON：{"need": true或false, "question": "一句话追问", '
+        '"options": ["选项1", "选项2"]}。\n'
+        "判断标准（保守，大多数需求应 need=false 直接生成）：\n"
+        "- 行程天数完全未提及（如只说「去杭州玩」）→ 可以问；已写「3天」「周末」等则不问\n"
+        "- 同行人员完全未提及且明显影响节奏（亲子/老人/情侣/团队）→ 可以问；已提及则不问\n"
+        "- 用户表达了强偏好但存在明显歧义（如「热闹的地方」不知指夜市还是商圈）→ 可以问\n"
+        "不问的：目的地城市（未提及会用默认城市）、预算、交通方式、住宿（未提及就不排酒店）、"
+        "具体日期（未提及就按近期规划）。只问最关键的一个问题，选项 2~4 个、每个不超过 12 字。"
+    )
+    try:
+        txt = llm_client.chat([{"role": "system", "content": sys_p},
+                               {"role": "user", "content": query}],
+                              temperature=0.0, timeout=12, retries=1)
+        obj = json.loads(txt) if isinstance(txt, str) else (txt or {})
+    except Exception:  # noqa: 网络/解析失败 → 不追问直接规划
+        return None
+    out: dict = {}
+    if isinstance(obj, dict) and obj.get("need") is True:
+        question = obj.get("question")
+        options = [o for o in (obj.get("options") or [])
+                   if isinstance(o, str) and o.strip()]
+        if isinstance(question, str) and question.strip() and 2 <= len(options) <= 4:
+            out = {"need": True, "question": question.strip()[:60],
+                   "options": [o.strip()[:12] for o in options]}
+        else:
+            out = {"need": False}
+    else:
+        out = {"need": False}
+    _nl_cache_put(qkey, out)
+    return out
+
+
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
                use_llm: bool, planner) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
@@ -640,6 +689,15 @@ class Handler(BaseHTTPRequestHandler):
             st["avg_latency_s"] = round(st.pop("latency_sum") / n, 1)
             st["p_max_latency_s"] = st.pop("latency_max")
             return self._json(st)
+        if u.path == "/api/clarify":  # P1 多轮澄清：规划前 LLM 判断是否需要追问
+            stats_bump("clarify_total")
+            if q.get("llm", "1") != "1" or not llm_client.llm_available():
+                return self._json({"ok": True, "need": False})
+            try:
+                c = llm_clarify(q.get("query") or "")
+            except Exception:  # noqa
+                c = None
+            return self._json({"ok": True, **(c or {"need": False})})
         if u.path == "/api/plan":
             ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
                  self.client_address[0]

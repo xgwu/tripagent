@@ -18,6 +18,7 @@
 - **全天大点豁免**（e82ac9e）：duration_h≥8 的 POI（迪士尼等）豁免主题里程预算（亲子 20km/天），单程 19km 的远点不再被 `_cap_km_repair` 剔除。
 - **闭环反馈 + 阈值重做（对照文档 P0）**（be4ef0f）：落地 gaps / 落地率<0.85 → REVISE prompt 打包未落地地点回传 LLM 修正再落地；compose 剔除≥2 → 带剔除原因回传重求解；共享 MAX_REVISE_ROUNDS=2，`grounding.revise_rounds` 透出。
 - **LLM 主选 + 备选 alternates（对照文档 P1）**（f939e5c）：提案每天新增 0-2 个 alternates 槽位；落地进 `alt_map`（不计 gaps/落地率），compose 时并入当日 TOPTW 池但不进主选 rank（低利润权重）；匹配层对住宿类库点免疫（不排酒店/商铺）。
+- **多轮澄清（对照文档 P1 收官）**：规划前新增 `/api/clarify`——LLM 保守判断需求是否缺失实质影响设计的信息（天数未提/同行人未提/强偏好歧义），至多追问一个问题（2~4 个选项），前端追问卡片支持选项/自由文本/跳过；回答拼入需求后走正常规划。缓存 7 天，LLM 不可用或判断失败静默降级为直接规划。
 - **住宿锚点三级匹配**（eaf0dd6/9efc2ee）：「住迪士尼附近」不再高德裸搜命中市区店铺——L0 库内地标匹配（rating≥4）优先；锚点硬保障（注入+TOPTW forced 必选）做成开关 `anchor_hard_guarantee`（e4bd445，**默认关**——世界知识主导，评测脚本内显式开启）。
 - **亲子里程预算调参**（c2d3472/db00b6d）：THEME_PROFILES family 12→20 km/天。
 - **健壮化**：extract_days「N日」天数识别修复（44f9db1）；正则未命中时 LLM 结构化抽取兜底（2d5203a）；武汉 POI 34→50（b1695f8）；密钥剥离至 secrets.json（gitignore），config.json 回归 git（7b207aa）。
