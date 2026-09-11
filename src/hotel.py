@@ -26,6 +26,14 @@ def _base_hotel(name: str, lat: float, lng: float, resolved: str) -> dict:
             "note": f"住宿锚点（{resolved}）", "closed_days": []}
 
 
+def hard_guarantee_enabled() -> bool:
+    """住宿锚点硬保障开关（env ANCHOR_HARD_GUARANTEE，由 config.json anchor_hard_guarantee 注入）。
+
+    默认关闭：世界知识主导提案后，兜底仅作显式锚点违约的保险，按需开启。
+    """
+    return os.environ.get("ANCHOR_HARD_GUARANTEE", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def match_landmark_poi(city: dict, text: str | None) -> dict | None:
     """L0：库内地标匹配。text 与 POI 名互相包含即命中，返回原始 POI dict 或 None。
 

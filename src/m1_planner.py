@@ -110,9 +110,9 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                     themes[missing[k]] = extra_themes[ed]
             mode += "+补天"
 
-    # 住宿锚点硬保障：锚点地标未进行程时确定性注入（召回排序/LLM 提案均可能漏选）
+    # 住宿锚点硬保障（开关默认关）：锚点地标未进行程时确定性注入
     anchor_poi = hotel_mod.match_landmark_poi(city, hotel_text)
-    if anchor_poi is not None:
+    if anchor_poi is not None and hotel_mod.hard_guarantee_enabled():
         _note = hotel_mod.ensure_landmark_in_day_map(day_map, days, anchor_poi)
 
     # 库内选择模式下 invalid_ids 恒为 0 —— 这就是要验证的指标

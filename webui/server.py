@@ -503,6 +503,7 @@ def stats_latency(sec: float):
 def load_config() -> dict:
     """从项目根目录 config.json 读取服务端密钥（仅注入缺失的环境变量，不覆盖已有值）。"""
     cfg = {}
+    cfg_bools = {}
     path = os.path.join(ROOT, "config.json")
     if os.path.exists(path):
         try:
@@ -510,6 +511,7 @@ def load_config() -> dict:
                 raw = json.load(f)
             cfg = {k: str(v).strip() for k, v in raw.items()
                    if not k.startswith("_") and isinstance(v, str) and v.strip()}
+            cfg_bools = {k: v for k, v in raw.items() if isinstance(v, bool)}
         except (json.JSONDecodeError, OSError) as e:
             print(f"⚠ config.json 解析失败（忽略）: {e}", flush=True)
     for env_key, cfg_key in (("DEEPSEEK_API_KEY", "deepseek_api_key"),
@@ -517,6 +519,9 @@ def load_config() -> dict:
                              ("M1_MODEL", "m1_model")):
         if cfg.get(cfg_key) and not os.environ.get(env_key):
             os.environ[env_key] = cfg[cfg_key]
+    # 布尔开关：住宿锚点硬保障（注入 + TOPTW 必选点），默认关闭
+    if not os.environ.get("ANCHOR_HARD_GUARANTEE") and cfg_bools.get("anchor_hard_guarantee"):
+        os.environ["ANCHOR_HARD_GUARANTEE"] = "1"
     return cfg
 
 

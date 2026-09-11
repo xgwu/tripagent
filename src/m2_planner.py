@@ -46,11 +46,12 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
               for d in r_m1["itinerary"]["days"]}
     meta = {"candidates": r_m1["candidates"], "invalid_poi_ids": r_m1["invalid_poi_ids"],
             "n_dup_across_days": r_m1.get("n_dup_across_days", 0), "hotel": r_m1.get("hotel")}
-    anchor = hotel_mod.match_landmark_poi(city, hotel_text)  # 锚点地标 → TOPTW 必选
+    anchor = hotel_mod.match_landmark_poi(city, hotel_text)  # 锚点地标 → TOPTW 必选（开关默认关）
     return compose(city, query, days, llm_day_map, themes, use_llm=use_llm,
                    date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                    main_bonus=main_bonus, soft_w=soft_w, meta=meta, mode="m2_toptw",
-                   forced_ids={anchor["id"]} if anchor else None)
+                   forced_ids={anchor["id"]}
+                   if (anchor and hotel_mod.hard_guarantee_enabled()) else None)
 
 
 def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,

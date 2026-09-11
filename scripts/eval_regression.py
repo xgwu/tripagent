@@ -37,6 +37,8 @@ CASES = [
 
 def main():
     use_llm = "--llm" in sys.argv
+    # 锚点用例专测硬保障机制本身，eval 内显式开启（线上默认关）
+    os.environ.setdefault("ANCHOR_HARD_GUARANTEE", "1")
     n_fail = 0
     print(f"{'城市':<4} {'查询':<28} {'天数':>4} {'实际':>4} {'违规':>4} {'落地率':>7} {'耗时':>6}  结果")
     print("-" * 88)

@@ -205,9 +205,9 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 
     # ---- B 落地：匹配回 POI 库 ----
     day_map, themes, grounding = _ground(proposal, city, all_pois, days)
-    # 住宿锚点硬保障：锚点地标未进行程时确定性注入（LLM 对 prompt 规则遵守不稳定）
+    # 住宿锚点硬保障（开关默认关）：锚点地标未进行程时确定性注入
     anchor_poi = hotel_mod.match_landmark_poi(city, hotel_text)
-    if anchor_poi is not None:
+    if anchor_poi is not None and hotel_mod.hard_guarantee_enabled():
         note = hotel_mod.ensure_landmark_in_day_map(day_map, days, anchor_poi)
         if note:
             grounding["anchor_injected"] = note
@@ -271,7 +271,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                                             "lng": hotel["lng"], "resolved": hotel["note"]}
                                            if hotel else None)},
                            mode="m7_proposal",
-                           forced_ids={anchor_poi["id"]} if anchor_poi else None)
+                           forced_ids={anchor_poi["id"]}
+                           if (anchor_poi and hotel_mod.hard_guarantee_enabled()) else None)
     r["proposal"] = proposal
     r["grounding"] = grounding
     r["latency_s"] = round(time.time() - t0, 1)  # A+B+C 全链路耗时
