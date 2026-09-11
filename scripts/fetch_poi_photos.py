@@ -9,7 +9,7 @@ import json, os, sys, time, urllib.parse, urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027"}
+CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027"}  # 新扩城市自动回退用中文城市名查询
 CACHE = os.path.join(ROOT, "data", "photo_cache.json")
 
 

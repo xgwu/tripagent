@@ -357,7 +357,7 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     }
 
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
-CITIES = ["杭州", "南京", "上海", "苏州", "武汉"]
+CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "成都"]
 CITY_META = {}  # 懒加载缓存
 PLAN_LOCK = threading.Lock()  # 访客自带 Key 时临时注入环境变量，加锁防并发串包
 
