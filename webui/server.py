@@ -115,7 +115,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
                                "llm": llm_client.llm_available(),
-                               "amap_key": CFG.get("amap_key", "")})
+                               "amap_key": CFG.get("amap_js_key") or CFG.get("amap_key", "")})
         if u.path == "/api/stats":
             with _stats_lock:
                 st = dict(_stats)
