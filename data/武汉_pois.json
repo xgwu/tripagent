@@ -794,6 +794,368 @@
    "family_ok": true,
    "note": "墨水湖畔，改造后重开的半岛式动物园；汉阳动物园路",
    "closed_days": []
+  },
+  {
+   "id": "WH035",
+   "name": "辛亥革命博物院（红楼）",
+   "category": "history",
+   "tags": [
+    "红色",
+    "历史",
+    "室内"
+   ],
+   "lat": 30.539175,
+   "lng": 114.305584,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "武昌阅马场，红楼主楼+辛亥革命史陈列，与首义广场/黄鹤楼南门串联，免费预约（@武珞路1号(近首义广场)）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "WH036",
+   "name": "江汉关博物馆",
+   "category": "history",
+   "tags": [
+    "历史",
+    "建筑",
+    "室内"
+   ],
+   "lat": 30.576075,
+   "lng": 114.297308,
+   "duration_h": 1,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "hankou",
+   "family_ok": true,
+   "note": "沿江大道江汉路口，1924年海关大楼，汉口开埠史；江汉路步行街端头，免费预约（@沿江大道129号）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "WH037",
+   "name": "古琴台·月湖风景区",
+   "category": "culture",
+   "tags": [
+    "历史",
+    "知音文化",
+    "公园"
+   ],
+   "lat": 30.5574,
+   "lng": 114.2573,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 15,
+   "rating": 4,
+   "area": "hanyang",
+   "family_ok": true,
+   "note": "俞伯牙钟子期高山流水遇知音处，月湖畔；与琴台大剧院/美术馆同片区",
+   "closed_days": []
+  },
+  {
+   "id": "WH038",
+   "name": "湖北美术馆",
+   "category": "art",
+   "tags": [
+    "美术馆",
+    "艺术",
+    "室内"
+   ],
+   "lat": 30.5597,
+   "lng": 114.366,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "武昌东湖路，省博对面可串联，常设湖北漆艺/雕塑展，免费预约",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "WH039",
+   "name": "武汉欢乐谷",
+   "category": "family",
+   "tags": [
+    "游乐园",
+    "亲子",
+    "刺激"
+   ],
+   "lat": 30.5935,
+   "lng": 114.427,
+   "duration_h": 6,
+   "open": "09:30",
+   "close": "18:00",
+   "best_time": "morning",
+   "price": 230,
+   "rating": 5,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "欢乐大道196号，华中旗舰主题乐园，木翼双龙/极速飞车；夜场常开到21:30，须独占大半天",
+   "closed_days": []
+  },
+  {
+   "id": "WH040",
+   "name": "武汉海昌极地海洋公园",
+   "category": "family",
+   "tags": [
+    "海洋馆",
+    "亲子",
+    "动物"
+   ],
+   "lat": 30.664028,
+   "lng": 114.276769,
+   "duration_h": 5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 150,
+   "rating": 4,
+   "area": "hankou",
+   "family_ok": true,
+   "note": "东西湖区金银潭大道，极地动物+海洋剧场，地铁2/8号线可达，亲子全天（@金银潭大道96号）",
+   "closed_days": []
+  },
+  {
+   "id": "WH041",
+   "name": "中科院武汉植物园",
+   "category": "nature",
+   "tags": [
+    "植物",
+    "亲子",
+    "科普"
+   ],
+   "lat": 30.544563,
+   "lng": 114.423278,
+   "duration_h": 3,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 35,
+   "rating": 4,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "磨山南侧，温室+水生植物区，四季花展；与东湖落雁/磨山同侧可串联（@鲁磨路北端特1号）",
+   "closed_days": []
+  },
+  {
+   "id": "WH042",
+   "name": "龟山风景区",
+   "category": "outdoor",
+   "tags": [
+    "山体",
+    "徒步",
+    "江景"
+   ],
+   "lat": 30.555045,
+   "lng": 114.275707,
+   "duration_h": 2,
+   "open": "08:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "hanyang",
+   "family_ok": true,
+   "note": "汉阳龟山，山体栈道+电视塔+长江汉江双江景；紧邻晴川阁/古琴台可串联，免费（@晴川街道龟山北路5号）",
+   "closed_days": []
+  },
+  {
+   "id": "WH043",
+   "name": "凌波门·东湖日出",
+   "category": "photo",
+   "tags": [
+    "日出",
+    "东湖",
+    "网红"
+   ],
+   "lat": 30.537,
+   "lng": 114.358,
+   "duration_h": 1,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "武大凌波门东湖栈桥，武汉看日出首选，清晨人少光线最好；近武大/东湖听涛",
+   "closed_days": []
+  },
+  {
+   "id": "WH044",
+   "name": "咸安坊·同兴里老里份",
+   "category": "photo",
+   "tags": [
+    "里份",
+    "建筑",
+    "文艺"
+   ],
+   "lat": 30.5845,
+   "lng": 114.298,
+   "duration_h": 1,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "hankou",
+   "family_ok": true,
+   "note": "汉口老里份代表，石库门+天井民居，咖啡馆小店聚集；与黎黄陂路/江汉路同片区",
+   "closed_days": []
+  },
+  {
+   "id": "WH045",
+   "name": "武汉园博园·长江文明馆",
+   "category": "family",
+   "tags": [
+    "园林",
+    "亲子",
+    "展馆"
+   ],
+   "lat": 30.611,
+   "lng": 114.248,
+   "duration_h": 3,
+   "open": "08:30",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 60,
+   "rating": 4,
+   "area": "hankou",
+   "family_ok": true,
+   "note": "园博园东路，全国园博会址，长江文明馆+汉口小镇；园区大建议乘观光车",
+   "closed_days": []
+  },
+  {
+   "id": "WH046",
+   "name": "张之洞与武汉博物馆",
+   "category": "culture",
+   "tags": [
+    "历史",
+    "工业",
+    "建筑"
+   ],
+   "lat": 30.561,
+   "lng": 114.244,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "hanyang",
+   "family_ok": true,
+   "note": "琴台大道汉阳铁厂遗址旁，悬浮造型建筑，'武汉城市之父'工业史；免费预约",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "WH047",
+   "name": "光谷空轨·光谷光子号",
+   "category": "family",
+   "tags": [
+    "空轨",
+    "亲子",
+    "科技"
+   ],
+   "lat": 30.511,
+   "lng": 114.453,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 30,
+   "rating": 3,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "光谷中心城悬挂式空轨，全国首条商业空轨，车厢地板透明观景；光谷四路站",
+   "closed_days": []
+  },
+  {
+   "id": "WH048",
+   "name": "盘龙城国家考古遗址公园",
+   "category": "history",
+   "tags": [
+    "考古",
+    "商代",
+    "遗址"
+   ],
+   "lat": 30.696758,
+   "lng": 114.262989,
+   "duration_h": 2,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "hankou",
+   "family_ok": true,
+   "note": "黄陂盘龙城，长江流域最完整商代城址，'武汉城市之根'；博物院+遗址区，免费预约（@盘龙城经济开发区盘龙城经济开发区盘龙大道特一号）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "WH049",
+   "name": "木兰天池",
+   "category": "outdoor",
+   "tags": [
+    "山水",
+    "徒步",
+    "远郊"
+   ],
+   "lat": 31.088,
+   "lng": 114.418,
+   "duration_h": 5,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 70,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": false,
+   "note": "黄陂木兰文化生态区，峡谷瀑布+天池，花木兰传说地；市区车程约1.5小时，须独占一天",
+   "closed_days": []
+  },
+  {
+   "id": "WH050",
+   "name": "大成路夜市",
+   "category": "food",
+   "tags": [
+    "夜市",
+    "小吃",
+    "夜宵"
+   ],
+   "lat": 30.5435,
+   "lng": 114.309,
+   "duration_h": 1.5,
+   "open": "17:00",
+   "close": "23:00",
+   "best_time": "evening",
+   "price": 40,
+   "rating": 3,
+   "area": "wuchang",
+   "family_ok": true,
+   "note": "武昌老牌夜市，烧烤/炸炸/汤包烟火气十足；近户部巷/黄鹤楼，晚饭后遛弯首选",
+   "closed_days": []
   }
  ]
 }

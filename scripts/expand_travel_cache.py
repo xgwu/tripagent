@@ -24,7 +24,9 @@ NEW_IDS = {
     "上海": ["SH045", "SH046", "SH047", "SH048", "SH049", "SH050", "SH051", "SH052", "SH053", "SH054", "SH055", "SH056", "SH057", "SH058", "SH059", "SH060", "SH061", "SH062", "SH063", "SH064", "SH065", "SH066", "SH067", "SH068"],
     "南京": ["NJ029", "NJ030", "NJ031", "NJ032", "NJ033"],
     "杭州": ["HZ051", "HZ052", "HZ053", "HZ054", "HZ055"],
-    "武汉": ["WH029", "WH030", "WH031", "WH032", "WH033", "WH034"],
+    "武汉": ["WH029", "WH030", "WH031", "WH032", "WH033", "WH034",
+             "WH035", "WH036", "WH037", "WH038", "WH039", "WH040", "WH041",
+             "WH042", "WH043", "WH045", "WH046", "WH047", "WH048", "WH049", "WH050"],
     "苏州": ["SZ029", "SZ030"],
 }
 OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving/{coords}?annotations=duration"
