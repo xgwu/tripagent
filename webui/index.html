@@ -44,6 +44,11 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 @media(max-width:820px){.grid,.two{grid-template-columns:1fr}}
 .note{color:var(--mut);font-size:12.5px}
 .hint{font-size:12px;color:var(--mut);margin-top:4px}
+.swapbtn{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11px;cursor:pointer;margin-left:auto;flex-shrink:0}
+.swapbtn:hover{color:var(--blue);border-color:var(--blue)}
+.poiimg{position:relative;width:92px;height:60px;border-radius:8px;border:1px solid var(--line);margin-left:auto;flex-shrink:0;overflow:hidden}
+.poiimg img{width:100%;height:100%;object-fit:cover;display:block}
+.poiimg .pin{position:absolute;left:50%;top:50%;transform:translate(-50%,-88%);font-size:15px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
 </style>
 </head>
 <body>
@@ -80,6 +85,7 @@ const SAMPLES=["{c}2天经典深度游，喜欢历史文化、寺庙和博物馆
 async function boot(){
   const r=await (await fetch("/api/cities")).json();
   CITY.cities=r.cities; CITY.llm=r.llm; CITY.amap_key=r.amap_key||"";
+  CITY.staticmap_key=r.staticmap_key||""; // P2-3 静态图缩略
   $("city").innerHTML=r.cities.map(c=>`<option value="${c.name}">${c.name}（${c.n_pois} 个 POI，${c.n_closed} 个有闭馆日）</option>`).join("");
   $("city").value="上海"; // 默认城市
   chip();
@@ -128,7 +134,7 @@ $("go").onclick=async()=>{
 };
 
 function render({city_meta,result:r,days_source}){
-  LAST={city_meta,result:r};
+  LAST={city_meta,result:r,days_source}; // P2-1 换点后整体重渲染需要 days_source
   const it=r.itinerary;
   const closedV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("当日闭馆")).length;
   const retV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("返回酒店")).length;
@@ -154,7 +160,7 @@ function render({city_meta,result:r,days_source}){
   <p class="note">「${r.query}」</p>
   <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div></div>`;
   $("out").innerHTML=h;
-  $("daycards").innerHTML=it.days.map(d=>dayCard(d)).join("");
+  $("daycards").innerHTML=it.days.map(d=>dayCard(d,city_meta)).join("");
   // 地图：优先高德 JS API 真实底图渲染，失败/无 Key 自动回退 SVG 手绘图
   if(CITY.amap_key){
     $("map").innerHTML='<p class="hint" style="padding:12px">🗺 高德地图加载中…</p>';
@@ -167,10 +173,26 @@ function render({city_meta,result:r,days_source}){
   }
 }
 
-function dayCard(d){
+// P2-3 POI 缩略图：高德公开瓦片（GCJ-02 与 POI 坐标同系，无需 Key），staticmap 个人 Key 已不可用
+function poiThumb(p){
+  if(!p)return "";
+  const z=15,n=2**z;
+  const x=Math.floor((p.lng+180)/360*n);
+  const rad=p.lat*Math.PI/180;
+  const y=Math.floor((1-Math.log(Math.tan(rad)+1/Math.cos(rad))/Math.PI)/2*n);
+  const src=`https://webrd02.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x=${x}&y=${y}&z=${z}`;
+  return `<div class="poiimg"><img loading="lazy" alt="" src="${src}" onerror="this.parentNode.remove()"><span class="pin">📍</span></div>`;
+}
+
+function dayCard(d,meta){
   const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
-  const rows=(d.timeline||[]).map(s=>
-    `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${ICON[s.type]||"📍"}</span><span>${s.name}${s.type==="poi"&&s.arrive?` <span class="note">（到 ${s.arrive}）</span>`:""}</span></div>`).join("");
+  const rows=(d.timeline||[]).map(s=>{
+    const isPoi=s.type==="poi";
+    const p=isPoi&&meta&&meta.pois[s.id];
+    const img=isPoi?poiThumb(p):"";
+    const swap=isPoi?`<button class="swapbtn" title="不喜欢？换成附近的同类地点" onclick="swapPoi(${d.day},'${s.id}')">🔁 换一个</button>`:"";
+    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${ICON[s.type]||"📍"}</span><span style="flex:1">${s.name}${isPoi&&s.arrive?` <span class="note">（到 ${s.arrive}）</span>`:""}</span>${img}${swap}</div>`;
+  }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
   return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${viol}${drop}</div>`;
@@ -293,8 +315,11 @@ function buildDoc(meta,r){
   const date=r.date0?`｜${r.date0} 出发`:"";
   const cards=it.days.map(d=>{
     const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
-    const rows=(d.timeline||[]).map(s=>
-      `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${ICON[s.type]||"📍"}</td><td>${s.name}</td></tr>`).join("");
+    const rows=(d.timeline||[]).map(s=>{
+      const p=s.type==="poi"&&meta&&meta.pois[s.id];
+      const img=s.type==="poi"?poiThumb(p):"";
+      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${ICON[s.type]||"📍"}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
+    }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
     <table>${rows}</table></div>`;
   }).join("");
@@ -311,6 +336,10 @@ function buildDoc(meta,r){
   table{width:100%;border-collapse:collapse;font-size:14px}
   td{padding:6px 10px;border-bottom:1px solid #f0f0f0}
   td.t{width:110px;color:#6b7280;font-variant-numeric:tabular-nums}td.i{width:24px}
+  td.pic{width:100px;text-align:right}
+  .poiimg{position:relative;width:92px;height:60px;border-radius:6px;border:1px solid #e5e7eb;overflow:hidden;display:inline-block}
+  .poiimg img{width:100%;height:100%;object-fit:cover;display:block}
+  .poiimg .pin{position:absolute;left:50%;top:50%;transform:translate(-50%,-88%);font-size:15px}
   .tip{color:#9ca3af;font-size:12px;margin-top:20px;border-top:1px solid #eee;padding-top:10px}
   .print{position:fixed;top:14px;right:14px}
   @media print{.print{display:none}}
@@ -337,6 +366,36 @@ function openDoc(){
   const url=URL.createObjectURL(blob);
   window.open(url,"_blank"); // 新标签打开，右上角打印按钮可存为 PDF
   setTimeout(()=>URL.revokeObjectURL(url),60000);
+}
+
+// P2-1 反馈闭环：不喜欢某点 → 同类目邻近换点并重排当天
+async function swapPoi(day,poiId){
+  if(!LAST)return;
+  const it=LAST.result.itinerary;
+  const d=it.days.find(x=>x.day===day);
+  if(!d)return;
+  const dayIds=(d.timeline||[]).filter(s=>s.type==="poi").map(s=>s.id);
+  const usedIds=it.days.flatMap(x=>(x.timeline||[]).filter(s=>s.type==="poi").map(s=>s.id));
+  let city=$("city").value;
+  const pre=(d.theme||"").split("｜")[0].trim(); // 多城联游时主题带城市前缀
+  if(LAST.result.cities&&LAST.result.cities.includes(pre))city=pre;
+  $("status").innerHTML='<span class="spin"></span>换点中…';
+  try{
+    const res=await fetch("/api/replace",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({city,day,poi_id:poiId,day_ids:dayIds,used_ids:usedIds,
+        query:LAST.result.query,date0:LAST.result.date0||null,
+        hotel_text:LAST.result.hotel?LAST.result.hotel.name:""})});
+    const r=await res.json();
+    if(r.ok){
+      Object.assign(d,r.day); // timeline/travel_km/finish/violations/dropped/weekday 全量更新
+      $("status").innerHTML=`<span class="badge b-green">🔁 ${r.swap.from} → ${r.swap.to}${r.swap.same_category?"（同类目）":"（就近）"}</span>`;
+      render(LAST);
+    }else{
+      $("status").innerHTML='<span class="badge b-red">换点失败：'+(r.error||"")+"</span>";
+    }
+  }catch(e){
+    $("status").innerHTML='<span class="badge b-red">换点失败：'+e+"</span>";
+  }
 }
 
 // P1-2：分享短链 —— 快照存服务端，链接可发给任何人打开即见行程

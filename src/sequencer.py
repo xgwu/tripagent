@@ -318,6 +318,23 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
         ids = day_map[d]
         pois = [all_pois[i] for i in ids if i in all_pois]
         wd = poi_db.trip_weekday(date0, d) if date0 else None
+        # 美食餐窗容量前置修剪：每窗 ≤1 美食是硬约束，候选超额时在进时间轴前剔除
+        # （评分最高的留午/晚各一家），避免修复链 max_drop 上限内剔不干净残留违规
+        pre_drop = []
+        foods = [p for p in pois if p.get("category") == "food"]
+        if len(foods) > 2:
+            by_win = {}
+            for p in foods:
+                by_win.setdefault(FOOD_PREF_WIN.get(p.get("best_time"), "lunch"), []).append(p)
+            keep_ids = {p["id"] for w in ("lunch", "dinner")
+                        for p in sorted(by_win.get(w, []), key=lambda q: -q["rating"])[:1]}
+            extra = [p for p in foods if p["id"] not in keep_ids]
+            if extra:
+                pre_drop = [{"id": p["id"], "name": p["name"],
+                             "reason": "美食餐窗容量已满（每窗最多 1 家），剔除超额美食点"}
+                            for p in extra]
+                extra_ids = {p["id"] for p in extra}
+                pois = [p for p in pois if p["id"] not in extra_ids]
         seq = pois if order_given else order_day(pois, hotel=hotel, city=city)
         tl = _build_timeline(seq, city, d, wd, hotel)
         # 主题画像：先做每日里程预算收敛，再做硬约束修复（两者正交）
@@ -343,6 +360,7 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
         all_violations.extend(tl["violations"])
         all_dropped.extend(tl.get("dropped", []))
         total_km += tl["travel_km"]
+        tl["dropped"] = pre_drop + tl.get("dropped", [])  # 前置修剪与修复链剔除合并
         result_days.append({"day": d, **tl})
     return {"days": result_days, "total_violations": len(all_violations),
             "total_travel_km": total_km, "dropped_pois": all_dropped}

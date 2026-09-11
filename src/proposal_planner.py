@@ -18,7 +18,7 @@ PROPOSE_SYSTEM = """你是一位资深旅行规划专家，深谙中国主要旅
 
 PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 用户需求：{query}
-{date_line}
+{date_line}{weather_line}
 自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去），每天 4-6 个停留点。
 路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。
 本系统已收录以下{city}地点（落地有保障，同等体验下请优先选用；也可少量补充清单外的特色地点，但不要虚构清单内地点的分店）：
@@ -186,10 +186,14 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     hint = _library_hint(all_pois)
     wd1 = poi_db.trip_weekday(date0, 1) if date0 else None
     date_line = (f"出发日期：{date0}（第 1 天为{wd1}），请结合常见闭馆常识安排顺序。\n" if date0 else "")
+    # P2-5 天气感知：雨天意图 → 引导室内场馆优先、减少露天点位
+    weather_line = ("天气提示：需求含雨天/下雨，请优先安排室内场馆（博物馆/美术馆/科技馆/室内乐园/商场等），"
+                    "减少露天观景台、户外步道类点位。\n") if re.search(r"下雨|雨天|降雨|暴雨", query) else ""
     raw = llm_client.chat([
         {"role": "system", "content": PROPOSE_SYSTEM},
         {"role": "user", "content": PROPOSE_PROMPT.format(city=city["city"], days=days,
                                                           query=query, date_line=date_line,
+                                                          weather_line=weather_line,
                                                           library_hint=hint)}],
         temperature=0.2, seed=42)
     proposal = llm_client.parse_json_safe(raw)

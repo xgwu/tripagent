@@ -97,6 +97,86 @@ def extract_days(query: str):
     c = m.group(1)
     return int(c) if c.isdigit() else _CN_NUM[c]
 
+
+# P2-2 多城联游：查询中出现 ≥2 个城市（或「苏杭」类别名）→ 跨城规划
+CITY_ALIAS = {"苏杭": ["苏州", "杭州"], "杭苏": ["杭州", "苏州"]}
+
+
+def detect_multi_city(query: str) -> list:
+    found = [c for c in CITIES if c in (query or "")]
+    if len(found) >= 2:
+        return found
+    for alias, pair in CITY_ALIAS.items():
+        if alias in (query or "") and not any(c in query for c in pair):
+            return pair
+    return []
+
+
+def plan_multi(cities: list, query: str, days: int, date0: str | None,
+               use_llm: bool, planner) -> dict:
+    """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
+
+    planner 为单城规划模块（m7/m1）。酒店锚点是城市专属概念，跨城模式忽略。
+    """
+    from datetime import date as _date
+    n = min(len(cities), max(days, 1))
+    use = cities[:n]
+    base, rem = divmod(days, n)
+    alloc = [base + (1 if i < rem else 0) for i in range(n)]
+
+    merged_days, merged_pois, merged_gaps = [], {}, []
+    tot = {"violations": 0, "km": 0.0, "dup": 0, "cands": 0, "lat": 0.0,
+           "proposed": 0, "unmatched": 0, "rate_w": 0.0}
+    seg_date0 = _date.fromisoformat(date0) if date0 else None
+    day_no = 0
+    for i, cname in enumerate(use):
+        di = alloc[i]
+        if di < 1:
+            continue
+        city = poi_db.load_city(cname)
+        d0 = seg_date0.isoformat() if seg_date0 else None
+        r = planner.plan(city, query, di, use_llm=use_llm, date0=d0)
+        it = r["itinerary"]
+        for d in it["days"]:
+            day_no += 1
+            d["day"] = day_no
+            d["theme"] = f"{cname}｜{d.get('theme') or cname}"
+            merged_days.append(d)
+        meta = city_meta(cname)
+        merged_pois.update(meta["pois"])
+        g = r.get("grounding") or {}
+        merged_gaps.extend(g.get("gaps") or [])
+        tot["violations"] += it.get("total_violations", 0)
+        tot["km"] += it.get("total_travel_km", 0.0)
+        tot["dup"] += r.get("n_dup_across_days", 0) or 0
+        tot["cands"] += r.get("candidates", 0) or 0
+        tot["lat"] += r.get("latency_s", 0.0)
+        tot["proposed"] += g.get("n_proposed", 0) or 0
+        tot["unmatched"] += g.get("unmatched", 0) or 0
+        tot["rate_w"] += (g.get("grounding_rate", 0.0) or 0.0) * (g.get("n_proposed", 0) or 0)
+        # 下一段出发日期 = 本段起始 + 本段天数
+        if seg_date0:
+            from datetime import timedelta as _td
+            seg_date0 = seg_date0 + _td(days=di)
+    grounding = None
+    if tot["proposed"] or merged_gaps:
+        grounding = {"grounding_rate": (tot["rate_w"] / tot["proposed"]) if tot["proposed"] else 0.0,
+                     "gaps": merged_gaps, "n_proposed": tot["proposed"],
+                     "unmatched": tot["unmatched"]}
+    return {
+        "mode": "m7_multi",
+        "days": days,
+        "query": query,
+        "date0": date0,
+        "cities": use,
+        "itinerary": {"days": merged_days, "total_violations": tot["violations"],
+                      "total_travel_km": round(tot["km"], 1), "dropped_pois": []},
+        "grounding": grounding,
+        "n_dup_across_days": tot["dup"],
+        "candidates": tot["cands"] or None,
+        "latency_s": round(tot["lat"], 1),
+    }
+
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
 CITIES = ["杭州", "南京", "上海", "苏州", "武汉"]
 CITY_META = {}  # 懒加载缓存
@@ -197,7 +277,8 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
                                "llm": llm_client.llm_available(),
-                               "amap_key": CFG.get("amap_js_key") or CFG.get("amap_key", "")})
+                               "amap_key": CFG.get("amap_js_key") or CFG.get("amap_key", ""),
+                               "staticmap_key": CFG.get("amap_key", "")})  # P2-3 静态图缩略
         if u.path == "/api/route":  # P1-1：实际路网路径（骑行/步行），带磁盘缓存
             mode = q.get("mode", "walking")
             o, d = _norm_ll(q.get("o") or ""), _norm_ll(q.get("d") or "")
@@ -260,6 +341,37 @@ class Handler(BaseHTTPRequestHandler):
                 cname = q.get("city", "杭州")
                 if cname not in CITIES:
                     return self._json({"ok": False, "error": f"未知城市 {cname}"}, code=400)
+                query = q.get("query") or f"{cname}2天经典深度游"
+                # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
+                multi = detect_multi_city(query)
+                if len(multi) >= 2:
+                    d = extract_days(query) or 2
+                    days = max(1, min(5, d))
+                    use_llm_m = q.get("llm", "1") == "1" and llm_client.llm_available()
+                    try:
+                        from src import proposal_planner as _pp
+                        planner_m = _pp if use_llm_m else m1_planner
+                    except ImportError:
+                        planner_m = m1_planner
+                    stats_bump("plan_total")
+                    try:
+                        r = plan_multi(multi, query, days, q.get("date") or None,
+                                       use_llm=use_llm_m, planner=planner_m)
+                        merged_meta = {"name": "+".join(multi), "n_pois": 0, "n_closed": 0,
+                                       "pois": {}}
+                        for c in multi:
+                            m = city_meta(c)
+                            merged_meta["pois"].update(m["pois"])
+                            merged_meta["n_pois"] += m["n_pois"]
+                            merged_meta["n_closed"] += m["n_closed"]
+                        stats_latency(r.get("latency_s", 0))
+                        return self._json({"ok": True, "city_meta": merged_meta, "result": r,
+                                           "days_source": "query" if extract_days(query) else "default"})
+                    except Exception as e:  # noqa
+                        stats_bump("plan_error")
+                        import traceback
+                        return self._json({"ok": False, "error": f"{type(e).__name__}: {e}",
+                                           "trace": traceback.format_exc()[-900:]}, code=500)
                 city = poi_db.load_city(cname)
                 query = q.get("query") or f"{cname}2天经典深度游"
                 # 天数优先从需求文字里识别（「3天」「两日」…）；显式 days 参数仅作兼容保留；都没有则默认 2 天
@@ -343,6 +455,48 @@ class Handler(BaseHTTPRequestHandler):
             except OSError as e:
                 return self._json({"ok": False, "error": f"保存失败: {e}"}, code=500)
             return self._json({"ok": True, "id": sid})
+        if u.path == "/api/replace":  # P2-1 反馈闭环：不喜欢某点 → 同类目邻近换点并重排
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                payload = json.loads(self.rfile.read(n).decode("utf-8")) if 0 < n <= 1_000_000 else None
+            except (ValueError, json.JSONDecodeError):
+                payload = None
+            if not isinstance(payload, dict):
+                return self._json({"ok": False, "error": "请求体格式错误"}, code=400)
+            cname = payload.get("city")
+            poi_id, day = payload.get("poi_id"), payload.get("day")
+            day_ids = payload.get("day_ids") or []
+            if cname not in CITIES or not poi_id or not day or not day_ids:
+                return self._json({"ok": False, "error": "参数缺失（city/day/poi_id/day_ids）"}, code=400)
+            try:
+                from src import hotel as hotel_mod, sequencer
+                city = poi_db.load_city(cname)
+                all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
+                replaced = all_pois.get(poi_id)
+                if not replaced:
+                    return self._json({"ok": False, "error": f"POI {poi_id} 不存在"}, code=404)
+                exclude = set(payload.get("used_ids") or []) | set(day_ids)  # 含被换点本身
+                cands = [p for p in all_pois.values() if p["id"] not in exclude]
+                if not cands:
+                    return self._json({"ok": False, "error": "候选池已空，无点可换"})
+                same_cat = [p for p in cands if p["category"] == replaced["category"]]
+                pool = same_cat or cands  # 同类目优先；没有则放宽到全部
+                pick = min(pool, key=lambda p: (
+                    poi_db.haversine_km(p["lat"], p["lng"], replaced["lat"], replaced["lng"]),
+                    -p["rating"]))
+                new_ids = [pick["id"] if i == poi_id else i for i in day_ids]
+                hotel = hotel_mod.resolve_hotel(city, payload.get("hotel_text") or None)
+                it = sequencer.build_itinerary({int(day): new_ids}, city, all_pois,
+                                               order_given=False, date0=payload.get("date0") or None,
+                                               hotel=hotel, query=payload.get("query") or "")
+                return self._json({"ok": True,
+                                   "swap": {"from": replaced["name"], "to": pick["name"],
+                                            "same_category": bool(same_cat)},
+                                   "new_id": pick["id"], "day": it["days"][0]})
+            except Exception as e:  # noqa
+                import traceback
+                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}",
+                                   "trace": traceback.format_exc()[-600:]}, code=500)
         return self._json({"error": "not found"}, code=404)
 
     def log_message(self, fmt, *args):  # 静默默认访问日志

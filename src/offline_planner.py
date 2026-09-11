@@ -4,21 +4,31 @@
 模拟「本地经验」：按地理分区聚天 + 评分优先 + 标签加权，给出模板化理由。
 注意：这只是让管线跑通的替代品，不代表 M1 的真实体验假设。
 """
+import re
+
 from . import sequencer, poi_db
 
 BUDGET_H_PER_DAY = 8.0
 CLUSTER_RADIUS_KM = 9.0  # 同日 POI 必须与锚点在半径内（地理聚集优先）
+_INDOOR_CATS = {"culture", "art", "history", "shopping", "family"}
+_OUTDOOR_CATS = {"nature", "photo", "relax"}
 
 
 def plan_days(city: dict, cands: list, query: str, days: int):
     # 标签得分（复用检索的关键词映射）
     from .retrieval import extract_query_tags
     qtags = extract_query_tags(query)
+    rain = bool(re.search(r"下雨|雨天|降雨|暴雨", query or ""))  # P2-5 天气感知
 
     def score(p):
         s = p["rating"] * 2 + sum(2 for t in qtags if t in p["tags"] or t == p["category"])
         if qtags and any(k in ("亲子", "family") for k in qtags) and not p["family_ok"]:
             s -= 100  # 亲子硬排除
+        if rain:  # 雨天：室内场馆加权、露天点位降权
+            if p["category"] in _INDOOR_CATS:
+                s += 3
+            elif p["category"] in _OUTDOOR_CATS:
+                s -= 4
         return s
 
     pool = sorted(cands, key=score, reverse=True)

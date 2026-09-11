@@ -7,3 +7,5 @@ __pycache__/
 
 # 运行产物
 output/
+data/shares/
+nohup.out
