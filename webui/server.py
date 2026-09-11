@@ -8,13 +8,27 @@
 
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）
 """
-import io, json, os, sys, threading, time, urllib.parse
+import io, json, os, re, sys, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from src import poi_db, m1_planner, llm_client  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
+
+_CN_NUM = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5}
+
+
+def extract_days(query: str):
+    """从自然语言需求提取行程天数（「3天」「玩 4 天」「两日」…），提不到返回 None。
+
+    只认 1-5（前端历史上限），「带5岁孩子」这类不会误匹配（数字后须跟 天/日）。
+    """
+    m = re.search(r"([1-5一二两三四五])\s*[天日]", query or "")
+    if not m:
+        return None
+    c = m.group(1)
+    return int(c) if c.isdigit() else _CN_NUM[c]
 
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
 CITIES = ["杭州", "南京", "上海", "苏州", "武汉"]
@@ -139,7 +153,16 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": f"未知城市 {cname}"}, code=400)
                 city = poi_db.load_city(cname)
                 query = q.get("query") or f"{cname}2天经典深度游"
-                days = max(1, min(5, int(q.get("days", "2"))))
+                # 天数优先从需求文字里识别（「3天」「两日」…）；显式 days 参数仅作兼容保留；都没有则默认 2 天
+                days_param = (q.get("days") or "").strip()
+                if days_param:
+                    days, days_src = max(1, min(5, int(days_param))), "param"
+                else:
+                    d = extract_days(query)
+                    if d:
+                        days, days_src = d, "query"
+                    else:
+                        days, days_src = 2, "default"
                 date0 = q.get("date") or None
                 hotel_text = q.get("hotel") or None
                 llm_key = self.headers.get("X-LLM-Key", "").strip()  # 访客自带 Key（不落盘）
@@ -179,7 +202,8 @@ class Handler(BaseHTTPRequestHandler):
                 stats_latency(r.get("latency_s", 0))
                 if r.get("mode") not in ("offline_fallback",):
                     stats_bump("plan_llm")
-                return self._json({"ok": True, "city_meta": city_meta(cname), "result": r})
+                return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
+                                   "days_source": days_src})
             except Exception as e:  # noqa: 单请求异常不挂服务
                 stats_bump("plan_error")
                 import traceback

@@ -53,12 +53,12 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 <div class="panel">
   <div class="grid">
     <div><label>城市</label><select id="city"></select></div>
-    <div><label>行程天数</label><select id="days"><option value="1">1 天</option><option value="2" selected>2 天</option><option value="3">3 天</option><option value="4">4 天</option><option value="5">5 天</option></select></div>
     <div><label>出发日期（可选，启用闭馆日约束）</label><input type="date" id="date"></div>
     <div><label>住宿锚点（可选，酒店名或「名称@lng,lat」）</label><input id="hotel" placeholder="如：西湖国宾馆"></div>
   </div>
   <div style="margin-top:12px"><label>旅行需求</label>
     <textarea id="query" placeholder="例：带5岁孩子去杭州玩2天，不要太累，最好有动物或者博物馆"></textarea>
+    <div class="hint">行程天数直接写在需求里即可（如「3天」「两日」，最多 5 天），未提及默认 2 天。</div>
     <div class="chips" id="chips"></div>
   </div>
   <div class="row">
@@ -100,7 +100,7 @@ function chip(){
 $("go").onclick=async()=>{
   const q=$("query").value.trim()||`${$("city").value}2天经典深度游`;
   const mode=document.querySelector('input[name=mode]:checked').value;
-  const p=new URLSearchParams({city:$("city").value,query:q,days:$("days").value,
+  const p=new URLSearchParams({city:$("city").value,query:q,
     mode,llm:CITY.llm?"1":"0"});
   if($("date").value)p.set("date",$("date").value);
   if($("hotel").value.trim())p.set("hotel",$("hotel").value.trim());
@@ -116,13 +116,14 @@ $("go").onclick=async()=>{
   $("go").disabled=false;
 };
 
-function render({city_meta,result:r}){
+function render({city_meta,result:r,days_source}){
   LAST={city_meta,result:r};
   const it=r.itinerary;
   const closedV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("当日闭馆")).length;
   const retV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("返回酒店")).length;
   let h=`<div class="panel"><div class="summary">
     <span class="badge b-blue">${r.mode==="m2_toptw"?"M2 库内直选+TOPTW":r.mode.startsWith("m7")?"M7 经验提案"+(r.mode==="m7_proposal"?"":"（降级）"):r.mode}</span>
+    ${days_source==="query"?`<span class="badge b-green">📅 需求识别 ${r.days} 天</span>`:days_source==="default"?'<span class="badge b-amber">📅 需求未提天数 · 默认 2 天</span>':""}
     ${r.grounding?`<span class="badge ${r.grounding.grounding_rate>=0.8?"b-green":"b-amber"}">🎯 落地率 ${Math.round(r.grounding.grounding_rate*100)}%</span>`:""}
     ${r.grounding&&r.grounding.gaps.length?`<span class="badge b-amber" title="${r.grounding.gaps.map(g=>g.name).join("、")}">📚 库缺口 ${r.grounding.gaps.length}</span>`:""}
     <span class="badge ${it.total_violations===0?"b-green":"b-red"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
