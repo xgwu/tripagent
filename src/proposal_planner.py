@@ -20,11 +20,13 @@ PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 用户需求：{query}
 {date_line}{weather_line}
 自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去），每天 4-6 个停留点。
+停留点必须是游客可游览的真实地点（景点/场馆/历史街区/公园/餐厅/市场等），不要把酒店、商铺门店当作停留点（住宿由系统另行安排）。
 路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。全天大点规则：时长约 8 小时以上的大型景点（如迪士尼、海昌海洋公园这类主题乐园）须独占一整天，当天不要再排其他停留点。住宿锚点规则：用户指定住宿位置（如「住迪士尼附近」）时，行程必须包含该位置对应的标志性景点（住迪士尼附近则必含迪士尼），且该景点独占一天、优先安排在第一天，其余天数再安排其他区域。
+备选规则：每天可附 0-2 个 alternates——你认为时间充裕时值得加上的点、或主选可能闭馆/排队过久时的同区域替补；备选不必与主选相邻，系统会按约束自动取舍。
 参考清单——以下{city}地点带完整数据（坐标/开放时间/适玩时长），排入即可直接落地；若与你更想推荐的地点重合，以你的专业判断为准：
 {library_hint}
 严格输出 JSON：
-{{"days": [{{"day": 1, "theme": "主题", "reason": "整体思路", "stops": [{{"name": "灵隐寺", "note": "为什么去"}}]}}]}}"""
+{{"days": [{{"day": 1, "theme": "主题", "reason": "整体思路", "stops": [{{"name": "灵隐寺", "note": "为什么去"}}], "alternates": [{{"name": "西溪湿地", "note": "时间充裕可加"}}]}}]}}"""
 
 MATCH_SYSTEM = """你是 POI 匹配助手。给定用户行程中的地点名和 POI 库清单，判断每个地点对应库中哪个 POI。
 同一地点的别称、旧称、近似名称、同品牌不同分店（如「XX（苏州河店）」对应库内「XX（武康路店）」）都应匹配到库中最接近的一项；
@@ -121,12 +123,17 @@ def _ground_one(name: str, all_pois: dict, by_name: list) -> tuple:
     return None, "unmatched"
 
 
-def _llm_match(unmatched: list, all_pois: dict) -> dict:
-    """LLM 辅助匹配剩余未落地项（批量一次调用）。返回 {stop_name: poi_id|None}。"""
+def _llm_match(unmatched: list, all_pois: dict, exclude_ids: set | None = None) -> dict:
+    """LLM 辅助匹配剩余未落地项（批量一次调用）。返回 {stop_name: poi_id|None}。
+
+    exclude_ids: 住宿服务类等不可作为停留点的库点 id，从菜单与结果两侧剔除。
+    """
     if not unmatched:
         return {}
+    exclude_ids = exclude_ids or set()
     lib = "\n".join(f'{p["id"]}｜{p["name"]}｜{p.get("area", "")}｜{p["category"]}'
-                    for p in sorted(all_pois.values(), key=lambda x: x["id"]))
+                    for p in sorted(all_pois.values(), key=lambda x: x["id"])
+                    if p["id"] not in exclude_ids)
     stops = "\n".join(f'- {u["name"]}' + (f'（{u["note"]}）' if u.get("note") else "")
                       for u in unmatched)
     try:
@@ -138,20 +145,33 @@ def _llm_match(unmatched: list, all_pois: dict) -> dict:
         out = {}
         for m in parsed.get("matches", []):
             pid = m.get("poi_id")
-            out[m.get("stop", "")] = pid if pid in all_pois else None
+            out[m.get("stop", "")] = pid if (pid in all_pois and pid not in exclude_ids) else None
         return out
     except Exception:  # noqa: 匹配失败按未落地处理
         return {}
 
 
+def _is_lodging(raw: dict) -> bool:
+    """高德采集的住宿服务类点（宾馆/酒店）不是游览停留点，匹配层免疫。"""
+    tags = "".join(raw.get("tags") or [])
+    return "住宿" in tags or "宾馆" in tags
+
+
 def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
-    """B 阶段：提案落地。返回 (day_map, themes, grounding)。"""
-    by_name = list(all_pois.values())
+    """B 阶段：提案落地。返回 (day_map, themes, stats)。
+
+    主选 stops 落地进 day_map；备选 alternates 落地进 stats["alt_map"]（{day: [poi_id]}，
+    供 TOPTW 低利润权重换点），备选未落地不计入 gaps/落地率（可选性质）。
+    """
+    lodging_ids = {r["id"] for r in city["pois"] if _is_lodging(r)}
+    by_name = [p for p in all_pois.values() if p["id"] not in lodging_ids]
     day_map, themes, seen = {}, {}, set()
     stats = {"n_proposed": 0, "exact": 0, "contain": 0, "fuzzy": 0, "llm": 0,
-             "unmatched": 0, "dup_skipped": 0, "gaps": []}
+             "unmatched": 0, "dup_skipped": 0, "gaps": [],
+             "n_alt": 0, "n_alt_hit": 0}
     pending = []  # (day, name) 待 LLM 批量匹配
     pre = {}
+    alt_map = {}  # day -> [poi_id]
     for d in proposal.get("days", []):
         for s in d.get("stops", []):
             stats["n_proposed"] += 1
@@ -163,13 +183,28 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
             else:
                 pending.append({"day": d.get("day"), "name": s.get("name", ""),
                                 "note": s.get("note", "")})
-    llm_res = _llm_match(pending, all_pois)
+        # 备选 alternates：四级匹配，未落地静默丢弃（不计 gaps）
+        for s in (d.get("alternates") or []):
+            if not isinstance(s, dict) or not s.get("name"):
+                continue
+            stats["n_alt"] += 1
+            pid, _m = _ground_one(s.get("name", ""), all_pois, by_name)
+            if pid:
+                alt_map.setdefault(d.get("day"), []).append(pid)
+                stats["n_alt_hit"] += 1
+            else:
+                pending.append({"day": d.get("day"), "name": s.get("name", ""),
+                                "note": s.get("note", ""), "alt": True})
+    llm_res = _llm_match(pending, all_pois, exclude_ids=lodging_ids)
     for u in pending:
         pid = llm_res.get(u["name"])
-        if pid:
+        if pid and u.get("alt"):
+            alt_map.setdefault(u["day"], []).append(pid)
+            stats["n_alt_hit"] += 1
+        elif pid:
             pre[(u["day"], u["name"])] = (pid, "llm")
             stats["llm"] += 1
-        else:
+        elif not u.get("alt"):  # 主选未落地才计 gaps；备选可选性质，静默丢弃
             stats["unmatched"] += 1
             stats["gaps"].append({"name": u["name"], "note": u.get("note", ""),
                                   "day": u.get("day")})
@@ -190,6 +225,12 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
         if ids:
             day_map[dd] = ids
             themes[dd] = {"theme": d.get("theme", ""), "reason": d.get("reason", "")}
+    # 备选去重：同天重复剔除（与主选/跨天重复由 compose 的 used_all 兜底）
+    for dd in list(alt_map):
+        alt_map[dd] = list(dict.fromkeys(alt_map[dd]))
+        if not alt_map[dd]:
+            del alt_map[dd]
+    stats["alt_map"] = alt_map
     # 去掉 stop 级重复计数口径：gaps 只保留真正的未落地提案
     stats["grounding_rate"] = (round((stats["n_proposed"] - stats["unmatched"]) /
                                      max(stats["n_proposed"], 1), 3))
@@ -276,12 +317,13 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
 
 def _compose_m7(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 date0: str | None, hotel: dict | None, anchor_poi: dict | None,
-                grounding: dict,
+                grounding: dict, alt_map: dict | None,
                 time_limit_s: float, main_bonus: float, soft_w: float) -> dict:
     """M7 复用 M2 compose（TOPTW + 修复链 + 文案），参数固定便于闭环重算。"""
     return m2_planner.compose(city, query, days, day_map, themes, use_llm=True,
                               date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                               main_bonus=main_bonus, soft_w=soft_w,
+                              alt_map=alt_map,
                               meta={"candidates": None, "invalid_poi_ids": [],
                                     "n_dup_across_days": grounding["dup_skipped"],
                                     "hotel": ({"name": hotel["name"], "lat": hotel["lat"],
@@ -340,6 +382,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
             break  # 修正无益（更差/清空），保留原案
         proposal, day_map, themes, grounding = revised, dm2, th2, g2
     grounding["revise_rounds"] = rounds_used
+    alt_map = grounding.pop("alt_map", {})
 
     # 落地后确定性修整：锚点注入 → 缺天补齐 → 单天补强
     anchor_poi = hotel_mod.match_landmark_poi(city, hotel_text)
@@ -357,7 +400,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     # ---- C 求解：复用 M2 compose（TOPTW + 修复链 + 文案）----
     hotel = hotel_mod.resolve_hotel(city, hotel_text)
     r = _compose_m7(city, query, days, day_map, themes, date0, hotel,
-                    anchor_poi, grounding, time_limit_s, main_bonus, soft_w)
+                    anchor_poi, grounding, alt_map, time_limit_s, main_bonus, soft_w)
     # 闭环第二触发点：约束剔除过多 → 带剔除原因反馈修正 → 重落地重求解（一轮）
     drops = [{"name": dr.get("name", ""), "reason": dr.get("reason", ""), "day": d.get("day")}
              for d in r["itinerary"]["days"] for dr in d.get("dropped", [])]
@@ -367,16 +410,18 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         if revised is not None:
             dm2, th2, g2 = _ground(revised, city, all_pois, days)
             if dm2 and g2["grounding_rate"] >= grounding["grounding_rate"]:
+                alt_map2 = g2.pop("alt_map", {})
                 dm2, th2, g2 = _post_ground_fixups(
                     dm2, th2, g2, city, all_pois, days, query, anchor_poi)
                 if dm2:
                     r2 = _compose_m7(city, query, days, dm2, th2, date0, hotel,
-                                     anchor_poi, g2, time_limit_s, main_bonus, soft_w)
+                                     anchor_poi, g2, alt_map2,
+                                     time_limit_s, main_bonus, soft_w)
                     d2 = [{"name": dr.get("name", "")}
                           for d in r2["itinerary"]["days"] for dr in d.get("dropped", [])]
                     if len(d2) < len(drops):  # 修正确实减少剔除才采纳，防震荡
                         r = r2
-                        proposal, grounding = revised, g2
+                        proposal, grounding, alt_map = revised, g2, alt_map2
                         grounding["revise_rounds"] = rounds_used + 1
     r["proposal"] = proposal
     r["grounding"] = grounding

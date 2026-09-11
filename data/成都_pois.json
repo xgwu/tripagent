@@ -792,28 +792,6 @@
    "closed_days": []
   },
   {
-   "id": "CD036",
-   "name": "成都尼依格罗酒店",
-   "category": "photo",
-   "tags": [
-    "住宿服务",
-    "宾馆酒店",
-    "五星级宾馆"
-   ],
-   "lat": 30.654805,
-   "lng": 104.082392,
-   "duration_h": 1.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "any",
-   "price": 0,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "坐标/名称来自高德采集，@红星路三段1号成都IFS三号办公楼；营业时间与闭馆日待人工核实",
-   "closed_days": []
-  },
-  {
    "id": "CD037",
    "name": "成都市美术馆",
    "category": "culture",

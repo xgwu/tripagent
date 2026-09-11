@@ -59,18 +59,23 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             time_limit_s: float = toptw.TIME_LIMIT_S,
             main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
             meta: dict | None = None, mode: str = "m2_toptw",
-            forced_ids: set | None = None) -> dict:
-    """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。"""
+            forced_ids: set | None = None, alt_map: dict | None = None) -> dict:
+    """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。
+
+    alt_map: {day: [poi_id]} LLM 备选（M7 提案 alternates）——并入当日求解池但
+    不进主选 rank（低利润权重），求解器可在时间充裕/主选不可行时换入。
+    """
     meta = meta or {}
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     cands = retrieval.recall(city, query)
     t0 = time.time()
 
-    # ---- 阶段2：逐日 TOPTW（主选 + 地理邻近备选池）----
+    # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
     final_day_map, solver_dropped, solved_days = {}, [], {}
     used_all = {i for ids in day_map.values() for i in ids}
     used_backup = set()
     n_mains = n_mains_kept = 0
+    n_llm_alts = 0
     for d in sorted(day_map):
         mains = [all_pois[i] for i in day_map[d] if i in all_pois]
         if not mains:
@@ -90,6 +95,15 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 if not wd or wd not in p.get("closed_days", [])]
         used_backup.update(p["id"] for p in pool
                            if p["id"] not in {m["id"] for m in mains})
+        # LLM 备选并入池（低利润权重：不在 rank → 仅评分收益），供求解器换点
+        pool_ids = {p["id"] for p in pool} | {m["id"] for m in mains}
+        for i in (alt_map or {}).get(d, []):
+            p = all_pois.get(i)
+            if (p and i not in pool_ids and i not in used_all
+                    and (not wd or wd not in p.get("closed_days", []))):
+                pool.append(p)
+                used_backup.add(i)
+                n_llm_alts += 1
         ordered, dropped, ok = toptw.solve_day(pool, day_map[d], city, all_pois,
                                                time_limit_s=time_limit_s,
                                                main_bonus=main_bonus, soft_w=soft_w,
@@ -142,6 +156,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "hotel": meta.get("hotel"),
             "llm_raw_violations": llm_raw_violations,
             "mains_kept": f"{n_mains_kept}/{n_mains}" if n_mains else "n/a",
+            "n_llm_alts": n_llm_alts,
             "toptw_solved_days": sum(1 for v in solved_days.values() if v),
             "toptw_dropped": solver_dropped,
             "violations_after_solver": n_viol_after_solver,
