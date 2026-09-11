@@ -67,7 +67,8 @@ def load_config() -> dict:
         except (json.JSONDecodeError, OSError) as e:
             print(f"⚠ config.json 解析失败（忽略）: {e}", flush=True)
     for env_key, cfg_key in (("DEEPSEEK_API_KEY", "deepseek_api_key"),
-                             ("AMAP_KEY", "amap_key")):
+                             ("AMAP_KEY", "amap_key"),
+                             ("M1_MODEL", "m1_model")):
         if cfg.get(cfg_key) and not os.environ.get(env_key):
             os.environ[env_key] = cfg[cfg_key]
     return cfg
