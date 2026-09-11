@@ -9,6 +9,7 @@
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）
 """
 import io, json, os, re, sys, threading, time, urllib.parse, uuid
+from datetime import date as _date, timedelta as _td
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -136,8 +137,13 @@ def extract_days(query: str):
     """从自然语言需求提取行程天数（「3天」「玩 4 天」「两日」…），提不到返回 None。
 
     只认 1-5（前端历史上限），「带5岁孩子」这类不会误匹配（数字后须跟 天/日）。
+    先剥离日期表达式，避免「10月1日」的「1日」被误读成 1 天。
     """
-    m = re.search(r"([1-5一二两三四五])\s*[天日]", query or "")
+    q = (query or "")
+    q = re.sub(r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?", "", q)  # 2026-10-01 / 2026年10月1日
+    q = re.sub(r"\d{1,2}月\d{1,2}[日号]", "", q)                   # 10月1日 / 9月30号
+    q = re.sub(r"(?<=\d)[日号]", "", q)                            # 残留的「11日」「30号」
+    m = re.search(r"([1-5一二两三四五])\s*[天日]", q)
     if not m:
         return None
     c = m.group(1)
@@ -148,14 +154,94 @@ def extract_days(query: str):
 CITY_ALIAS = {"苏杭": ["苏州", "杭州"], "杭苏": ["杭州", "苏州"]}
 
 
-def detect_multi_city(query: str) -> list:
+def detect_cities(query: str) -> list:
+    """P4 纯自然语言：识别需求里提到的城市（含「苏杭」类别名），单城也返回。"""
     found = [c for c in CITIES if c in (query or "")]
-    if len(found) >= 2:
+    if found:
         return found
     for alias, pair in CITY_ALIAS.items():
         if alias in (query or "") and not any(c in query for c in pair):
             return pair
     return []
+
+
+def detect_multi_city(query: str) -> list:
+    found = detect_cities(query)
+    return found if len(found) >= 2 else []
+
+
+# P4 纯自然语言交互：目的地城市/出发日期/住宿锚点均可从需求文字提取
+DEFAULT_CITY = "上海"
+_WEEKDAY = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+
+
+def extract_date(query: str, today: _date | None = None) -> str | None:
+    """从自然语言提取出发日期 → ISO（YYYY-MM-DD）。提不到返回 None。
+
+    支持：「2026-10-01」「10月1日/号」「明天/后天/大后天」「下周六」「周六」「这周末」。
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+    today = today or _date.today()
+    m = re.search(r"(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})[日号]?", q)
+    if m:  # 完整 ISO / 「2026年10月1日」
+        try:
+            return _date(*map(int, m.groups())).isoformat()
+        except ValueError:
+            pass
+    m = re.search(r"(\d{1,2})月(\d{1,2})[日号]", q)
+    if m:  # 「9月20日」：已过去的月日视为明年
+        try:
+            dt = _date(today.year, int(m.group(1)), int(m.group(2)))
+            if dt < today:
+                dt = _date(today.year + 1, int(m.group(1)), int(m.group(2)))
+            return dt.isoformat()
+        except ValueError:
+            pass
+    m = re.search(r"(大后天|后天|明天|今天|今晚)", q)
+    if m:
+        off = {"今天": 0, "今晚": 0, "明天": 1, "后天": 2, "大后天": 3}[m.group(1)]
+        return (today + _td(days=off)).isoformat()
+    # 「下周六」「下下周三」「周六」——排除「玩一周」这类时长表述
+    m = re.search(r"(?<![\d一两])(?:(?:(下下|下|本|这)(?:周|星期))|(?:周|星期))([一二三四五六日天])(?!末)", q)
+    if m:
+        wd = _WEEKDAY[m.group(2)]
+        if m.group(1) == "下":
+            nxt = today + _td(days=7 - today.weekday())  # 下周一
+            return (nxt + _td(days=wd)).isoformat()
+        if m.group(1) == "下下":
+            nxt = today + _td(days=14 - today.weekday())
+            return (nxt + _td(days=wd)).isoformat()
+        return (today + _td(days=(wd - today.weekday()) % 7)).isoformat()
+    if re.search(r"(这|本)?周末", q):
+        return (today + _td(days=(5 - today.weekday()) % 7)).isoformat()  # 最近周六
+    return None
+
+
+def extract_hotel(query: str) -> str | None:
+    """从自然语言提取住宿锚点 → 传给 hotel.resolve_hotel。提不到返回 None。
+
+    支持：「住外滩华尔道夫」「住在西湖边/西湖国宾馆附近」「酒店订在南京路」
+    「入住：全季酒店」以及「名称@lng,lat」显式坐标透传。
+    """
+    q = (query or "").strip()
+    if not q:
+        return None
+    pats = [
+        r"住(?:宿|在|进)?[：:]?\s*([^\s，。,；;]{1,24}?)(?:附近|旁边|边上|一带)",
+        r"酒店(?:订|定)?在[：:]?\s*([^\s，。,；;@]{2,24}(?:@[0-9.]+,[0-9.]+)?)",
+        r"(?:入住|住宿)[：:]\s*([^\s，。,；;]{2,24})",
+        r"(?<![记留])住(?:宿|在|进)?[：:]?\s*([^\s，。,；;@]{2,24}(?:@[0-9.]+,[0-9.]+)?)",
+    ]
+    for p in pats:
+        m = re.search(p, q)
+        if m:
+            t = m.group(1).strip()
+            # 「住杭州」是停留城市不是酒店名；显式坐标除外
+            if t and t not in CITIES and t not in CITY_ALIAS:
+                return t
+    return None
 
 
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
@@ -413,12 +499,20 @@ class Handler(BaseHTTPRequestHandler):
                                    "error": f"请求过于频繁（每 {int(RATE_LIMIT_WINDOW_S)} 秒最多 {RATE_LIMIT_N} 次规划），请稍后再试"}, code=429)
             stats_bump("plan_total")
             try:
-                cname = q.get("city", "杭州")
-                if cname not in CITIES:
-                    return self._json({"ok": False, "error": f"未知城市 {cname}"}, code=400)
-                query = q.get("query") or f"{cname}2天经典深度游"
-                # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
+                query = q.get("query") or ""
+                # ---- P4 纯自然语言：城市可从需求文字识别，未提及用默认城市 ----
                 multi = detect_multi_city(query)
+                cname = (q.get("city") or "").strip()
+                if not cname:
+                    found = detect_cities(query)
+                    cname = found[0] if found else DEFAULT_CITY
+                if cname not in CITIES:
+                    return self._json({"ok": False,
+                                       "error": f"未能识别目的地城市（当前支持：{'、'.join(CITIES)}）。试试在需求里写明，如「杭州3天…」"},
+                                      code=400)
+                if not query:
+                    query = f"{cname}2天经典深度游"
+                # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
                 if len(multi) >= 2:
                     d = extract_days(query) or 2
                     days = max(1, min(5, d))
@@ -430,7 +524,8 @@ class Handler(BaseHTTPRequestHandler):
                         planner_m = m1_planner
                     stats_bump("plan_total")
                     try:
-                        r = plan_multi(multi, query, days, q.get("date") or None,
+                        m_date0 = q.get("date") or extract_date(query)
+                        r = plan_multi(multi, query, days, m_date0,
                                        use_llm=use_llm_m, planner=planner_m)
                         merged_meta = {"name": "+".join(multi), "n_pois": 0, "n_closed": 0,
                                        "pois": {}}
@@ -441,14 +536,15 @@ class Handler(BaseHTTPRequestHandler):
                             merged_meta["n_closed"] += m["n_closed"]
                         stats_latency(r.get("latency_s", 0))
                         return self._json({"ok": True, "city_meta": merged_meta, "result": r,
-                                           "days_source": "query" if extract_days(query) else "default"})
+                                           "days_source": "query" if extract_days(query) else "default",
+                                           "parsed": {"city": "+".join(multi), "date0": m_date0,
+                                                      "hotel_text": None}})
                     except Exception as e:  # noqa
                         stats_bump("plan_error")
                         import traceback
                         return self._json({"ok": False, "error": f"{type(e).__name__}: {e}",
                                            "trace": traceback.format_exc()[-900:]}, code=500)
                 city = poi_db.load_city(cname)
-                query = q.get("query") or f"{cname}2天经典深度游"
                 # 天数优先从需求文字里识别（「3天」「两日」…）；显式 days 参数仅作兼容保留；都没有则默认 2 天
                 days_param = (q.get("days") or "").strip()
                 if days_param:
@@ -459,8 +555,9 @@ class Handler(BaseHTTPRequestHandler):
                         days, days_src = d, "query"
                     else:
                         days, days_src = 2, "default"
-                date0 = q.get("date") or None
-                hotel_text = q.get("hotel") or None
+                # P4：日期/住宿优先显式参数，缺省时从需求文字提取
+                date0 = q.get("date") or extract_date(query)
+                hotel_text = q.get("hotel") or extract_hotel(query)
                 llm_key = self.headers.get("X-LLM-Key", "").strip()  # 访客自带 Key（不落盘）
                 use_llm = q.get("llm", "1") == "1" and bool(llm_key or llm_client.llm_available())
                 mode = q.get("mode", "m7")  # 默认走 M7 经验提案；显式 mode 保留兼容（eval 脚本）
@@ -499,7 +596,10 @@ class Handler(BaseHTTPRequestHandler):
                 if r.get("mode") not in ("offline_fallback",):
                     stats_bump("plan_llm")
                 return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
-                                   "days_source": days_src})
+                                   "days_source": days_src,
+                                   "parsed": {"city": cname, "date0": date0,
+                                              "hotel_text": hotel_text,
+                                              "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}})
             except Exception as e:  # noqa: 单请求异常不挂服务
                 stats_bump("plan_error")
                 import traceback

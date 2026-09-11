@@ -56,14 +56,9 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 <header><h1>🧭 TripAgent</h1><span class="sub">经验提案 → 库内落地 → 求解排程 · 幻觉结构性归零</span><span id="llmbadge"></span></header>
 
 <div class="panel">
-  <div class="grid">
-    <div><label>城市</label><select id="city"></select></div>
-    <div><label>出发日期（可选，启用闭馆日约束）</label><input type="date" id="date"></div>
-    <div><label>住宿锚点（可选，酒店名或「名称@lng,lat」）</label><input id="hotel" placeholder="如：西湖国宾馆"></div>
-  </div>
-  <div style="margin-top:12px"><label>旅行需求</label>
-    <textarea id="query" placeholder="例：带5岁孩子去杭州玩2天，不要太累，最好有动物或者博物馆"></textarea>
-    <div class="hint">行程天数直接写在需求里即可（如「3天」「两日」，最多 5 天），未提及默认 2 天。</div>
+  <div><label>旅行需求（纯自然语言：城市、天数、出发日期、住宿都写在需求里）</label>
+    <textarea id="query" placeholder="例：10月1日出发，带5岁孩子去杭州玩3天，住西湖国宾馆附近，不要太累，最好有动物或者博物馆"></textarea>
+    <div class="hint">天数（「3天」「两日」，最多 5 天）、出发日期（「明天」「下周六」「10月1日」）、住宿（「住外滩附近」「酒店订在全季」）都可直接写在需求里；未提天数默认 2 天，未提城市默认上海。</div>
     <div class="chips" id="chips"></div>
   </div>
   <div class="row">
@@ -80,16 +75,13 @@ const ICON={poi:"📍",meal:"🍽",hotel:"🏨"};
 let CITY={};let LAST=null; // 最近一次规划结果（导出行程单用）
 const $=id=>document.getElementById(id);
 
-const SAMPLES=["{c}2天经典深度游，喜欢历史文化、寺庙和博物馆","带5岁孩子去{c}玩2天，不要太累，最好有动物或者博物馆","{c}2天美食之旅，想吃地道本地菜，顺便逛逛老街","{c}下雨天玩2天，想多安排室内场馆"];
+const SAMPLES=["上海2天经典深度游，喜欢历史文化、寺庙和博物馆","带5岁孩子去杭州玩2天，不要太累，最好有动物或者博物馆","苏杭3天联游，喜欢园林和美食，住西湖国宾馆附近","下周六出发，上海下雨天玩2天，想多安排室内场馆"];
 
 async function boot(){
   const r=await (await fetch("/api/cities")).json();
   CITY.cities=r.cities; CITY.llm=r.llm; CITY.amap_key=r.amap_key||"";
   CITY.staticmap_key=r.staticmap_key||""; // P2-3 静态图缩略
-  $("city").innerHTML=r.cities.map(c=>`<option value="${c.name}">${c.name}（${c.n_pois} 个 POI，${c.n_closed} 个有闭馆日）</option>`).join("");
-  $("city").value="上海"; // 默认城市
   chip();
-  $("city").addEventListener("change",chip);
   llmBadge();
   // P1-2：?share=<id> → 直接渲染已保存的行程快照
   const sid=new URLSearchParams(location.search).get("share");
@@ -110,17 +102,13 @@ function llmBadge(){
   else $("llmbadge").innerHTML='<span class="badge b-amber">未配置 Key → 离线兜底模式</span>';
 }
 function chip(){
-  const c=$("city").value;
-  $("chips").innerHTML=SAMPLES.map(s=>`<span class="chip" data-q="${s.replaceAll("{c}",c)}">${s.replaceAll("{c}","").slice(0,18)}…</span>`).join("");
+  $("chips").innerHTML=SAMPLES.map(s=>`<span class="chip" data-q="${s}">${s.slice(0,20)}…</span>`).join("");
   document.querySelectorAll(".chip").forEach(el=>el.onclick=()=>{$("query").value=el.dataset.q;});
 }
 
 $("go").onclick=async()=>{
-  const q=$("query").value.trim()||`${$("city").value}2天经典深度游`;
-  const p=new URLSearchParams({city:$("city").value,query:q,
-    llm:CITY.llm?"1":"0"});
-  if($("date").value)p.set("date",$("date").value);
-  if($("hotel").value.trim())p.set("hotel",$("hotel").value.trim());
+  const q=$("query").value.trim()||"上海2天经典深度游";
+  const p=new URLSearchParams({query:q,llm:CITY.llm?"1":"0"});
   $("go").disabled=true;
   $("status").innerHTML='<span class="spin"></span>规划中：经验提案 → '+(CITY.llm?"库内落地":"离线兜底")+" → 求解排程 → 修复链…";
   $("out").innerHTML="";
@@ -133,14 +121,15 @@ $("go").onclick=async()=>{
   $("go").disabled=false;
 };
 
-function render({city_meta,result:r,days_source}){
-  LAST={city_meta,result:r,days_source}; // P2-1 换点后整体重渲染需要 days_source
+function render({city_meta,result:r,days_source,parsed}){
+  LAST={city_meta,result:r,days_source,parsed}; // P2-1 换点后整体重渲染需要 days_source/parsed
   const it=r.itinerary;
   const closedV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("当日闭馆")).length;
   const retV=(it.days||[]).flatMap(d=>d.violations||[]).filter(v=>v.reason.startsWith("返回酒店")).length;
   // P1-4：闭馆日提示 —— 从剔除记录里汇总「当日闭馆」被正确避开的 POI
   const avoided=(it.dropped_pois||[]).filter(x=>(x.reason||"").includes("当日闭馆"));
   let h=`<div class="panel"><div class="summary">
+    <span class="badge b-blue">📍 ${city_meta.name||"未知城市"}</span>
     <span class="badge b-blue">${r.mode==="m2_toptw"?"M2 库内直选+TOPTW":r.mode.startsWith("m7")?"M7 经验提案"+(r.mode==="m7_proposal"?"":"（降级）"):r.mode}</span>
     ${days_source==="query"?`<span class="badge b-green">📅 需求识别 ${r.days} 天</span>`:days_source==="default"?'<span class="badge b-amber">📅 需求未提天数 · 默认 2 天</span>':""}
     ${r.date0?`<span class="badge b-blue" title="已按出发日期启用闭馆日硬约束">📅 ${r.date0} 出发</span>`:'<span class="badge b-amber" title="填写出发日期可自动避开周一闭馆等">📅 未填日期（闭馆约束未启用）</span>'}
@@ -410,7 +399,7 @@ async function swapPoi(day,poiId){
   if(!d)return;
   const dayIds=(d.timeline||[]).filter(s=>s.type==="poi").map(s=>s.id);
   const usedIds=it.days.flatMap(x=>(x.timeline||[]).filter(s=>s.type==="poi").map(s=>s.id));
-  let city=$("city").value;
+  let city=(LAST.parsed&&LAST.parsed.city)||LAST.city_meta.name||"上海"; // P4 纯自然语言：来自需求识别结果
   const pre=(d.theme||"").split("｜")[0].trim(); // 多城联游时主题带城市前缀
   if(LAST.result.cities&&LAST.result.cities.includes(pre))city=pre;
   $("status").innerHTML='<span class="spin"></span>换点中…';
