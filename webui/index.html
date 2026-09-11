@@ -146,7 +146,16 @@ function render({city_meta,result:r}){
   </div></div>`;
   $("out").innerHTML=h;
   $("days").innerHTML=it.days.map(d=>dayCard(d)).join("");
-  $("map").innerHTML=drawMap(city_meta,r);
+  // 地图：优先高德 JS API 真实底图渲染，失败/无 Key 自动回退 SVG 手绘图
+  if(CITY.amap_key){
+    $("map").innerHTML='<p class="hint" style="padding:12px">🗺 高德地图加载中…</p>';
+    renderAMap(city_meta,r).then(ok=>{
+      if($("map")&&document.getElementById("amapbox")===null&&$("map").querySelector("svg")===null)
+        $("map").innerHTML=drawMap(city_meta,r)+(ok?"":'<p class="hint" style="color:var(--red)">⚠ 高德地图加载失败，已临时用手绘图（可强刷页面后重新生成行程重试）</p>');
+    });
+  }else{
+    $("map").innerHTML=drawMap(city_meta,r);
+  }
   $("docframe").srcdoc=buildDoc(city_meta,r); // 行程单直接内嵌展示
 }
 
@@ -226,10 +235,10 @@ async function renderAMap(meta,r){
     }
     map.add(overlays);
     map.setFitView(null,false,[40,40,40,40]);
-    // 瓦片就绪检测：key 类型不对/无效时 complete 永不触发 → 8s 后回退 SVG
+    // 瓦片就绪检测：key 类型不对/无效时 complete 永不触发 → 12s 后回退 SVG
     const ok=await Promise.race([
       new Promise(res=>map.on("complete",()=>res(true))),
-      new Promise(res=>setTimeout(()=>res(false),8000))
+      new Promise(res=>setTimeout(()=>res(false),12000))
     ]);
     if(!ok){map.destroy();AMAP_OBJ=null;return false;}
     return true;
