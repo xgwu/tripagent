@@ -62,9 +62,6 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
     <div class="chips" id="chips"></div>
   </div>
   <div class="row">
-    <div class="radio"><label><input type="radio" name="mode" value="m1">M1（贪婪+修复）</label>
-      <label><input type="radio" name="mode" value="m2" checked>M2（TOPTW 求解）</label>
-      <label><input type="radio" name="mode" value="m7">M7（经验提案）</label></div>
     <button id="go">✨ 生成行程</button><span id="status"></span>
   </div>
 </div>
@@ -99,13 +96,12 @@ function chip(){
 
 $("go").onclick=async()=>{
   const q=$("query").value.trim()||`${$("city").value}2天经典深度游`;
-  const mode=document.querySelector('input[name=mode]:checked').value;
   const p=new URLSearchParams({city:$("city").value,query:q,
-    mode,llm:CITY.llm?"1":"0"});
+    llm:CITY.llm?"1":"0"});
   if($("date").value)p.set("date",$("date").value);
   if($("hotel").value.trim())p.set("hotel",$("hotel").value.trim());
   $("go").disabled=true;
-  $("status").innerHTML='<span class="spin"></span>规划中：检索 → '+(CITY.llm?"LLM 库内选择":"离线规则兜底")+" → "+(mode==="m2"?"TOPTW 求解":"贪婪排序")+" → 修复链…";
+  $("status").innerHTML='<span class="spin"></span>规划中：经验提案 → '+(CITY.llm?"库内落地":"离线兜底")+" → 求解排程 → 修复链…";
   $("out").innerHTML="";
   try{
     const res=await (await fetch("/api/plan?"+p.toString())).json();
@@ -268,7 +264,7 @@ function buildDoc(meta,r){
 </style></head><body>
 <button class="print" onclick="window.print()">🖨 打印 / 存为 PDF</button>
 <h1>🗺 TripAgent 行程单${date}</h1>
-<p class="meta">「${r.query}」｜${r.days} 天｜${r.mode==="m2_toptw"?"LLM 库内选择 + TOPTW 求解":r.mode.startsWith("m7")?"世界知识提案 + 落地匹配 + TOPTW":"LLM 库内选择 + 贪婪排序"}${r.hotel?`｜住宿：${r.hotel.name}`:""}</p>
+<p class="meta">「${r.query}」｜${r.days} 天｜${r.mode.startsWith("m7")?"世界知识提案 + 落地匹配 + TOPTW":"LLM 库内选择 + TOPTW 求解"}${r.hotel?`｜住宿：${r.hotel.name}`:""}</p>
 <div class="badges">
   <span class="badge ${it.total_violations===0?"g":"r"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
   ${r.grounding?`<span class="badge a">🎯 落地率 ${Math.round(r.grounding.grounding_rate*100)}%</span>`:""}

@@ -167,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
                 hotel_text = q.get("hotel") or None
                 llm_key = self.headers.get("X-LLM-Key", "").strip()  # 访客自带 Key（不落盘）
                 use_llm = q.get("llm", "1") == "1" and bool(llm_key or llm_client.llm_available())
-                mode = q.get("mode", "m2")
+                mode = q.get("mode", "m7")  # 默认走 M7 经验提案；显式 mode 保留兼容（eval 脚本）
                 planner = None
                 if mode == "m7":  # M7 经验提案（需 LLM；不可用由其内部降级 M1）
                     try:
