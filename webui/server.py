@@ -191,13 +191,22 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+class QuickBindServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # 跳过 HTTPServer 默认的 socket.getfqdn() 反向解析——
+        # DNS 异常环境下它会阻塞启动 1~2 分钟（本服务用不到 server_name）
+        import socketserver
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = "127.0.0.1", self.server_address[1]
+
+
 def main():
     global CFG
     cfg = load_config()
     CFG = cfg
     # 云端部署：PORT 环境变量注入 + 绑 0.0.0.0；本地：argv[1] 或默认 8765
     port = int(os.environ.get("PORT") or (sys.argv[1] if len(sys.argv) > 1 else 8765))
-    srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    srv = QuickBindServer(("0.0.0.0", port), Handler)
     print(f"TripAgent Web UI → http://127.0.0.1:{port} "
           f"(LLM {'可用' if llm_client.llm_available() else '不可用，离线兜底'}"
           f"{'，config.json 已加载' if cfg else '，未找到 config.json（可用环境变量或页面自带 Key）'})", flush=True)
