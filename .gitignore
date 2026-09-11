@@ -9,3 +9,4 @@ __pycache__/
 output/
 data/shares/
 nohup.out
+data/llm_cache.json

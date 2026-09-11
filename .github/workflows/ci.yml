@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  eval-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 安装 ortools（TOPTW 求解器；失败则自动降级 M1，不阻塞）
+        run: pip install ortools || echo "::warning::ortools 安装失败，回退 M1 链路"
+
+      - name: 数据完整性检查（六城 POI 文件 + 交通缓存存在且可解析）
+        run: |
+          python - <<'EOF'
+          import json, glob
+          files = sorted(glob.glob("data/*_pois.json"))
+          assert len(files) >= 6, f"城市 POI 文件不足：{files}"
+          for f in files:
+              d = json.load(open(f, encoding="utf-8"))
+              n = len(d["pois"])
+              assert n >= 20, f"{f} POI 过少：{n}"
+              print(f"{d['city']}: {n} POI ✓")
+          tc = json.load(open("data/travel_cache.json", encoding="utf-8"))
+          total = sum(len(v) for v in tc["minutes"].values())
+          print(f"travel_cache: {total} 对 ✓")
+          EOF
+
+      - name: 基准回归（10 例跨城 0 违规断言，非 0 退出码即失败）
+        run: python scripts/eval_regression.py
