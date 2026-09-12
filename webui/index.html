@@ -168,8 +168,14 @@ async function doPlan(q){
     try{
       const pr=await (await fetch("/api/progress?sid="+encodeURIComponent(sid))).json();
       if(!pr.ok)return;
-      const k=PLAN_STAGES.findIndex(s=>s[0]===pr.stage);
-      if(k>=0)$("status").innerHTML='<span class="spin"></span>'+PLAN_STAGES[k][1]+"…"+stageBar(k);
+      // ":r2" 后缀 = C 闭环质量重算第 2 轮（设计内重算，非出错回退）
+      const raw=pr.stage||"";
+      const r2=raw.endsWith(":r2");
+      const st=r2?raw.slice(0,-3):raw;
+      const k=PLAN_STAGES.findIndex(s=>s[0]===st);
+      if(k>=0)$("status").innerHTML='<span class="spin"></span>'
+        +(r2?'<span class="badge b-amber">质量优化·第 2 轮</span> ':"")
+        +PLAN_STAGES[k][1]+"…"+stageBar(k);
     }catch(e){/* 网络/时序问题忽略，下次再查 */}
   },600);
   try{

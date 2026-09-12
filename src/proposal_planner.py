@@ -527,10 +527,20 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                     reuse_days = {d: rec for d, rec in prev_days.items()
                                   if rec["ids"] and dm2.get(d)
                                   and set(dm2[d]) == set(rec["ids"])}
+                    # C 闭环重算是设计内的第二轮质量优化（非出错回退）：进度阶段
+                    # 加 ":r2" 轮次后缀，前端据此显示「质量优化（第 2 轮）」而非
+                    # 让用户误以为进度条倒退卡死
+                    def _r2_progress(stage: str) -> None:
+                        if progress:
+                            try:
+                                progress(stage + ":r2")
+                            except Exception:  # noqa: 进度上报失败不拖垮规划
+                                pass
                     r2 = _compose_m7(city, query, days, dm2, th2, date0, hotel,
                                      anchor_poi, g2, alt_map2,
                                      time_limit_s, main_bonus, soft_w,
-                                     progress=progress, reuse_days=reuse_days or None)
+                                     progress=_r2_progress if progress else None,
+                                     reuse_days=reuse_days or None)
                     drops2, overlap2 = _collect_issues(r2)
                     # 修正确实减少问题总数（剔除+片区重复）才采纳，防震荡
                     if len(drops2) + len(overlap2) < len(drops) + len(overlap):
