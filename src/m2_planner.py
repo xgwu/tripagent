@@ -75,6 +75,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
             closed = {p["id"] for p in mains if wd in p.get("closed_days", [])}
             if closed:
                 solver_dropped.extend({"id": x, "name": all_pois[x]["name"],
+                                       "day": d,
                                        "reason": f"当日闭馆（{wd}），求解器强制换点"}
                                       for x in closed)
             mains = [p for p in mains if wd not in p.get("closed_days", [])]
@@ -111,6 +112,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                                           "day": d,
                                           "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"})
                 solver_dropped.append({"id": x, "name": all_pois[x]["name"],
+                                       "day": d,
                                        "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"})
         else:  # 求解失败 → M1 贪婪链路兜底
             final_day_map[d] = day_map[d]

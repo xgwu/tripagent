@@ -41,6 +41,12 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 .time{color:var(--mut);font-size:12.5px;min-width:88px;font-variant-numeric:tabular-nums}
 .viol{background:var(--red-l);color:var(--red);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 16px 12px}
 .drop{background:var(--amber-l);color:var(--amber);border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 16px 12px}
+.whynot{margin:0 16px 12px;border-top:1px dashed var(--line);padding-top:8px;font-size:12.5px}
+.whynot summary{color:var(--mut);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:5px}
+.whynot summary::before{content:"▸";transition:transform .15s;font-size:11px}
+.whynot[open] summary::before{transform:rotate(90deg)}
+.whynot .wnrow{display:flex;justify-content:space-between;gap:10px;padding:4px 2px 0 16px;color:var(--ink)}
+.whynot .wnrow .wnr{color:var(--mut);text-align:right;white-space:nowrap}
 .map svg{width:100%;background:#f2f4f7;border:1px solid var(--line);border-radius:8px}
 .two{display:grid;grid-template-columns:0.85fr 1.15fr;gap:16px}
 @media(max-width:820px){.grid,.two{grid-template-columns:1fr}}
@@ -207,7 +213,10 @@ function render({city_meta,result:r,days_source,parsed}){
   <p class="note">「${r.query}」</p>
   <div class="two" style="margin-top:12px"><div class="map" id="map"></div><div id="daycards"></div></div></div>`;
   $("out").innerHTML=h;
-  $("daycards").innerHTML=it.days.map(d=>dayCard(d,city_meta)).join("");
+  // 「为什么没去这些点」：求解器剔除清单按天分组（缺 day 字段的旧缓存响应不展示）
+  const DROPS_BY_DAY=new Map();
+  (r.toptw_dropped||[]).forEach(x=>{ if(x.day!=null){ const a=DROPS_BY_DAY.get(x.day)||[]; a.push(x); DROPS_BY_DAY.set(x.day,a);} });
+  $("daycards").innerHTML=it.days.map(d=>dayCard(d,city_meta,DROPS_BY_DAY.get(d.day)||[])).join("");
   // 地图：优先高德 JS API 真实底图渲染，失败/无 Key 自动回退 SVG 手绘图
   if(CITY.amap_key){
     $("map").innerHTML='<p class="hint" style="padding:12px">🗺 高德地图加载中…</p>';
@@ -234,7 +243,7 @@ function poiThumb(p){
   return `<div class="poiimg"${click}><img loading="lazy" alt="" src="${src}" data-tile="${p.id?tile:""}" onload="this.nextElementSibling.style.display='none'" onerror="if(this.dataset.tile){this.onload=null;this.nextElementSibling.style.display='';this.src=this.dataset.tile;this.dataset.tile=''}else{this.parentNode.remove()}"><span class="pin">📍</span></div>`;
 }
 
-function dayCard(d,meta){
+function dayCard(d,meta,wdrops){
   const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
   const rows=(d.timeline||[]).map(s=>{
     if(s.type==="hop")return `<div class="hopline">↳ ${s.name}</div>`;
@@ -246,7 +255,12 @@ function dayCard(d,meta){
   }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
-  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${d.reason?`<div class="dayreason">${d.reason}</div>`:""}${viol}${drop}</div>`;
+  const whynot=(wdrops&&wdrops.length)?`<details class="whynot"><summary>为什么没去这些点（${wdrops.length}）</summary>${wdrops.map(x=>`<div class="wnrow"><span>${x.name}</span><span class="wnr">${cleanDropReason(x.reason)}</span></div>`).join("")}</details>`:"";
+  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${d.reason?`<div class="dayreason">${d.reason}</div>`:""}${viol}${drop}${whynot}</div>`;
+}
+
+function cleanDropReason(rs){
+  return (rs||"").replace(/^TOPTW 求解：/,"").replace(/，求解器强制换点$/,"");
 }
 
 function drawMap(meta,r){
