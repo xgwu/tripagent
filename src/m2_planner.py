@@ -187,6 +187,98 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
     return day_map, n_moves
 
 
+# ---- 阶段3.4：美食配套绕行守门 ----
+FOOD_DETOUR_MIN = 25  # food 点插入相邻点之间允许的最大绕行（分钟），超过即换/剔
+
+
+def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | None,
+                      hotel: dict | None, t_mode: str | None) -> tuple[dict, dict]:
+    """美食/咖啡配套绕行守门：food 点在序列中造成大绕路 → 换成顺路同类店，无顺路替代则剔除。
+
+    根因场景：世博文化公园 →（午间硬约束）→ 武康路 Arabica →（折返）→ 东方明珠，
+    为一家网红咖啡店横穿城区。咖啡是配套不是目标——配套必须贴着当日主线路径。
+    每次替换/剔除后全量走 sequencer 校验，保证只改善不变糟。
+    返回 (更新后的 day_map, {day: [修正描述]}）。
+    """
+    from src.poi_db import haversine_km
+    # 替代池：food 类 + 任何带「咖啡」tag 的场馆（咖啡街/艺术园区咖啡等均可顺路替代）
+    def _is_coffee_venue(p):
+        return p.get("category") == "food" or any("咖啡" in t for t in p.get("tags", []))
+    food_pool = [p for p in all_pois.values()
+                 if _is_coffee_venue(p) and not sequencer.is_full_day(p)]
+    used = {pid for ids in day_map.values() for pid in ids}
+    fixes: dict = {}
+    for d in sorted(day_map):
+        ids = list(day_map.get(d) or [])
+        if len(ids) < 3:
+            continue
+        wd = poi_db.trip_weekday(date0, d) if date0 else None
+        for _round in range(3):  # 最多 3 轮，每轮修一条最差绕行
+            seq = [all_pois[i] for i in ids if i in all_pois]
+            if len(seq) < 3:
+                break
+            # 前后邻点（含酒店锚点边界）
+            worst = None  # (det_h, seq_idx, food_p, a, b)
+            for k, p in enumerate(seq):
+                if p.get("category") != "food":
+                    continue
+                if hotel is not None:
+                    a = hotel if k == 0 else seq[k - 1]
+                    b = hotel if k == len(seq) - 1 else seq[k + 1]
+                else:
+                    if k == 0 or k == len(seq) - 1:
+                        continue  # 无酒店锚点时首/末位无完整前后邻点，不评估
+                    a, b = seq[k - 1], seq[k + 1]
+                det = (poi_db.travel_hours(a, p, t_mode)
+                       + poi_db.travel_hours(p, b, t_mode)
+                       - poi_db.travel_hours(a, b, t_mode))
+                if det * 60 > FOOD_DETOUR_MIN and (worst is None or det > worst[0]):
+                    worst = (det, k, p, a, b)
+            if worst is None:
+                break
+            det, k, f, a, b = worst
+            # 顺路替代：同类 food、未用、当天不闭馆、经它绕行 ≤ 阈值；咖啡店优先匹配咖啡
+            f_is_coffee = "咖啡" in f["name"] or any("咖啡" in t for t in f.get("tags", []))
+            repls = []
+            for p in food_pool:
+                if p["id"] in used:
+                    continue
+                if wd and wd in p.get("closed_days", []):
+                    continue
+                d2 = (poi_db.travel_hours(a, p, t_mode)
+                      + poi_db.travel_hours(p, b, t_mode)
+                      - poi_db.travel_hours(a, b, t_mode))
+                if d2 * 60 > FOOD_DETOUR_MIN:
+                    continue
+                p_coffee = "咖啡" in p["name"] or any("咖啡" in t for t in p.get("tags", []))
+                score = (-d2 + 0.05 * p["rating"]
+                         + (0.3 if p_coffee == f_is_coffee else 0.0)
+                         - 0.05 * haversine_km(f["lat"], f["lng"], p["lat"], p["lng"]))
+                repls.append((score, p))
+            replaced = False
+            for _s, rep in sorted(repls, key=lambda x: -x[0])[:3]:
+                trial = ids[:k] + [rep["id"]] + ids[k + 1:]
+                it2 = sequencer.build_itinerary({d: trial}, city, all_pois, date0=date0,
+                                                hotel=hotel, query=None)
+                day2 = it2["days"][0]
+                n2 = len([s for s in day2["timeline"] if s["type"] == "poi"])
+                if (not day2["violations"] and not day2.get("dropped") and n2 == len(trial)):
+                    ids = trial
+                    used.add(rep["id"])
+                    used.discard(f["id"])
+                    fixes.setdefault(d, []).append(
+                        f"{f['name']} → {rep['name']}（原店绕行 {int(round(det * 60))} 分钟）")
+                    replaced = True
+                    break
+            if not replaced:  # 无顺路替代 → 剔除（配套宁缺毋滥）
+                ids = ids[:k] + ids[k + 1:]
+                used.discard(f["id"])
+                fixes.setdefault(d, []).append(
+                    f"{f['name']}（绕行 {int(round(det * 60))} 分钟且无顺路替代，剔除）")
+        day_map[d] = ids
+    return day_map, fixes
+
+
 # ---- 阶段3.5：日内填空 ----
 FILL_SLACK_MIN_H = 2.0   # finish 距 day_end 空窗超过该值才触发补点
 FILL_STOP_SLACK_H = 1.5  # 补到空窗低于该值即停（行程轻松感优先于极致填满）
@@ -318,6 +410,17 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 itin2["substitutes"] = subs
                 itin = itin2
 
+    # ---- 阶段3.4：美食配套绕行守门（确定性，0 LLM 成本）----
+    # food 点（咖啡/网红店）造成大绕路 → 换顺路同类店或剔除；先于填空执行，
+    # 剔除产生的空窗可由阶段3.5 补晚间点补偿
+    final_day_map = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+                     for d in itin["days"]}
+    final_day_map, food_fixes = _fix_food_detours(final_day_map, city, all_pois,
+                                                  date0, hotel, t_mode)
+    if food_fixes:
+        itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
+                                         hotel=hotel, query=query)
+
     # ---- 阶段3.5：日内填空（确定性，0 LLM 成本）----
     # 博物馆/艺术类核心场馆 17:00 前后闭馆，主选少的天 15-17 点就收尾，距 day_end
     # 还剩 4~6h 空窗。此处从「未用召回池」补晚间可行点（close 够晚 + 离当日末点近），
@@ -352,6 +455,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "mains_kept": f"{n_mains_kept}/{n_mains}" if n_mains else "n/a",
             "n_llm_alts": n_llm_alts,
             "n_day_moves": n_day_moves,
+            "food_fixes": food_fixes,
             "day_fills": day_fills,
             "toptw_solved_days": sum(1 for v in solved_days.values() if v),
             "toptw_dropped": solver_dropped,
