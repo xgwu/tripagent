@@ -304,6 +304,9 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
         ids = list(day_map.get(d) or [])
         if not ids:
             continue
+        if any(sequencer.is_full_day(all_pois[i]) for i in ids if i in all_pois):
+            continue  # 全天大点（迪士尼/海昌类）独占日不补——玩一整天后不加晚间点，
+                      # 否则 17:00 出园再赶场，还会触发「迟到午餐」餐块错位
         for _ in range(FILL_MAX_PER_DAY):
             it = sequencer.build_itinerary({d: ids}, city, all_pois, date0=date0,
                                            hotel=hotel, query=query)

@@ -105,6 +105,12 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         nonlocal t
         for key, mstart in meal_keys.items():
             if key not in used_meals and cur_t >= mstart:
+                # 迟到午餐守门：距晚餐窗开始不足 1.5h 不再补午餐（背靠背两餐不合常理），
+                # 视为该餐已在途中/游览中解决，只保留晚餐
+                if key == "lunch" and "dinner" not in used_meals \
+                        and cur_t >= meal_keys["dinner"] - 1.5:
+                    used_meals.add("lunch")
+                    continue
                 timeline.append({"type": "meal", "name": "午餐" if key == "lunch" else "晚餐",
                                  "start": _fmt(t), "end": _fmt(t + 1.0)})
                 t += 1.0
@@ -190,7 +196,13 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         timeline.append({"type": "poi", "id": p["id"], "name": p["name"],
                          "start": _fmt(t), "end": _fmt(t + p["dur"]),
                          "arrive": _fmt(arrive)})
-        t += p["dur"]
+        # 游览覆盖餐窗：长点（迪士尼/海昌/古镇类）游览时段内自然解决用餐，
+        # 不在游览结束后补打「迟到午餐」类错位餐块
+        v_end = t + p["dur"]
+        for key, (ws, we) in meal_windows.items():
+            if key not in used_meals and t <= ws + 1e-9 and v_end >= we - 1e-9:
+                used_meals.add(key)
+        t = v_end
         prev = p
     # M6：返程腿 —— day_end 前回到酒店（无酒店不约束）
     if hotel is not None and pois:
