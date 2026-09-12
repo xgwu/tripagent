@@ -387,19 +387,51 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
     return day_map, fills
 
 
+def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
+                    all_pois: dict, date0: str | None):
+    """补点闭环去 LLM 化第一层（P0）：优先用提案 alternates 确定性补位。
+
+    alternates 本就是 LLM 为当天推荐的替补——求解器剔点后，从同天未用备选中
+    取第一个（当天开馆、未被其他天占用）直接补位，省掉 ~5s 的 LLM 替代推荐调用。
+    返回 (补位后 day_map 或 None, subs 记录, 仍无备选可补的剔点清单)。
+    """
+    day_map2 = {k: list(v) for k, v in day_map.items()}
+    subs, rest = [], []
+    used = {i for ids in day_map2.values() for i in ids}
+    wd_by_day = ({d: poi_db.trip_weekday(date0, d) for d in day_map2}
+                 if date0 else {})
+    for dr in dropped:
+        d, pid = dr.get("day"), dr["id"]
+        alt = next((i for i in (alt_map or {}).get(d, [])
+                    if i not in used and i in all_pois
+                    and (not wd_by_day.get(d)
+                         or wd_by_day[d] not in all_pois[i].get("closed_days", []))),
+                   None)
+        if alt:
+            day_map2[d].append(alt)
+            used.add(alt)
+            subs.append({"for": dr.get("name", ""), "poi_id": alt, "day": d,
+                         "reason": "提案备选确定性补位（alternates，未消耗 LLM）"})
+        else:
+            rest.append(dr)
+    return (day_map2 if subs else None), subs, rest
+
+
 def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             use_llm: bool = True, date0: str | None = None, hotel: dict | None = None,
             time_limit_s: float = toptw.TIME_LIMIT_S,
             main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
             meta: dict | None = None, mode: str = "m2_toptw",
             forced_ids: set | None = None, alt_map: dict | None = None,
-            progress=None) -> dict:
+            progress=None, reuse_days: dict | None = None) -> dict:
     """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。
 
     alt_map: {day: [poi_id]} LLM 备选（M7 提案 alternates）——并入当日求解池但
     不进主选 rank（低利润权重），求解器可在时间充裕/主选不可行时换入。
     progress: 可选阶段回调 fn(stage:str)——P2 前端分阶段进度提示的数据源，
     取值 "solving"（TOPTW 求解）/ "regen"（文案重生成）；异常静默，不影响规划。
+    reuse_days: {day: {"ids": [上次最终有序id], "copy": {theme,reason,tips}}}——
+    C 闭环增量重算：点位集合未变的天直接复用原解与原文案，只重算变化的天。
     """
     meta = meta or {}
 
@@ -418,7 +450,9 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
     _report("solving")
     res = _solve_all_days(city, query, day_map, all_pois, cands, alt_map, forced_ids,
-                          date0, hotel, time_limit_s, main_bonus, soft_w, mode=t_mode)
+                          date0, hotel, time_limit_s, main_bonus, soft_w, mode=t_mode,
+                          reuse={d: rec["ids"] for d, rec in (reuse_days or {}).items()
+                                 if rec.get("ids")} or None)
     final_day_map = res["final_day_map"]
     solver_dropped, solved_days = res["solver_dropped"], res["solved_days"]
     mains_dropped = res["mains_dropped"]
@@ -450,15 +484,25 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             else:
                 n_day_moves = 0  # 重求解掉点 → 放弃本次重平衡，沿用原解
 
+
+
+
     llm_raw_violations = m1_planner._count_violations_before_repair(final_day_map, city, all_pois, date0, hotel)
     itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0, hotel=hotel, query=query)
     # 求解成功的日子理论上 0 违规；记录实际（含餐块偏移后的）违规
     n_viol_after_solver = sum(len(d["violations"]) for d in itin["days"] if solved_days.get(d["day"]))
 
-    # ---- 阶段3：Agent Loop 闭环（LLM 反馈，仅当求解器剔除了点）----
+    # ---- 阶段3：Agent Loop 闭环（仅当求解器剔除了点）----
+    # P0 去 LLM 化：第一层用提案 alternates 确定性补位（0 成本）；
+    # 仅当剔点无备选可补时，才走 LLM 替代推荐（~5s）兜底
     if solver_dropped:
-        day_map2, subs = m1_planner._feedback_loop(city, cands, query, days,
-                                                   final_day_map, solver_dropped, all_pois)
+        day_map2, subs, rest = _alt_substitute(final_day_map, solver_dropped,
+                                               alt_map, all_pois, date0)
+        if rest:  # 无备选可补的剔点 → LLM 兜底（在已补位结果上继续补）
+            day_map3, subs3 = m1_planner._feedback_loop(
+                city, cands, query, days, day_map2 or final_day_map, rest, all_pois)
+            if day_map3:
+                day_map2, subs = day_map3, subs + subs3
         if day_map2:
             itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel, query=query)
             if itin2["total_violations"] == 0:
@@ -492,7 +536,21 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     reasons_regen = False
     if use_llm:
         _report("regen")
-        regen, ok = _regen_reasons(city, query, itin, all_pois)
+        # C 闭环增量重算：reuse_days 中「修复链/填空后点位仍与上次一致」的天复用原文案，
+        # 只对变化的天调 LLM（若全部未变则零调用）
+        regen_only = None
+        if reuse_days:
+            now_ids = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+                       for d in itin["days"]}
+            unchanged = {d: rec for d, rec in reuse_days.items()
+                         if rec.get("ids") and now_ids.get(d) == list(rec["ids"])}
+            for d, rec in unchanged.items():
+                themes[d] = {**themes.get(d, {}), **rec["copy"]}
+                reasons_regen = True
+            regen_only = [d["day"] for d in itin["days"] if d["day"] not in unchanged]
+            if not regen_only:
+                regen_only = []  # 全部复用 → 零 LLM 调用
+        regen, ok = _regen_reasons(city, query, itin, all_pois, only_days=regen_only)
         if ok:
             # 逐键合并：theme+reason 都以最终时间轴重生成结果为准
             for k, v in regen.items():
@@ -547,15 +605,18 @@ def _hm_min(hm: str) -> int:
     return int(h) * 60 + int(m)
 
 
-def _regen_reasons(city, query, itin, all_pois):
+def _regen_reasons(city, query, itin, all_pois, only_days=None):
     """文案重生成（P1 改造：按天并行）——每天一次独立 LLM 调用，线程池并发。
 
     原「一天次合并调用」多天串在同一个 prompt 里，2.6s 起步且随天数增长；
     拆成逐天并行后多天耗时 ≈ 单天耗时（约 1~1.5s）。结果口径与守门逻辑不变。
+    only_days: None=全部天；[]=不重生成（C 闭环全复用）；[1,2]=仅这些天。
     """
     try:
         day_ctxs = []  # (day, timeline_line, fact_block, closed_ctx)
         for d in itin["days"]:
+            if only_days is not None and d["day"] not in only_days:
+                continue
             seq = " → ".join(
                 f'{s["name"]}（{s["start"]}-{s["end"]}）'
                 for s in d["timeline"] if s["type"] != "hop")

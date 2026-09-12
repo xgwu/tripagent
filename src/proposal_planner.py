@@ -208,7 +208,7 @@ def _llm_match(unmatched: list, all_pois: dict, exclude_ids: set | None = None) 
         raw = llm_client.chat([
             {"role": "system", "content": MATCH_SYSTEM},
             {"role": "user", "content": MATCH_PROMPT.format(stops=stops, library=lib)}],
-            temperature=0.0, seed=42)
+            temperature=0.0, seed=42, max_tokens=400)  # P2 轻量路径：匹配结果为短 JSON
         parsed = llm_client.parse_json_safe(raw)
         out = {}
         for m in parsed.get("matches", []):
@@ -387,12 +387,12 @@ def _compose_m7(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 date0: str | None, hotel: dict | None, anchor_poi: dict | None,
                 grounding: dict, alt_map: dict | None,
                 time_limit_s: float, main_bonus: float, soft_w: float,
-                progress=None) -> dict:
+                progress=None, reuse_days: dict | None = None) -> dict:
     """M7 复用 M2 compose（TOPTW + 修复链 + 文案），参数固定便于闭环重算。"""
     return m2_planner.compose(city, query, days, day_map, themes, use_llm=True,
                               date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                               main_bonus=main_bonus, soft_w=soft_w,
-                              progress=progress,
+                              progress=progress, reuse_days=reuse_days,
                               alt_map=alt_map,
                               meta={"candidates": None, "invalid_poi_ids": [],
                                     "n_dup_across_days": grounding["dup_skipped"],
@@ -516,10 +516,21 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                 dm2, th2, g2 = _post_ground_fixups(
                     dm2, th2, g2, city, all_pois, days, query, anchor_poi)
                 if dm2:
+                    # P1 增量重算：修正前后点位集合一致的天复用上次最终解与文案，
+                    # 只对变化的天重解+重写文案（全变则等价全量，行为不劣化）
+                    prev_days = {
+                        d["day"]: {"ids": [s["id"] for s in d["timeline"] if s["type"] == "poi"],
+                                   "copy": {"theme": d.get("theme", ""),
+                                            "reason": d.get("reason", ""),
+                                            "tips": d.get("tips", [])}}
+                        for d in r["itinerary"]["days"]}
+                    reuse_days = {d: rec for d, rec in prev_days.items()
+                                  if rec["ids"] and dm2.get(d)
+                                  and set(dm2[d]) == set(rec["ids"])}
                     r2 = _compose_m7(city, query, days, dm2, th2, date0, hotel,
                                      anchor_poi, g2, alt_map2,
                                      time_limit_s, main_bonus, soft_w,
-                                     progress=progress)
+                                     progress=progress, reuse_days=reuse_days or None)
                     drops2, overlap2 = _collect_issues(r2)
                     # 修正确实减少问题总数（剔除+片区重复）才采纳，防震荡
                     if len(drops2) + len(overlap2) < len(drops) + len(overlap):

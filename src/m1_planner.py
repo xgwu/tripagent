@@ -193,7 +193,8 @@ def _feedback_loop(city, cands, query, days, day_map, dropped, all_pois):
                 dropped="\n".join(f"- {d['name']}：{d['reason']}" for d in dropped),
                 used="、".join(all_pois[i]["name"] for i in used if i in all_pois),
                 candidates=retrieval.candidate_cards(remaining[:30]),
-                query=query)}])
+                query=query)}],
+            max_tokens=500)  # P2 轻量路径：输出只是替代清单 JSON，压生成上限提速
         parsed = llm_client.parse_json_safe(raw)
         day_map2 = {k: list(v) for k, v in day_map.items()}
         subs = []

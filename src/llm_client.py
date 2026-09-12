@@ -21,14 +21,21 @@ def llm_available() -> bool:
 
 
 def chat(messages: list, temperature: float = 0.4, response_json: bool = True,
-         timeout: int = 120, seed: int | None = 42, retries: int = 3):
-    """调用 chat/completions；429/5xx 指数退避重试；最终失败抛异常，由上层降级。"""
+         timeout: int = 120, seed: int | None = 42, retries: int = 3,
+         max_tokens: int | None = None):
+    """调用 chat/completions；429/5xx 指数退避重试；最终失败抛异常，由上层降级。
+
+    max_tokens: 结构化小任务（匹配/替代推荐）压小生成长度——延迟大头在生成 token 数，
+    输出本来就是几个 JSON 字段时显著提速（P2 轻量路径）。
+    """
     import time
     body_base = {"model": _cfg()[2], "messages": messages, "temperature": temperature}
     if seed is not None:
         body_base["seed"] = seed  # 评测可复现性：固定采样种子
     if response_json:
         body_base["response_format"] = {"type": "json_object"}
+    if max_tokens:
+        body_base["max_tokens"] = max_tokens
     last_err = None
     for attempt in range(retries):
         try:
