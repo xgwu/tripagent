@@ -286,11 +286,12 @@ function drawMap(meta,r){
 
 // ===== 高德地图渲染（JS API 1.4.15；失败自动回退 SVG 手绘图） =====
 let AMAP_OBJ=null;let MAP_TOKEN=0; // 快速连续规划时防止异步渲染竞态
-let DAY_LINES={},DAY_VIS={}; // 按天路线折线引用与显隐状态
+let DAY_LINES={},DAY_VIS={},DAY_MARKERS={}; // 按天路线折线/标点引用与显隐状态
 let POI_MARKERS={}; // id → {m:marker,name}，供缩略图点击定位
 function focusPoi(id){
   const rec=POI_MARKERS[id];
   if(!rec||!AMAP_OBJ)return;
+  if(DAY_VIS[rec.day]===false)toggleDayLine(rec.day); // 当天被隐藏时先展开再定位
   const pos=rec.m.getPosition();
   AMAP_OBJ.setZoomAndCenter(15,pos); // 街区级视野，兼顾周边参照
   rec.m.setLabel({content:`<div style="padding:2px 8px;font-size:12px">📍 ${rec.name}</div>`,direction:"top",offset:new AMap.Pixel(0,-6)});
@@ -300,6 +301,7 @@ function focusPoi(id){
 function toggleDayLine(day){
   DAY_VIS[day]=!DAY_VIS[day];
   (DAY_LINES[day]||[]).forEach(l=>DAY_VIS[day]?l.show():l.hide());
+  (DAY_MARKERS[day]||[]).forEach(m=>DAY_VIS[day]?m.show():m.hide()); // 标点与路线一并显隐
   const b=document.querySelector(`#dayfilter button[data-day="${day}"]`);
   if(b)b.style.opacity=DAY_VIS[day]?1:.35;
 }
@@ -325,7 +327,7 @@ async function renderAMap(meta,r){
     if(AMAP_OBJ&&AMAP_OBJ.destroy)AMAP_OBJ.destroy(); // 释放上一张地图
     map=new AMap.Map("amapbox",{zoom:12,mapStyle:"amap://styles/whitesmoke",resizeEnable:true});
     AMAP_OBJ=map;
-    POI_MARKERS={}; // 重置须在 marker 创建前（overlays 循环会填充）
+    POI_MARKERS={};DAY_MARKERS={}; // 重置须在 marker 创建前（overlays 循环会填充）
     const overlays=[];
     for(const d of (r.itinerary.days||[])){
       const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
@@ -337,7 +339,8 @@ async function renderAMap(meta,r){
         m.on("mouseover",()=>m.setLabel({content:`<div style="padding:2px 8px;font-size:12px">📍 Day ${d.day}·${i+1}｜${x.name}</div>`,direction:"top",offset:new AMap.Pixel(0,-6)}));
         m.on("mouseout",()=>m.setLabel(null));
         overlays.push(m);
-        POI_MARKERS[x.id]={m,name:x.name}; // 供日卡缩略图点击定位
+        (DAY_MARKERS[d.day]=DAY_MARKERS[d.day]||[]).push(m); // 按天归组，供 Day 开关显隐
+        POI_MARKERS[x.id]={m,name:x.name,day:d.day}; // 供日卡缩略图点击定位
       });
       // 只画实际交通路线（drawRealRoutes 异步叠加），不再画点位间直线连接
     }
@@ -359,8 +362,8 @@ async function renderAMap(meta,r){
     if(df)df.innerHTML=(r.itinerary.days||[]).map(d=>{
       const c=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
       DAY_VIS[d.day]=true;
-      return `<button data-day="${d.day}" onclick="toggleDayLine(${d.day})" style="cursor:pointer;border:1px solid ${c};background:${c};color:#fff;border-radius:14px;padding:2px 12px;font-size:12px">Day ${d.day} 路线</button>`;
-    }).join("")+'<span style="font-size:12px;color:#888">点击开关各天路线</span>';
+      return `<button data-day="${d.day}" onclick="toggleDayLine(${d.day})" style="cursor:pointer;border:1px solid ${c};background:${c};color:#fff;border-radius:14px;padding:2px 12px;font-size:12px">Day ${d.day}</button>`;
+    }).join("")+'<span style="font-size:12px;color:#888">点击开关各天标点与路线</span>';
     // P1-1：异步绘制实际路网（骑行/步行）；某段失败则该段无线（不画直线兜底）
     drawRealRoutes(map,meta,r,token);
     return true;
