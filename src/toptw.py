@@ -17,6 +17,9 @@ MAIN_BONUS = 600           # 主选 POI 的额外利润（M3-1 扫描：300~1000
 RATING_W = 60              # 每分评分的利润
 RANK_BONUS = 15            # LLM 顺序每前进一名的奖励（相似度目标）
 SOFT_W = 5.0               # best_time 软时间窗：每偏差 1 分钟的罚分（M3-1 扫描最优：均距/覆盖显著改善）
+SOFT_CAP_MIN = 60          # 软窗罚分封顶：偏差超过该分钟数等效罚分封顶（soft_w×SOFT_CAP_MIN=300），
+                           # 再远不允许——旧逻辑线性无上限（晚到 5h 罚 1500 分），求解器宁可让傍晚空着
+                           # 也不放 morning 点进晚间，时段空间被白扔；封顶后空窗由日内填空补晚间型点
 TIME_LIMIT_S = 2.0         # 单日求解预算
 MEAL_BUFFER_MIN = 120      # M6：排序器会在日中插入午餐+晚餐各 1h，求解器预算预扣，防止过度打包后整体后移溢出
 
@@ -118,9 +121,19 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
         if soft_w > 0:
             sl, su = SLOT_WINDOWS.get(nodes[node].get("best_time", "any"), (None, None))
             if sl is not None:
-                tdim.SetCumulVarSoftLowerBound(idx, min(horizon, max(0, to_min(sl))), int(soft_w))
+                sl_m = min(horizon, max(0, to_min(sl)))
+                tdim.SetCumulVarSoftLowerBound(idx, sl_m, int(soft_w))
+                # 罚分封顶（下侧）：早到偏差超过 SOFT_CAP_MIN 分钟不再允许
+                lo = max(lo, sl_m - SOFT_CAP_MIN)
             if su is not None:
-                tdim.SetCumulVarSoftUpperBound(idx, min(horizon, max(0, to_min(su))), int(soft_w))
+                su_m = min(horizon, max(0, to_min(su)))
+                tdim.SetCumulVarSoftUpperBound(idx, su_m, int(soft_w))
+                # 罚分封顶（上侧）：晚到偏差超过 SOFT_CAP_MIN 分钟不再允许——
+                # morning 点要么贴近其时段安排，要么干脆不排（弃利润），
+                # 而不是拖着整条线到深夜、把傍晚空间白扔
+                hi = min(hi, su_m + SOFT_CAP_MIN)
+            if lo > hi:          # 软窗封顶与营业窗冲突 → 营业窗优先（能开就行）
+                lo = hi
     # 终点：不晚于当日结束（depot 即终点）
     tdim.CumulVar(routing.End(0)).SetRange(0, horizon)
 
