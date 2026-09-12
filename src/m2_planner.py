@@ -600,9 +600,14 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     # ---- 阶段3：Agent Loop 闭环（仅当求解器剔除了点）----
     # P0 去 LLM 化：第一层用提案 alternates 确定性补位（0 成本）；
     # 仅当剔点无备选可补时，才走 LLM 替代推荐（~5s）兜底
+    alt_sub_stat = {"hit": 0, "miss": 0, "rate": None}  # 补位命中率（P2 观测）
     if solver_dropped:
         day_map2, subs, rest = _alt_substitute(final_day_map, solver_dropped,
                                                alt_map, all_pois, date0)
+        # 补位命中率统计（P2 观测）：命中=备选确定性补位，miss=需 LLM 兜底
+        alt_sub_stat = {"hit": len(subs), "miss": len(rest),
+                        "rate": round(len(subs) / (len(subs) + len(rest)), 2)
+                        if (subs or rest) else None}
         if rest:  # 无备选可补的剔点 → LLM 兜底（在已补位结果上继续补）
             day_map3, subs3 = m1_planner._feedback_loop(
                 city, cands, query, days, day_map2 or final_day_map, rest, all_pois)
@@ -702,6 +707,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "mains_dropped": mains_dropped,
             "violations_after_solver": n_viol_after_solver,
             "reasons_regen": reasons_regen,
+            "alt_sub": alt_sub_stat,
             "notices": notices,
             "latency_s": round(time.time() - t0, 1),
             "itinerary": itin}

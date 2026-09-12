@@ -6,7 +6,7 @@
 - B 落地：精确/包含/模糊/LLM 四级匹配；匹配失败剔除并记入「POI 库缺口」清单
 - C 求解：落地后的 day_map 喂给 m2_planner.compose（TOPTW + 修复链 + 文案）
 """
-import difflib, hashlib, json, os, re, sys, time
+import difflib, hashlib, json, os, re, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import poi_db, llm_client, m1_planner, m2_planner, offline_planner, sequencer
 from src import hotel as hotel_mod
@@ -18,34 +18,49 @@ PROPOSAL_CACHE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "proposal_cache.json")
 PROPOSAL_CACHE_TTL_S = 7 * 86400
 _proposal_cache: dict | None = None
+_pcache_lock = threading.Lock()  # 服务端多线程并发规划共用本缓存
 
 
 def _pcache_get(key: str):
     global _proposal_cache
-    if _proposal_cache is None:
-        try:
-            with open(PROPOSAL_CACHE_PATH, encoding="utf-8") as f:
-                _proposal_cache = json.load(f)
-        except Exception:  # noqa
-            _proposal_cache = {}
-    ent = _proposal_cache.get(key)
-    if not ent or time.time() - ent.get("ts", 0) > PROPOSAL_CACHE_TTL_S:
-        return None
-    return ent.get("v")
+    with _pcache_lock:
+        if _proposal_cache is None:
+            try:
+                with open(PROPOSAL_CACHE_PATH, encoding="utf-8") as f:
+                    _proposal_cache = json.load(f)
+            except Exception:  # noqa
+                _proposal_cache = {}
+        ent = _proposal_cache.get(key)
+        if not ent or time.time() - ent.get("ts", 0) > PROPOSAL_CACHE_TTL_S:
+            return None
+        return ent.get("v")
 
 
 def _pcache_put(key: str, val: dict) -> None:
     global _proposal_cache
-    if _proposal_cache is None:
-        _proposal_cache = {}
-    _proposal_cache[key] = {"ts": time.time(), "v": val}
-    try:
-        tmp = PROPOSAL_CACHE_PATH + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(_proposal_cache, f, ensure_ascii=False)
-        os.replace(tmp, PROPOSAL_CACHE_PATH)
-    except Exception:  # noqa: 缓存写失败不影响主流程
-        pass
+    with _pcache_lock:
+        if _proposal_cache is None:
+            _proposal_cache = {}
+        _proposal_cache[key] = {"ts": time.time(), "v": val}
+        try:
+            # 多实例合并：先重读磁盘（其他实例可能已写入新条目），按 ts 新者胜合并再落盘，
+            # 防止多实例/多进程各自持有旧快照互相覆盖丢条目
+            disk: dict = {}
+            try:
+                with open(PROPOSAL_CACHE_PATH, encoding="utf-8") as f:
+                    disk = json.load(f)
+            except Exception:  # noqa
+                disk = {}
+            for k, ent in disk.items():
+                old = _proposal_cache.get(k)
+                if not old or ent.get("ts", 0) >= old.get("ts", 0):
+                    _proposal_cache[k] = ent
+            tmp = PROPOSAL_CACHE_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(_proposal_cache, f, ensure_ascii=False)
+            os.replace(tmp, PROPOSAL_CACHE_PATH)
+        except Exception:  # noqa: 缓存写失败不影响主流程
+            pass
 
 PROPOSE_SYSTEM = """你是一位资深旅行规划专家，深谙中国主要旅游城市的经典玩法与本地体验节奏。
 请凭你的旅行知识自由设计行程——你的专业推荐优先；用户提示词末尾会附一份系统已收录的地点清单
@@ -670,7 +685,10 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     r["area_overlap"] = _crossday_area_overlap(final_day_ids, all_pois)
     r["proposal"] = proposal
     r["grounding"] = grounding
-    # 用户可读通知：compose 层需求满足检测 + 提案层独占日建议，统一供前端展示
-    r["notices"] = list(r.get("notices") or []) + list(grounding.get("far_big_solo") or [])
+    # 用户可读通知：compose 层需求满足检测 + 提案层独占日建议 + 天气/节假日提示
+    from src import weather as weather_mod
+    r["notices"] = (list(r.get("notices") or [])
+                    + list(grounding.get("far_big_solo") or [])
+                    + weather_mod.trip_notices(city, date0, days))
     r["latency_s"] = round(time.time() - t0, 1)  # A+B+C 全链路耗时
     return r

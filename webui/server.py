@@ -861,6 +861,11 @@ class Handler(BaseHTTPRequestHandler):
                                      date0=date0, hotel_text=hotel_text,
                                      **_plan_extra_kw(planner, progress_cb))
                 stats_latency(r.get("latency_s", 0))
+                # P2 观测：备选补位命中率累计（命中=确定性补位，miss=LLM 兜底）
+                _as = r.get("alt_sub") or {}
+                if _as.get("hit") or _as.get("miss"):
+                    stats_bump("alt_sub_hit", int(_as.get("hit") or 0))
+                    stats_bump("alt_sub_miss", int(_as.get("miss") or 0))
                 if r.get("mode") not in ("offline_fallback",):
                     stats_bump("plan_llm")
                     if cache_key:  # 只缓存真实 LLM 结果（离线兜底不缓存）
