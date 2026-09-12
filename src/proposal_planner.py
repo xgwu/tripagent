@@ -6,10 +6,46 @@
 - B 落地：精确/包含/模糊/LLM 四级匹配；匹配失败剔除并记入「POI 库缺口」清单
 - C 求解：落地后的 day_map 喂给 m2_planner.compose（TOPTW + 修复链 + 文案）
 """
-import difflib, json, os, re, sys, time
+import difflib, hashlib, json, os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import poi_db, llm_client, m1_planner, m2_planner, offline_planner, sequencer
 from src import hotel as hotel_mod
+
+# ---- P1 提案级缓存：同（城市+天数+需求+日期+库版本）复用上次 LLM 提案，跳过最贵的 A 阶段 ----
+# 提案调用 temperature=0.2/seed=42 本身近似确定性，缓存纯省时无行为差异。
+# key 含库内 POI 数量：扩城/补库后自动失效；TTL 7 天与 nl_cache 对齐。
+PROPOSAL_CACHE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "proposal_cache.json")
+PROPOSAL_CACHE_TTL_S = 7 * 86400
+_proposal_cache: dict | None = None
+
+
+def _pcache_get(key: str):
+    global _proposal_cache
+    if _proposal_cache is None:
+        try:
+            with open(PROPOSAL_CACHE_PATH, encoding="utf-8") as f:
+                _proposal_cache = json.load(f)
+        except Exception:  # noqa
+            _proposal_cache = {}
+    ent = _proposal_cache.get(key)
+    if not ent or time.time() - ent.get("ts", 0) > PROPOSAL_CACHE_TTL_S:
+        return None
+    return ent.get("v")
+
+
+def _pcache_put(key: str, val: dict) -> None:
+    global _proposal_cache
+    if _proposal_cache is None:
+        _proposal_cache = {}
+    _proposal_cache[key] = {"ts": time.time(), "v": val}
+    try:
+        tmp = PROPOSAL_CACHE_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(_proposal_cache, f, ensure_ascii=False)
+        os.replace(tmp, PROPOSAL_CACHE_PATH)
+    except Exception:  # noqa: 缓存写失败不影响主流程
+        pass
 
 PROPOSE_SYSTEM = """你是一位资深旅行规划专家，深谙中国主要旅游城市的经典玩法与本地体验节奏。
 请凭你的旅行知识自由设计行程——你的专业推荐优先；用户提示词末尾会附一份系统已收录的地点清单
@@ -385,14 +421,24 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     # P2-5 天气感知：雨天意图 → 引导室内场馆优先、减少露天点位
     weather_line = ("天气提示：需求含雨天/下雨，请优先安排室内场馆（博物馆/美术馆/科技馆/室内乐园/商场等），"
                     "减少露天观景台、户外步道类点位。\n") if re.search(r"下雨|雨天|降雨|暴雨", query) else ""
-    raw = llm_client.chat([
-        {"role": "system", "content": PROPOSE_SYSTEM},
-        {"role": "user", "content": PROPOSE_PROMPT.format(city=city["city"], days=days,
-                                                          query=query, date_line=date_line,
-                                                          weather_line=weather_line,
-                                                          library_hint=hint)}],
-        temperature=0.2, seed=42)
-    proposal = llm_client.parse_json_safe(raw)
+    norm_q = re.sub(r"\s+", "", query).lower()
+    pkey = hashlib.sha1(json.dumps(
+        [city["city"], days, norm_q, date0 or "", bool(weather_line), len(all_pois)],
+        ensure_ascii=False).encode("utf-8")).hexdigest()
+    cached = _pcache_get(pkey)
+    if cached is not None:
+        proposal = cached
+    else:
+        raw = llm_client.chat([
+            {"role": "system", "content": PROPOSE_SYSTEM},
+            {"role": "user", "content": PROPOSE_PROMPT.format(city=city["city"], days=days,
+                                                              query=query, date_line=date_line,
+                                                              weather_line=weather_line,
+                                                              library_hint=hint)}],
+            temperature=0.2, seed=42)
+        proposal = llm_client.parse_json_safe(raw)
+        if proposal.get("days"):
+            _pcache_put(pkey, proposal)
     if not proposal.get("days"):
         r = m1_planner.plan(city, query, days, use_llm=True, date0=date0,
                             hotel_text=hotel_text)

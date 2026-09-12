@@ -533,22 +533,26 @@ def _hm_min(hm: str) -> int:
 
 
 def _regen_reasons(city, query, itin, all_pois):
+    """文案重生成（P1 改造：按天并行）——每天一次独立 LLM 调用，线程池并发。
+
+    原「一天次合并调用」多天串在同一个 prompt 里，2.6s 起步且随天数增长；
+    拆成逐天并行后多天耗时 ≈ 单天耗时（约 1~1.5s）。结果口径与守门逻辑不变。
+    """
     try:
-        lines, fact_lines = [], []
-        closed_ctx = {}  # day -> (weekday, 当天 POI 命中的闭馆日集合)——tips 确定性校验用
+        day_ctxs = []  # (day, timeline_line, fact_block, closed_ctx)
         for d in itin["days"]:
             seq = " → ".join(
                 f'{s["name"]}（{s["start"]}-{s["end"]}）'
                 for s in d["timeline"] if s["type"] != "hop")
-            lines.append(f"Day {d['day']}：{seq}")
             hops = [s["name"] for s in d["timeline"] if s["type"] == "hop"]
             pois_seq = [s["name"] for s in d["timeline"] if s["type"] == "poi"]
             waits = [f'{s["name"]} 早到等待 {_hm_min(s["start"]) - _hm_min(s["arrive"])} 分钟'
                      for s in d["timeline"]
                      if s["type"] == "poi" and s.get("arrive")
                      and _hm_min(s["start"]) - _hm_min(s["arrive"]) > 0]
+            facts = []
             if pois_seq:
-                fact_lines.append(
+                facts.append(
                     f"Day {d['day']} 排程事实：首点 {pois_seq[0]}；末点 {pois_seq[-1]}；"
                     f"通行段 {'；'.join(hops) if hops else '无（单点）'}；收尾时刻 {d.get('finish')}"
                     + (f"；{'；'.join(waits)}" if waits else ""))
@@ -560,36 +564,54 @@ def _regen_reasons(city, query, itin, all_pois):
                 for p in [all_pois.get(s.get("id"), {})]
                 if p.get("closed_days")]
             if closed_facts:
-                fact_lines.append(f"Day {d['day']} 闭馆数据：{'；'.join(closed_facts)}")
-            closed_ctx[d["day"]] = (d.get("weekday"),
-                                    {cd for s in d["timeline"] if s["type"] == "poi"
-                                     for cd in all_pois.get(s.get("id"), {}).get("closed_days", [])})
-        raw = llm_client.chat([
-            {"role": "system", "content": m1_planner.system_prompt(city)},
-            {"role": "user", "content": REGEN_PROMPT.format(
-                query=query, timeline="\n".join(lines), facts="\n".join(fact_lines))}],
-            temperature=0.2, seed=42)
-        parsed = llm_client.parse_json_safe(raw)
+                facts.append(f"Day {d['day']} 闭馆数据：{'；'.join(closed_facts)}")
+            closed_ctx = (d.get("weekday"),
+                          {cd for s in d["timeline"] if s["type"] == "poi"
+                           for cd in all_pois.get(s.get("id"), {}).get("closed_days", [])})
+            day_ctxs.append((d["day"], seq, "\n".join(facts), closed_ctx))
+        if not day_ctxs:
+            return {}, False
+
+        def _one(item):
+            day, seq, facts, closed_ctx = item
+            try:
+                raw = llm_client.chat([
+                    {"role": "system", "content": m1_planner.system_prompt(city)},
+                    {"role": "user", "content": REGEN_PROMPT.format(
+                        query=query, timeline=f"Day {day}：{seq}", facts=facts)}],
+                    temperature=0.2, seed=42)
+                parsed = llm_client.parse_json_safe(raw)
+            except Exception:  # noqa: 单天失败不拖垮其他天
+                return day, None
+            days_out = parsed.get("days") or []
+            d = next((x for x in days_out if x.get("day") in (day, None)), None)
+            d = d or (days_out[0] if len(days_out) == 1 else None)
+            if not (isinstance(d, dict) and d.get("reason")):
+                return day, None
+            # theme+reason+tips 都基于最终时间轴重生成（修复主题残留被剔主选点的问题）
+            entry = {"reason": d["reason"]}
+            t = d.get("theme")
+            if isinstance(t, str) and t.strip():
+                entry["theme"] = t.strip()[:20]
+            tips = d.get("tips")
+            if isinstance(tips, list):
+                tips = [str(x).strip() for x in tips
+                        if isinstance(x, str) and x.strip()][:3]
+                # 确定性守门：提示「闭馆」但数据不支持 → 剔除该条（LLM 常识幻觉兜底）
+                wd, day_closed = closed_ctx
+                if wd and "闭馆" in "".join(tips) and wd not in day_closed:
+                    tips = [t for t in tips
+                            if "闭馆" not in t or any(c in t for c in day_closed)]
+                if tips:
+                    entry["tips"] = tips
+            return day, entry
+
+        from concurrent.futures import ThreadPoolExecutor
         out = {}
-        for d in parsed.get("days", []):
-            if d.get("reason"):
-                # theme+reason+tips 都基于最终时间轴重生成（修复主题残留被剔主选点的问题）
-                entry = {"reason": d["reason"]}
-                t = d.get("theme")
-                if isinstance(t, str) and t.strip():
-                    entry["theme"] = t.strip()[:20]
-                tips = d.get("tips")
-                if isinstance(tips, list):
-                    tips = [str(x).strip() for x in tips
-                            if isinstance(x, str) and x.strip()][:3]
-                    # 确定性守门：提示「闭馆」但数据不支持 → 剔除该条（LLM 常识幻觉兜底）
-                    wd, day_closed = closed_ctx.get(d.get("day"), (None, set()))
-                    if wd and "闭馆" in "".join(tips) and wd not in day_closed:
-                        tips = [t for t in tips
-                                if "闭馆" not in t or any(c in t for c in day_closed)]
-                    if tips:
-                        entry["tips"] = tips
-                out[d.get("day")] = entry
+        with ThreadPoolExecutor(max_workers=min(3, len(day_ctxs))) as ex:
+            for day, entry in ex.map(_one, day_ctxs):
+                if entry:
+                    out[day] = entry
         return out, bool(out)
     except Exception:  # noqa
         return {}, False

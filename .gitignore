@@ -10,3 +10,4 @@ output/
 data/shares/
 nohup.out
 data/llm_cache.json
+data/proposal_cache.json

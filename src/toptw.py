@@ -151,6 +151,23 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
     p.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
     p.time_limit.FromSeconds(int(time_limit_s))
     p.log_search = False
+
+    # P1 提前停止：GLS 在预算末段常陷入「解略有提升但耗时照付」的空转——
+    # 实测 2s 预算 100% 打满。挂 at-solution 回调，目标值连续两次提升 <0.5% 即认为收敛，
+    # FinishCurrentSearch 提前结束（SolveWithParameters 仍返回当前最优解）。
+    obj_hist: list = []
+
+    def _at_solution():
+        try:
+            obj_hist.append(routing.CostVar().Max())
+        except Exception:  # noqa: 取值失败则放弃判断，等超时兜底
+            return
+        if len(obj_hist) >= 3:
+            prev, cur = obj_hist[-2], obj_hist[-1]
+            if prev and abs(prev - cur) / max(abs(prev), 1) < 0.005:
+                routing.solver().FinishCurrentSearch()
+
+    routing.AddAtSolutionCallback(_at_solution)
     sol = routing.SolveWithParameters(p)
 
     if sol is None:
