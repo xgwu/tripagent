@@ -9,7 +9,7 @@ def _cfg():
     """优先 DeepSeek；否则退回 OpenAI 兼容配置。"""
     dk = os.environ.get("DEEPSEEK_API_KEY") or ""
     if dk:
-        return dk, "https://api.deepseek.com", os.environ.get("M1_MODEL") or "deepseek-flash"
+        return dk, "https://api.deepseek.com", os.environ.get("M1_MODEL") or "deepseek-chat"
     key = os.environ.get("OPENAI_API_KEY") or ""
     base = (os.environ.get("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
     model = os.environ.get("M1_MODEL") or "gpt-4o-mini"

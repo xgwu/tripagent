@@ -1,5 +1,5 @@
 {
   "_comment": "业务配置（进 git）；密钥一律放 secrets.json（gitignore）",
-  "m1_model": "deepseek-flash",
+  "m1_model": "deepseek-chat",
   "anchor_hard_guarantee": false
 }
