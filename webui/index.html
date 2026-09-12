@@ -380,7 +380,7 @@ async function drawRealRoutes(map,meta,r,token){
       }catch(e){/* 回退直线 */}
       if(token!==MAP_TOKEN)return; // 快速连续规划时放弃过期渲染
       if(poly){
-        const line=new AMap.Polyline({path:poly,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,bubble:true});
+        const line=new AMap.Polyline({path:poly,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,strokeStyle:"dashed",strokeDasharray:[10,6],bubble:true});
         map.add(line);
         (DAY_LINES[day]=DAY_LINES[day]||[]).push(line);
         if(DAY_VIS[day]===false)line.hide(); // 渲染期间用户已关闭该天
