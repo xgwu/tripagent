@@ -83,6 +83,15 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 .poiimg{position:relative;width:92px;height:60px;border-radius:8px;border:1px solid var(--line);margin-left:auto;flex-shrink:0;overflow:hidden}
 .poiimg img{width:100%;height:100%;object-fit:cover;display:block}
 .poiimg .pin{position:absolute;left:50%;top:50%;transform:translate(-50%,-88%);font-size:15px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.4))}
+/* P2 分阶段进度条 */
+.stagebar{display:flex;align-items:center;gap:0;margin-top:6px;flex-wrap:wrap}
+.stg{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--mut);opacity:.45;transition:opacity .3s}
+.stg i{width:8px;height:8px;border-radius:50%;background:var(--line);flex-shrink:0}
+.stg:not(:last-child)::after{content:"";width:16px;height:1px;background:var(--line);margin:0 6px}
+.stg.on{opacity:1;color:var(--blue)}
+.stg.on i{background:var(--blue)}
+.stg.cur i{animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.5)}}
 </style>
 </head>
 <body>
@@ -139,18 +148,37 @@ function chip(){
   document.querySelectorAll(".chip").forEach(el=>el.onclick=()=>{$("query").value=el.dataset.q;});
 }
 
+// P2 分阶段进度：阶段定义与后端 _stage_put 打点对齐
+const PLAN_STAGES=[["parse","解析需求"],["proposal","经验提案"],["grounding","落地匹配"],["solving","求解排程"],["regen","生成文案"]];
+function stageBar(idx){
+  if(idx<0)return "";
+  return '<div class="stagebar">'+PLAN_STAGES.map((s,k)=>{
+    const cls="stg"+(k<=idx?" on":"")+(k===idx?" cur":"");
+    return `<span class="${cls}"><i></i>${s[1]}</span>`;
+  }).join("")+"</div>";
+}
 async function doPlan(q){
-  const p=new URLSearchParams({query:q,llm:CITY.llm?"1":"0"});
+  const sid=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+  const p=new URLSearchParams({query:q,llm:CITY.llm?"1":"0",sid:sid});
   $("go").disabled=true;
-  $("status").innerHTML='<span class="spin"></span>规划中：经验提案 → '+(CITY.llm?"库内落地":"离线兜底")+" → 求解排程 → 修复链…";
+  $("status").innerHTML='<span class="spin"></span>规划中…'+stageBar(0);
   $("out").innerHTML="";
+  // 每 600ms 轮询 /api/progress 拿实时阶段（请求失败静默，保持当前文案）
+  const poll=setInterval(async()=>{
+    try{
+      const pr=await (await fetch("/api/progress?sid="+encodeURIComponent(sid))).json();
+      if(!pr.ok)return;
+      const k=PLAN_STAGES.findIndex(s=>s[0]===pr.stage);
+      if(k>=0)$("status").innerHTML='<span class="spin"></span>'+PLAN_STAGES[k][1]+"…"+stageBar(k);
+    }catch(e){/* 网络/时序问题忽略，下次再查 */}
+  },600);
   try{
     const res=await (await fetch("/api/plan?"+p.toString())).json();
     if(!res.ok){$("status").innerHTML='<span class="badge b-red">❌ '+res.error+"</span>";return;}
     $("status").textContent="完成";
     render(res);
   }catch(e){$("status").innerHTML='<span class="badge b-red">请求失败：'+e+"</span>";}
-  finally{$("go").disabled=false;} // 任何分支（含不支持目的地等错误返回）都恢复按钮
+  finally{$("go").disabled=false;clearInterval(poll);} // 任何分支（含不支持目的地等错误返回）都恢复按钮
 }
 
 // P1 多轮澄清：规划前 LLM 判断需求是否缺失关键信息，需要则先追问一轮

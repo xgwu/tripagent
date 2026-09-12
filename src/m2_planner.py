@@ -31,7 +31,8 @@ def _build_day_pool(mains: list, cands: list, used_all: set, used_backup: set,
 def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
          time_limit_s: float = toptw.TIME_LIMIT_S,
          main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
-         date0: str | None = None, hotel_text: str | None = None) -> dict:
+         date0: str | None = None, hotel_text: str | None = None,
+         progress=None) -> dict:
     # ---- 阶段1：复用 M1 的检索 + LLM 库内选择 ----
     r_m1 = m1_planner.plan(city, query, days, use_llm=use_llm, date0=date0,
                            hotel_text=hotel_text)
@@ -50,6 +51,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     return compose(city, query, days, llm_day_map, themes, use_llm=use_llm,
                    date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                    main_bonus=main_bonus, soft_w=soft_w, meta=meta, mode="m2_toptw",
+                   progress=progress,
                    forced_ids={anchor["id"]}
                    if (anchor and hotel_mod.hard_guarantee_enabled()) else None)
 
@@ -390,19 +392,31 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             time_limit_s: float = toptw.TIME_LIMIT_S,
             main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
             meta: dict | None = None, mode: str = "m2_toptw",
-            forced_ids: set | None = None, alt_map: dict | None = None) -> dict:
+            forced_ids: set | None = None, alt_map: dict | None = None,
+            progress=None) -> dict:
     """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。
 
     alt_map: {day: [poi_id]} LLM 备选（M7 提案 alternates）——并入当日求解池但
     不进主选 rank（低利润权重），求解器可在时间充裕/主选不可行时换入。
+    progress: 可选阶段回调 fn(stage:str)——P2 前端分阶段进度提示的数据源，
+    取值 "solving"（TOPTW 求解）/ "regen"（文案重生成）；异常静默，不影响规划。
     """
     meta = meta or {}
+
+    def _report(stage: str) -> None:
+        if progress:
+            try:
+                progress(stage)
+            except Exception:  # noqa: 进度上报失败不拖垮规划
+                pass
+
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     cands = retrieval.recall(city, query)
     t_mode = sequencer.travel_mode(query)  # 骑行/徒步主题 → 求解器通行矩阵同步切换口径
     t0 = time.time()
 
     # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
+    _report("solving")
     res = _solve_all_days(city, query, day_map, all_pois, cands, alt_map, forced_ids,
                           date0, hotel, time_limit_s, main_bonus, soft_w, mode=t_mode)
     final_day_map = res["final_day_map"]
@@ -477,6 +491,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     # ---- 阶段4：文案重生成（对齐最终时间轴）----
     reasons_regen = False
     if use_llm:
+        _report("regen")
         regen, ok = _regen_reasons(city, query, itin, all_pois)
         if ok:
             # 逐键合并：theme+reason 都以最终时间轴重生成结果为准

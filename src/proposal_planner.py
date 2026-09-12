@@ -386,11 +386,13 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
 def _compose_m7(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 date0: str | None, hotel: dict | None, anchor_poi: dict | None,
                 grounding: dict, alt_map: dict | None,
-                time_limit_s: float, main_bonus: float, soft_w: float) -> dict:
+                time_limit_s: float, main_bonus: float, soft_w: float,
+                progress=None) -> dict:
     """M7 复用 M2 compose（TOPTW + 修复链 + 文案），参数固定便于闭环重算。"""
     return m2_planner.compose(city, query, days, day_map, themes, use_llm=True,
                               date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                               main_bonus=main_bonus, soft_w=soft_w,
+                              progress=progress,
                               alt_map=alt_map,
                               meta={"candidates": None, "invalid_poi_ids": [],
                                     "n_dup_across_days": grounding["dup_skipped"],
@@ -406,7 +408,14 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
          date0: str | None = None, hotel_text: str | None = None,
          time_limit_s: float = m2_planner.toptw.TIME_LIMIT_S,
          main_bonus: float = m2_planner.toptw.MAIN_BONUS,
-         soft_w: float = m2_planner.toptw.SOFT_W) -> dict:
+         soft_w: float = m2_planner.toptw.SOFT_W, progress=None) -> dict:
+    def _report(stage: str) -> None:
+        if progress:
+            try:
+                progress(stage)
+            except Exception:  # noqa: 进度上报失败不拖垮规划
+                pass
+
     if not use_llm or not llm_client.llm_available():
         r = m1_planner.plan(city, query, days, use_llm=False, date0=date0,
                             hotel_text=hotel_text)
@@ -414,6 +423,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         return r
     t0 = time.time()
     # ---- A 提案：世界知识自由生成（允许库外补充；注入库内菜单引导优先选用）----
+    _report("proposal")
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     hint = _library_hint(all_pois)
     wd1 = poi_db.trip_weekday(date0, 1) if date0 else None
@@ -446,6 +456,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         return r
 
     # ---- B 落地 + 闭环反馈：未落地 gaps → LLM 修正 → 再落地（共享轮次预算）----
+    _report("grounding")
     day_map, themes, grounding = _ground(proposal, city, all_pois, days)
     rounds_used = 0
     while (rounds_used < MAX_REVISE_ROUNDS
@@ -478,7 +489,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     # ---- C 求解：复用 M2 compose（TOPTW + 修复链 + 文案）----
     hotel = hotel_mod.resolve_hotel(city, hotel_text)
     r = _compose_m7(city, query, days, day_map, themes, date0, hotel,
-                    anchor_poi, grounding, alt_map, time_limit_s, main_bonus, soft_w)
+                    anchor_poi, grounding, alt_map, time_limit_s, main_bonus, soft_w,
+                    progress=progress)
     # 闭环第二触发点：约束剔除过多 / 相邻两天片区重复 → 带原因反馈修正 → 重落地重求解（一轮）
     # 注意口径：每日 dropped 只有修复链剔除；主选被 TOPTW 剔除在 r["mains_dropped"]——
     # 求解器剔掉 LLM 主选 = 世界知识被时间预算否决（如宋城/迪士尼），是最需要闭环的信号
@@ -506,7 +518,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                 if dm2:
                     r2 = _compose_m7(city, query, days, dm2, th2, date0, hotel,
                                      anchor_poi, g2, alt_map2,
-                                     time_limit_s, main_bonus, soft_w)
+                                     time_limit_s, main_bonus, soft_w,
+                                     progress=progress)
                     drops2, overlap2 = _collect_issues(r2)
                     # 修正确实减少问题总数（剔除+片区重复）才采纳，防震荡
                     if len(drops2) + len(overlap2) < len(drops) + len(overlap):

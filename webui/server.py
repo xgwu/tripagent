@@ -515,6 +515,34 @@ _stats_lock = threading.Lock()
 _stats = {"plan_total": 0, "plan_llm": 0, "plan_rate_limited": 0, "plan_error": 0,
           "export_total": 0, "start_ts": time.time(), "latency_sum": 0.0, "latency_max": 0.0}
 
+# ---- P2 分阶段进度：前端携带 sid 发起 /api/plan，期间轮询 /api/progress 拿实时阶段 ----
+# 结构 {sid: {"stage": str, "ts": float}}；规划结束即删除条目（进程生命周期内自清理）
+_plan_stages: dict = {}
+_plan_stages_lock = threading.Lock()
+
+
+def _stage_put(sid: str, stage: str) -> None:
+    with _plan_stages_lock:
+        _plan_stages[sid] = {"stage": stage, "ts": time.time()}
+
+
+def _stage_pop(sid: str) -> None:
+    with _plan_stages_lock:
+        _plan_stages.pop(sid, None)
+
+
+def _plan_extra_kw(planner, progress_cb) -> dict:
+    """规划器签名兼容：仅当其 plan() 支持 progress 参数时才透传（m1 无此参数）。"""
+    if not progress_cb:
+        return {}
+    import inspect
+    try:
+        if "progress" in inspect.signature(planner.plan).parameters:
+            return {"progress": progress_cb}
+    except (TypeError, ValueError):  # noqa: 内置/异常签名 → 不透传
+        pass
+    return {}
+
 
 def rate_allow(ip: str) -> bool:
     now = time.time()
@@ -679,6 +707,14 @@ class Handler(BaseHTTPRequestHandler):
             st["avg_latency_s"] = round(st.pop("latency_sum") / n, 1)
             st["p_max_latency_s"] = st.pop("latency_max")
             return self._json(st)
+        if u.path == "/api/progress":  # P2 分阶段进度：配合 /api/plan 的 sid 使用
+            sid = (q.get("sid") or "")[:40]
+            with _plan_stages_lock:
+                ent = _plan_stages.get(sid)
+            if not ent:
+                return self._json({"ok": True, "stage": "done"})
+            return self._json({"ok": True, "stage": ent["stage"],
+                               "age_s": round(time.time() - ent["ts"], 1)})
         if u.path == "/api/clarify":  # P1 多轮澄清：规划前 LLM 判断是否需要追问
             stats_bump("clarify_total")
             if q.get("llm", "1") != "1" or not llm_client.llm_available():
@@ -696,6 +732,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False,
                                    "error": f"请求过于频繁（每 {int(RATE_LIMIT_WINDOW_S)} 秒最多 {RATE_LIMIT_N} 次规划），请稍后再试"}, code=429)
             stats_bump("plan_total")
+            # P2 分阶段进度：前端带 sid 发起，规划期间可轮询 /api/progress?sid=
+            sid = (q.get("sid") or "")[:40]
+            if sid:
+                _stage_put(sid, "parse")
+            progress_cb = (lambda s: _stage_put(sid, s)) if sid else None
             try:
                 query = q.get("query") or ""
                 # ---- P5 NL 提取健壮化：正则未命中时 LLM 结构化抽取兜底（llm=0 离线路径不触发） ----
@@ -807,7 +848,8 @@ class Handler(BaseHTTPRequestHandler):
                         os.environ["DEEPSEEK_API_KEY"] = llm_key
                         try:
                             r = planner.plan(city, query, days, use_llm=use_llm,
-                                             date0=date0, hotel_text=hotel_text)
+                                             date0=date0, hotel_text=hotel_text,
+                                             **_plan_extra_kw(planner, progress_cb))
                         finally:
                             if old is None:
                                 os.environ.pop("DEEPSEEK_API_KEY", None)
@@ -816,7 +858,8 @@ class Handler(BaseHTTPRequestHandler):
                     cache_key = None  # 访客 Key 结果不落缓存
                 else:
                     r = planner.plan(city, query, days, use_llm=use_llm,
-                                     date0=date0, hotel_text=hotel_text)
+                                     date0=date0, hotel_text=hotel_text,
+                                     **_plan_extra_kw(planner, progress_cb))
                 stats_latency(r.get("latency_s", 0))
                 if r.get("mode") not in ("offline_fallback",):
                     stats_bump("plan_llm")
@@ -835,6 +878,8 @@ class Handler(BaseHTTPRequestHandler):
                 import traceback
                 return self._json({"ok": False, "error": f"{type(e).__name__}: {e}",
                                    "trace": traceback.format_exc()[-900:]}, code=500)
+            finally:
+                _stage_pop(sid)  # 进度条目用毕即清（无论成功/失败/缓存命中）
         return self._json({"error": "not found"}, code=404)
 
     def do_POST(self):
