@@ -150,7 +150,7 @@ async function doPlan(q){
     $("status").textContent="完成";
     render(res);
   }catch(e){$("status").innerHTML='<span class="badge b-red">请求失败：'+e+"</span>";}
-  $("go").disabled=false;
+  finally{$("go").disabled=false;} // 任何分支（含不支持目的地等错误返回）都恢复按钮
 }
 
 // P1 多轮澄清：规划前 LLM 判断需求是否缺失关键信息，需要则先追问一轮
