@@ -187,6 +187,77 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
     return day_map, n_moves
 
 
+# ---- 阶段3.5：日内填空 ----
+FILL_SLACK_MIN_H = 2.0   # finish 距 day_end 空窗超过该值才触发补点
+FILL_STOP_SLACK_H = 1.5  # 补到空窗低于该值即停（行程轻松感优先于极致填满）
+FILL_MAX_PER_DAY = 4     # 单日最多补点数，防过度打包
+
+
+def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
+                   query: str, date0: str | None, hotel: dict | None,
+                   t_mode: str | None) -> tuple[dict, dict]:
+    """日内填空：某天收尾时刻距 day_end 空窗 >2h → 从未用召回池补晚间可行点。
+
+    逐点试加、全量走 sequencer 校验（硬约束/修复剔除/主题里程预算），任一不达标
+    即拒绝该点并换下一候选——保证填空只会让行程更满，不会更糟。
+    返回 (更新后的 day_map, {day: [补入的点名]}）。
+    """
+    from src.poi_db import haversine_km
+    day_end = poi_db.hhmm_to_h(city["day_end"])
+    used = {pid for ids in day_map.values() for pid in ids}
+    pool = [p for p in cands if p["id"] not in used
+            and p.get("category") != "food" and not sequencer.is_full_day(p)]
+    fills: dict = {}
+    for d in sorted(day_map):
+        ids = list(day_map.get(d) or [])
+        if not ids:
+            continue
+        for _ in range(FILL_MAX_PER_DAY):
+            it = sequencer.build_itinerary({d: ids}, city, all_pois, date0=date0,
+                                           hotel=hotel, query=query)
+            day = it["days"][0]
+            if day["violations"] or day.get("dropped"):
+                break
+            finish_h = poi_db.hhmm_to_h(day["finish"])
+            if day_end - finish_h <= FILL_SLACK_MIN_H:
+                break
+            last_t = [s for s in day["timeline"] if s["type"] == "poi"][-1]
+            last = all_pois.get(last_t.get("id")) or last_t
+            # 候选打分：评分高、离当日末点近、营业够晚优先；闭馆太早的直接不可行
+            feasible = []
+            for p in pool:
+                if p["id"] in used:
+                    continue
+                th = poi_db.travel_hours(last, p, t_mode)
+                if finish_h + th + p["dur"] > min(p["close_h"], day_end):
+                    continue
+                score = p["rating"] - 0.2 * haversine_km(last["lat"], last["lng"],
+                                                         p["lat"], p["lng"])
+                if p["close_h"] >= day_end - 1.0:
+                    score += 0.5  # 晚间型点（咖啡街/夜景观赏/书院）更配空窗
+                feasible.append((score, p))
+            if not feasible:
+                break
+            feasible.sort(key=lambda x: -x[0])
+            added = False
+            for _s, pick in feasible[:3]:  # 只试最优 3 个，控制 sequencer 重排成本
+                trial = ids + [pick["id"]]
+                it2 = sequencer.build_itinerary({d: trial}, city, all_pois, date0=date0,
+                                                hotel=hotel, query=query)
+                day2 = it2["days"][0]
+                n2 = len([s for s in day2["timeline"] if s["type"] == "poi"])
+                if (not day2["violations"] and not day2.get("dropped")
+                        and n2 == len(trial)):
+                    ids, added = trial, True
+                    used.add(pick["id"])
+                    fills.setdefault(d, []).append(pick["name"])
+                    break
+            if not added:
+                break
+        day_map[d] = ids
+    return day_map, fills
+
+
 def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             use_llm: bool = True, date0: str | None = None, hotel: dict | None = None,
             time_limit_s: float = toptw.TIME_LIMIT_S,
@@ -247,6 +318,18 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 itin2["substitutes"] = subs
                 itin = itin2
 
+    # ---- 阶段3.5：日内填空（确定性，0 LLM 成本）----
+    # 博物馆/艺术类核心场馆 17:00 前后闭馆，主选少的天 15-17 点就收尾，距 day_end
+    # 还剩 4~6h 空窗。此处从「未用召回池」补晚间可行点（close 够晚 + 离当日末点近），
+    # 逐点试加并走既有 sequencer 校验（违规/剔除/里程预算任一不达标即拒绝该点）。
+    final_day_map = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+                     for d in itin["days"]}
+    final_day_map, day_fills = _fill_evenings(final_day_map, city, all_pois, cands,
+                                              query, date0, hotel, t_mode)
+    if day_fills:
+        itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
+                                         hotel=hotel, query=query)
+
     # ---- 阶段4：文案重生成（对齐最终时间轴）----
     reasons_regen = False
     if use_llm:
@@ -269,6 +352,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "mains_kept": f"{n_mains_kept}/{n_mains}" if n_mains else "n/a",
             "n_llm_alts": n_llm_alts,
             "n_day_moves": n_day_moves,
+            "day_fills": day_fills,
             "toptw_solved_days": sum(1 for v in solved_days.values() if v),
             "toptw_dropped": solver_dropped,
             "mains_dropped": mains_dropped,
