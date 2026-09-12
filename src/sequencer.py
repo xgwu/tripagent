@@ -23,15 +23,16 @@ def is_full_day(p: dict) -> bool:
 
 # ---- 主题画像：按出行方式设定每日交通里程预算（km），游玩≠拉练，超预算剔除远点 ----
 # 优先级从上到下（一个查询命中多个主题时取最严格匹配项之前先按此序）
+# 注：family（亲子）不设里程上限——远郊大点与片区错配由提案层 _far_big_point_regroup 守门，
+#     守门层剔点会误伤亲子行程的必要远点（如极地海洋公园/野生动物世界）
 THEME_PROFILES = [
     ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 15.0),
     ("hiking", re.compile(r"徒步|暴走|city\s*walk|遛弯", re.IGNORECASE), 8.0),
-    ("family", re.compile(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃", re.IGNORECASE), 20.0),
 ]
 
 
 def detect_theme(query: str | None) -> str | None:
-    """从需求文字识别出行主题（cycling/hiking/family），无匹配返回 None。"""
+    """从需求文字识别出行主题（cycling/hiking），无匹配返回 None。"""
     if not query:
         return None
     for name, pat, _cap in THEME_PROFILES:
