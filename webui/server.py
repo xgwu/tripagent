@@ -77,8 +77,8 @@ def _llm_cache_put(key: str, result: dict) -> None:
 PHOTO_CACHE_PATH = os.path.join(ROOT, "data", "photo_cache.json")
 _photo_lock = threading.Lock()
 _photo_cache = None
-_ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州", "WH": "武汉"}
-_CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027"}
+_ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州", "WH": "武汉", "BJ": "北京", "CD": "成都"}
+_CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027", "北京": "010", "成都": "028"}
 
 
 def _load_photo_cache() -> dict:
