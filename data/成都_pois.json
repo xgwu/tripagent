@@ -85,7 +85,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@机场路新加坡工业园区新园南一路2号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD004",
@@ -217,7 +219,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@桂溪街道桂溪街道锦云东二巷；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD010",
@@ -393,7 +397,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@青华路5号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD018",
@@ -415,7 +421,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@望江路19号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD019",
@@ -459,7 +467,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@人民中路一段16号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD021",
@@ -569,7 +579,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@安仁镇金桂街15号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD026",
@@ -745,7 +757,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@小河街1号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD034",
@@ -811,7 +825,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@华严路181号；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD038",
@@ -921,28 +937,6 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@熊猫大道1375号成都大熊猫繁育研究基地内(北侧)；营业时间与闭馆日待人工核实",
-   "closed_days": []
-  },
-  {
-   "id": "CD043",
-   "name": "成都直升机博物馆(不对外开放)",
-   "category": "culture",
-   "tags": [
-    "科教文化服务",
-    "博物馆",
-    "博物馆"
-   ],
-   "lat": 30.603766,
-   "lng": 104.014087,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "any",
-   "price": 0,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "坐标/名称来自高德采集，@华烨路234号；营业时间与闭馆日待人工核实",
    "closed_days": []
   },
   {
@@ -1559,7 +1553,9 @@
    "area": "central",
    "family_ok": true,
    "note": "坐标/名称来自高德采集，@天府大道1700号环球中心D馆；营业时间与闭馆日待人工核实",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "CD072",

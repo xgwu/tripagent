@@ -325,7 +325,9 @@
    "area": "west",
    "family_ok": true,
    "note": "免费免预约，茶园环绕，龙井主题",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "HZ015",
@@ -854,7 +856,9 @@
    "family_ok": true,
    "note": "大卫·奇普菲尔德设计，与遗址公园同日串联",
    "closed_monday": true,
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "HZ039",
@@ -1094,7 +1098,9 @@
    "family_ok": true,
    "note": "之江文化中心，需预约，距市区约20km",
    "closed_monday": true,
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "HZ050",
@@ -1189,7 +1195,9 @@
    "area": "central",
    "family_ok": true,
    "note": "大井巷95号，全国唯一国家级中药专业博物馆；全年无休（已核实365天开放），近河坊街",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "HZ054",

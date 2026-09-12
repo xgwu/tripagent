@@ -478,7 +478,9 @@
    "area": "north",
    "family_ok": true,
    "note": "金砖烧制全流程，建筑摄影出片",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "SZ021",

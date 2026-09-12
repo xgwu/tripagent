@@ -160,7 +160,9 @@
    "area": "wuchang",
    "family_ok": true,
    "note": "樱花季需预约，民国老斋舍+樱花大道",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "WH007",
@@ -569,7 +571,9 @@
    "area": "hankou",
    "family_ok": true,
    "note": "园博园内，亚马逊/非洲动物标本震撼",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "WH025",

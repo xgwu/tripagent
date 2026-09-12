@@ -178,7 +178,9 @@
    "area": "central",
    "family_ok": true,
    "note": "青铜/陶瓷/书画为镇馆三绝，免费预约",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "SH008",
@@ -201,7 +203,9 @@
    "area": "central",
    "family_ok": true,
    "note": "静安雕塑公园内，恐龙与生命长河是孩子最爱",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "SH009",
@@ -362,7 +366,9 @@
    "area": "west",
    "family_ok": true,
    "note": "滨江美术馆带，看完可沿徐汇滨江骑行",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "SH016",
@@ -566,7 +572,9 @@
    "area": "pudong",
    "family_ok": true,
    "note": "地铁2号线直达，适合5-12岁",
-   "closed_days": []
+   "closed_days": [
+    "周一"
+   ]
   },
   {
    "id": "SH025",
