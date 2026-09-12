@@ -67,13 +67,25 @@ def travel_mode(query: str | None) -> str | None:
 _CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
 
 
+def is_cafe(p: dict) -> bool:
+    """咖啡馆/茶饮类：food 类目但非正餐——不参与餐窗竞争，不顶替正餐餐块。"""
+    if p.get("category") != "food":
+        return False
+    if "咖啡" in (p.get("name") or ""):
+        return True
+    return any("咖啡" in t or "茶" in t or "coffee" in t.lower()
+               for t in (p.get("tags") or []))
+
+
 def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = None,
                     hotel: dict | None = None, mode: str | None = None) -> dict:
     """hotel：M6 住宿锚点 —— 每日从酒店出发、day_end 前返回酒店（虚拟节点，dur=0）。
 
     mode：出行方式（None=车驾 | cycling/hiking）—— 通行时间与 hop 标签随之切换。
-    美食约束：category=food 的 POI 只能安排在用餐时段内（开吃时刻落在餐窗），
-    且每个餐窗最多 1 个美食 POI（占用后该窗不再插入普通餐块）；排不进 → 违规跳过。
+    美食约束：category=food 的正餐类 POI 只能安排在用餐时段内（开吃时刻落在餐窗），
+    且每个餐窗最多 1 家正餐（占用后该窗不再插入普通餐块）；排不进 → 违规跳过。
+    咖啡馆/茶饮（is_cafe）不算正餐：按普通景点排（时段自由），餐块照插——
+    午餐时段永远是正餐，咖啡只作为逛点间隙的休憩。
     """
     meals = city["meal_slots"]
     day_start = poi_db.hhmm_to_h(city["day_start"])
@@ -100,7 +112,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
 
     for p in pois:
         is_last = p is pois[-1]
-        if p.get("category") == "food":
+        if p.get("category") == "food" and not is_cafe(p):
             # ---- 美食 POI：必须落入未占用的餐窗 ----
             th = poi_db.travel_hours(prev, p, mode) if prev is not None else 0.0
             t2 = t + th
@@ -280,8 +292,9 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
     """
     if not day_pois:
         return []
-    foods = [p for p in day_pois if p.get("category") == "food"]
-    rest = [p for p in day_pois if p.get("category") != "food"]
+    # 咖啡馆/茶饮不是正餐：不参与餐窗竞争，当普通景点排（时段自由，间隙休憩）
+    foods = [p for p in day_pois if p.get("category") == "food" and not is_cafe(p)]
+    rest = [p for p in day_pois if p.get("category") != "food" or is_cafe(p)]
 
     def _greedy(pool: list) -> list:
         if not pool:
@@ -402,10 +415,11 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
         ids = day_map[d]
         pois = [all_pois[i] for i in ids if i in all_pois]
         wd = poi_db.trip_weekday(date0, d) if date0 else None
-        # 美食餐窗容量前置修剪：每窗 ≤1 美食是硬约束，候选超额时在进时间轴前剔除
-        # （评分最高的留午/晚各一家），避免修复链 max_drop 上限内剔不干净残留违规
+        # 正餐餐窗容量前置修剪：每窗 ≤1 家正餐是硬约束，候选超额时在进时间轴前剔除
+        # （评分最高的留午/晚各一家），避免修复链 max_drop 上限内剔不干净残留违规。
+        # 咖啡馆/茶饮不算正餐、不占餐窗，不参与修剪。
         pre_drop = []
-        foods = [p for p in pois if p.get("category") == "food"]
+        foods = [p for p in pois if p.get("category") == "food" and not is_cafe(p)]
         if len(foods) > 2:
             by_win = {}
             for p in foods:
@@ -420,12 +434,13 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
                 extra_ids = {p["id"] for p in extra}
                 pois = [p for p in pois if p["id"] not in extra_ids]
         seq = pois if order_given else order_day(pois, hotel=hotel, city=city, mode=mode)
-        # P2：尊重给定顺序（非美食点相对顺序不变），但美食点做最小绕行位重插——
-        # LLM 给定顺序常把网红咖啡店钉死在中段，造成大绕路；重插由餐窗感知成本函数兜底
+        # P2：尊重给定顺序（非正餐点相对顺序不变），但正餐点做最小绕行位重插——
+        # 餐窗感知成本函数兜底；咖啡馆不算正餐，留在原相对位置（时段自由）
         if order_given and city is not None:
-            _foods = [p for p in seq if p.get("category") == "food"]
+            _foods = [p for p in seq if p.get("category") == "food" and not is_cafe(p)]
             if _foods and len(seq) > len(_foods):
-                seq = _insert_foods([p for p in seq if p.get("category") != "food"],
+                seq = _insert_foods([p for p in seq
+                                     if not (p.get("category") == "food" and not is_cafe(p))],
                                     _foods, hotel, city, mode)
         tl = _build_timeline(seq, city, d, wd, hotel, mode=mode)
         # 硬约束修复先行（重排 → 剔点），收敛到 0 违规；预算收敛在其结果上做，
