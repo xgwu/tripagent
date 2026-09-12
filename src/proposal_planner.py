@@ -341,39 +341,66 @@ FAR_BIG_KM = 12.0          # 远郊判定：距市中心超过该值
 FAR_BIG_MIN_H = 4.0        # 半日型大点时长下限（8h+ 全天型另有独占日规则）
 FAR_BIG_SPREAD_KM = 10.0   # 大点与同天其他点的最大允许直线距离
 FAR_REGROUP_PASSES = 2     # 最多整理轮数（防跨天震荡）
+FAMILY_SOLO_H = 5.0        # family：5h+ 远郊点建议独占日（开放窗口 ~7h，同天再排点必溢出）
 
 
-def _far_big_point_regroup(day_map: dict, all_pois: dict) -> list:
+def _is_family_query(query: str | None) -> bool:
+    """亲子出行判定（与 THEME_PROFILES 的 family 口径一致，供独占日守门用）。"""
+    return bool(query and re.search(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃|儿童", query))
+
+
+def _far_big_point_regroup(day_map: dict, all_pois: dict, family: bool = False) -> list:
     moves = []
     if len(day_map) < 2:
         return moves
     for _pass in range(FAR_REGROUP_PASSES):
         moved_any = False
+        # family：先标记所有「需独占日」的天——它们既不让位也不接收外来点（防两天互踢震荡）
+        strict_days = {}
+        if family:
+            for d, ids in day_map.items():
+                for i in ids:
+                    p = all_pois.get(i)
+                    if (p and p.get("dist_center_km", 0) > FAR_BIG_KM
+                            and FAMILY_SOLO_H <= float(p.get("dur") or 0) < 8.0):
+                        strict_days[d] = i
+                        break
         for d in sorted(day_map):
             ids = day_map.get(d) or []
             if len(ids) < 2:
                 continue
-            big = next((p for p in (all_pois[i] for i in ids if i in all_pois)
-                        if p.get("dist_center_km", 0) > FAR_BIG_KM
-                        and float(p.get("dur") or 0) >= FAR_BIG_MIN_H), None)
+            pts = [all_pois[i] for i in ids if i in all_pois]
+            # family 严格档：5h+ 远郊点建议独占日（先于普通大点判定）
+            big = next((p for p in pts if family
+                        and p.get("dist_center_km", 0) > FAR_BIG_KM
+                        and FAMILY_SOLO_H <= float(p.get("dur") or 0) < 8.0), None)
+            strict = big is not None
+            if big is None:
+                big = next((p for p in pts
+                            if p.get("dist_center_km", 0) > FAR_BIG_KM
+                            and float(p.get("dur") or 0) >= FAR_BIG_MIN_H), None)
             if big is None:
                 continue
-            misplaced = [i for i in ids if i != big["id"]
-                         and poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
-                                                 big["lat"], big["lng"]) > FAR_BIG_SPREAD_KM]
+            if strict:
+                # 独占日：同天所有其他停留点都让位（餐点由 sequencer 后续自动补，不受影响）
+                misplaced = [i for i in ids if i != big["id"]]
+            else:
+                misplaced = [i for i in ids if i != big["id"]
+                             and poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
+                                                     big["lat"], big["lng"]) > FAR_BIG_SPREAD_KM]
             if not misplaced:
                 continue
             for i in misplaced:
                 best_d, best_km = None, None
                 for d2 in day_map:
-                    if d2 == d:
-                        continue
-                    pts = [all_pois[j] for j in day_map.get(d2, [])
-                           if j in all_pois and j != i]
-                    if not pts:
-                        continue
-                    km = sum(poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
-                                                 p["lat"], p["lng"]) for p in pts) / len(pts)
+                    if d2 == d or d2 in strict_days:
+                        continue  # 不移入另一个需独占日的天
+                    pts2 = [all_pois[j] for j in day_map.get(d2, [])
+                            if j in all_pois and j != i]
+                    # 空天也可作为落点（km 记 0）——独占日整理时尤其需要
+                    km = 0.0 if not pts2 else sum(
+                        poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
+                                            p["lat"], p["lng"]) for p in pts2) / len(pts2)
                     if best_km is None or km < best_km:
                         best_d, best_km = d2, km
                 if best_d is None:
@@ -412,10 +439,29 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                     if ed in extra_themes:
                         themes[missing[k]] = extra_themes[ed]
                 grounding["days_topped_up"] = missing
-    # 远郊大点同天片区守门：错配点在求解前移到最近的天（防主题点被里程守门剔除）
-    regroup = _far_big_point_regroup(day_map, all_pois)
+    # 远郊大点同天片区守门：错配点在求解前移到最近的天（防主题点被里程守门剔除）；
+    # family 查询额外启用独占日档（5h+ 远郊点当天其他点全部让位）
+    family = _is_family_query(query)
+    regroup = _far_big_point_regroup(day_map, all_pois, family=family)
     if regroup:
         grounding["far_regroup"] = regroup
+    # family 独占日建议：整理后同天仍有其他停留点的 5h+ 远郊点 → 明确提示用户
+    if family:
+        solo_suggest = []
+        for d, ids in sorted(day_map.items()):
+            for pid in ids:
+                if pid not in all_pois:
+                    continue
+                p = all_pois[pid]
+                if (len(ids) > 1 and p.get("dist_center_km", 0) > FAR_BIG_KM
+                        and FAMILY_SOLO_H <= float(p.get("dur") or 0) < 8.0):
+                    solo_suggest.append({
+                        "type": "far_big_solo", "day": d, "name": p["name"],
+                        "message": f"「{p['name']}」游玩约 {p.get('dur')} 小时且位于远郊，"
+                                   f"当天还安排了 {len(ids)-1} 个点，节奏会偏赶，"
+                                   f"建议把它单独安排一整天"})
+        if solo_suggest:
+            grounding["far_big_solo"] = solo_suggest
     # 单天补强：缺口剔除导致某天只剩 1-2 个点 → 从未用候选离线补足（P0-3 缺口二次提案）
     if day_map:
         MIN_STOPS = 3
@@ -425,6 +471,11 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
             if any(sequencer.is_full_day(all_pois[pid])
                    for pid in day_map.get(d, []) if pid in all_pois):
                 continue  # 全天大点（迪士尼等）独占日不补小点——补了也会被时间约束剔除
+            if family and any(
+                    all_pois[pid].get("dist_center_km", 0) > FAR_BIG_KM
+                    and FAMILY_SOLO_H <= float(all_pois[pid].get("dur") or 0) < 8.0
+                    for pid in day_map.get(d, []) if pid in all_pois):
+                continue  # family 5h+ 远郊点（野生动物世界类）同理：开放窗口仅 ~7h，不补点
             while len(day_map.get(d, [])) < MIN_STOPS:
                 rest = [p for i, p in all_pois.items() if i not in used]
                 if not rest:
@@ -619,5 +670,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     r["area_overlap"] = _crossday_area_overlap(final_day_ids, all_pois)
     r["proposal"] = proposal
     r["grounding"] = grounding
+    # 用户可读通知：compose 层需求满足检测 + 提案层独占日建议，统一供前端展示
+    r["notices"] = list(r.get("notices") or []) + list(grounding.get("far_big_solo") or [])
     r["latency_s"] = round(time.time() - t0, 1)  # A+B+C 全链路耗时
     return r

@@ -466,11 +466,15 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
                  if date0 else {})
     for dr in dropped:
         d, pid = dr.get("day"), dr["id"]
-        alt = next((i for i in (alt_map or {}).get(d, [])
-                    if i not in used and i in all_pois
-                    and (not wd_by_day.get(d)
-                         or wd_by_day[d] not in all_pois[i].get("closed_days", []))),
-                   None)
+        cand = [i for i in (alt_map or {}).get(d, [])
+                if i not in used and i in all_pois
+                and (not wd_by_day.get(d)
+                     or wd_by_day[d] not in all_pois[i].get("closed_days", []))]
+        # 主题保真（P0）：优先选与被剔点标签相同的备选（如动物换动物、博物馆换博物馆），
+        # 防止补位点类型漂移导致用户需求主题在行程中消失
+        dtags = set(all_pois[pid].get("tags", [])) if pid in all_pois else set()
+        alt = (next((i for i in cand if set(all_pois[i].get("tags", [])) & dtags), None)
+               or (cand[0] if cand else None))
         if alt:
             day_map2[d].append(alt)
             used.add(alt)
@@ -479,6 +483,43 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
         else:
             rest.append(dr)
     return (day_map2 if subs else None), subs, rest
+
+
+# 主题保真（P0）：值得向用户报告的「内容需求」标签白名单——
+# 排除亲子/经典/轻松这类出行方式词（它们不是可被剔除的行程内容）
+DEMAND_TAGS = {"动物", "博物馆", "寺庙", "历史", "文化", "自然", "美食",
+               "夜景", "夜生活", "小吃", "夜市", "购物", "徒步", "茶文化", "文艺", "小众"}
+
+
+def _demand_notices(query: str, dropped_recs: list, itin: dict, all_pois: dict) -> list:
+    """需求满足检测：用户明确表达的内容需求标签，若因剔点在最终行程中消失 → 生成提示。
+
+    dropped_recs: 各环节剔除记录合集（含 id/name）。返回 [{type,tag,dropped,message}]。
+    """
+    try:
+        demand = [t for t in retrieval.extract_query_tags(query) if t in DEMAND_TAGS]
+    except Exception:  # noqa: 提示生成失败不影响规划输出
+        return []
+    if not demand:
+        return []
+    kept_ids = {s.get("id") for d in itin.get("days", [])
+                for s in d.get("timeline", []) if s.get("type") == "poi"}
+    kept_tags = set()
+    for i in kept_ids:
+        if i in all_pois:
+            kept_tags.update(all_pois[i].get("tags", []))
+    notices = []
+    for t in demand:
+        if t in kept_tags:
+            continue
+        lost = [dr.get("name", "") for dr in dropped_recs
+                if dr.get("id") not in kept_ids and dr.get("id") in all_pois
+                and t in all_pois[dr["id"]].get("tags", [])]
+        if lost:
+            notices.append({"type": "demand_lost", "tag": t, "dropped": lost,
+                            "message": f"「{t}」需求未满足：{'、'.join(dict.fromkeys(lost))} "
+                                       f"已被剔除，行程中已无同主题点位"})
+    return notices
 
 
 def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
@@ -637,6 +678,15 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
         d["theme"], d["reason"] = info.get("theme", ""), info.get("reason", "")
         d["tips"] = info.get("tips", [])
 
+    # ---- 阶段4.5：主题保真检测（P0）——需求标签的点被剔且行程再无同主题点 → 提示 ----
+    _dropped_seen, dropped_recs = set(), []
+    for dr in (mains_dropped + solver_dropped
+               + [dr for d in itin["days"] for dr in d.get("dropped", [])]):
+        if dr.get("id") and dr["id"] not in _dropped_seen:
+            _dropped_seen.add(dr["id"])
+            dropped_recs.append(dr)
+    notices = _demand_notices(query, dropped_recs, itin, all_pois)
+
     return {"mode": mode, "query": query, "days": days,
             "candidates": meta.get("candidates"), "invalid_poi_ids": meta.get("invalid_poi_ids"),
             "date0": date0, "n_dup_across_days": meta.get("n_dup_across_days", 0),
@@ -652,6 +702,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "mains_dropped": mains_dropped,
             "violations_after_solver": n_viol_after_solver,
             "reasons_regen": reasons_regen,
+            "notices": notices,
             "latency_s": round(time.time() - t0, 1),
             "itinerary": itin}
 

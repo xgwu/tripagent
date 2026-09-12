@@ -230,6 +230,7 @@ function render({city_meta,result:r,days_source,parsed}){
     ${r.grounding&&r.grounding.gaps.length?`<span class="badge b-amber" title="${r.grounding.gaps.map(g=>g.name).join("、")}">📚 库缺口 ${r.grounding.gaps.length}</span>`:""}
     <span class="badge ${it.total_violations===0?"b-green":"b-red"}">${it.total_violations===0?"✅ 0 硬约束违规":"❌ "+it.total_violations+" 硬约束违规"}</span>
     ${avoided.length?`<span class="badge b-green" title="当日闭馆已自动避开：${avoided.map(x=>x.name).join("、")}">🏛 已避开闭馆 ${avoided.length} 处</span>`:""}
+    ${(r.notices||[]).map(n=>`<span class="badge b-amber" title="${(n.message||"").replace(/"/g,"&quot;")}">⚠️ ${(n.message||"").length>26?(n.message||"").slice(0,26)+"…":n.message||""}</span>`).join("")}
     ${r.hotel?`<span class="badge b-amber">🏨 ${r.hotel.name}</span>`:""}
     ${r.n_dup_across_days===0?'<span class="badge b-green">跨天重复 0</span>':`<span class="badge b-amber">跨天重复 ${r.n_dup_across_days}（已剥除）</span>`}
     ${r.cache_hit?'<span class="badge b-green" title="相同需求 7 天内命中本地缓存，秒回且不消耗 LLM 额度">⚡ 缓存秒回</span>':""}
