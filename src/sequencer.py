@@ -55,13 +55,23 @@ def cycle_km_cap(query: str | None) -> float | None:
     return 15.0 if query and _CYCLE_RE.search(query) else None
 
 
+def travel_mode(query: str | None) -> str | None:
+    """主题 → 通行时间模型（poi_db.travel_hours 的 mode 参数）。
+
+    cycling/hiking 有专属速度模型（骑行/步行）；family 等仍按车驾混合口径。
+    """
+    theme = detect_theme(query)
+    return theme if theme in ("cycling", "hiking") else None
+
+
 _CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
 
 
 def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = None,
-                    hotel: dict | None = None) -> dict:
+                    hotel: dict | None = None, mode: str | None = None) -> dict:
     """hotel：M6 住宿锚点 —— 每日从酒店出发、day_end 前返回酒店（虚拟节点，dur=0）。
 
+    mode：出行方式（None=车驾 | cycling/hiking）—— 通行时间与 hop 标签随之切换。
     美食约束：category=food 的 POI 只能安排在用餐时段内（开吃时刻落在餐窗），
     且每个餐窗最多 1 个美食 POI（占用后该窗不再插入普通餐块）；排不进 → 违规跳过。
     """
@@ -92,7 +102,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         is_last = p is pois[-1]
         if p.get("category") == "food":
             # ---- 美食 POI：必须落入未占用的餐窗 ----
-            th = poi_db.travel_hours(prev, p) if prev is not None else 0.0
+            th = poi_db.travel_hours(prev, p, mode) if prev is not None else 0.0
             t2 = t + th
             pref = FOOD_PREF_WIN.get(p.get("best_time"), "lunch")
             win_order = [pref] + [k for k in meal_keys if k != pref]
@@ -111,7 +121,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                     travel_h += th
                     km_f = poi_db.haversine_km(prev["lat"], prev["lng"], p["lat"], p["lng"])
                     travel_km += km_f
-                    timeline.append({"type": "hop", "name": _hop_label(km_f, th),
+                    timeline.append({"type": "hop", "name": _hop_label(km_f, th, mode),
                                      "start": _fmt(t), "end": _fmt(t2), "min": int(round(th * 60)),
                                      "km": round(km_f, 1)})
                 # 营业时间/闭馆日/当日上限校验（与非美食 POI 同一套）
@@ -140,11 +150,11 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         # ---- 非美食 POI：原逻辑 ----
         hop = None
         if prev is not None:
-            th = poi_db.travel_hours(prev, p)
+            th = poi_db.travel_hours(prev, p, mode)
             km = poi_db.haversine_km(prev["lat"], prev["lng"], p["lat"], p["lng"])
             travel_h += th
             travel_km += km
-            hop = {"type": "hop", "name": _hop_label(km, th),
+            hop = {"type": "hop", "name": _hop_label(km, th, mode),
                    "start": _fmt(t), "end": _fmt(t + th), "min": int(round(th * 60)),
                    "km": round(km, 1)}
             t += th
@@ -172,7 +182,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         prev = p
     # M6：返程腿 —— day_end 前回到酒店（无酒店不约束）
     if hotel is not None and pois:
-        th = poi_db.travel_hours(prev, hotel)
+        th = poi_db.travel_hours(prev, hotel, mode)
         travel_h += th
         travel_km += poi_db.haversine_km(prev["lat"], prev["lng"], hotel["lat"], hotel["lng"])
         t += th
@@ -190,10 +200,18 @@ def _fmt(h: float) -> str:
     return f"{int(h):02d}:{int(round((h - int(h)) * 60)):02d}"
 
 
-def _hop_label(km: float, th: float) -> str:
-    """通行段标签：<1.2km 视为步行，否则车程（与时间轴 hop 行共用）。"""
-    mode = "步行" if km < 1.2 else "车程"
-    return f"{mode} {int(round(th * 60))} 分钟 · {km:.1f}km"
+def _hop_label(km: float, th: float, mode: str | None = None) -> str:
+    """通行段标签（随出行方式切换）：
+    默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / 1.2~6km 骑行 / >6km 车程；
+    徒步：<3km 步行，否则车程。"""
+    if mode == "cycling":
+        mode_s = "步行" if km < poi_db.HOP_WALK_KM else \
+            ("骑行" if km <= poi_db.CYCLE_MAX_KM else "车程")
+    elif mode == "hiking":
+        mode_s = "步行" if km < poi_db.WALK_MODE_MAX_KM else "车程"
+    else:
+        mode_s = "步行" if km < poi_db.HOP_WALK_KM else "车程"
+    return f"{mode_s} {int(round(th * 60))} 分钟 · {km:.1f}km"
 
 
 def _day_score_key(p: dict):
@@ -201,9 +219,11 @@ def _day_score_key(p: dict):
     return pref
 
 
-def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = None) -> list:
+def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = None,
+              mode: str | None = None) -> list:
     """贪婪最近邻 + 建议时段偏置：从早到晚排一条线（有酒店则从酒店出发选首点）。
 
+    mode：出行方式 → 通行时间口径与时间轴一致（骑行主题下按骑行时间找最近邻）。
     city 传入时启用餐窗感知：先排非美食线，再把美食 POI 插入到
     「绕行最小 + 最贴近其目标餐窗时刻」的位置（配合 _build_timeline 的美食硬约束）。
     """
@@ -217,14 +237,14 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
             return []
         remaining = list(pool)
         if hotel is not None:
-            cur = min(remaining, key=lambda p: poi_db.travel_hours(hotel, p))
+            cur = min(remaining, key=lambda p: poi_db.travel_hours(hotel, p, mode))
         else:
             cur = start_poi or max(remaining, key=lambda p: (p["rating"] - 3 * _day_score_key(p), p["rating"]))
         seq = [cur]
         remaining.remove(cur)
         while remaining:
             nxt = min(remaining, key=lambda p: (
-                poi_db.travel_hours(cur, p) + 0.8 * abs(_day_score_key(p) - _day_score_key(cur)),
+                poi_db.travel_hours(cur, p, mode) + 0.8 * abs(_day_score_key(p) - _day_score_key(cur)),
                 -p["rating"]))
             seq.append(nxt)
             remaining.remove(nxt)
@@ -251,8 +271,8 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
         # 预计算序列各位置的到达时刻（day_start 起累计 travel+dur，跨过饭点补偿餐块 1h）
         t_est, times, prev_q = day_start, [day_start], None
         for q in seq:
-            tt = poi_db.travel_hours(prev_q, q) if prev_q is not None else \
-                (poi_db.travel_hours(hotel, q) if hotel is not None else 0)
+            tt = poi_db.travel_hours(prev_q, q, mode) if prev_q is not None else \
+                (poi_db.travel_hours(hotel, q, mode) if hotel is not None else 0)
             t_est += tt + q["dur"]
             for _ms in win_mid.values():  # 跨过饭点 → 排序器会插餐块，预估补偿
                 if t_est - tt - q["dur"] < _ms <= t_est:
@@ -264,10 +284,10 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
         for pos in range(len(seq) + 1):
             a = seq[pos - 1] if pos > 0 else hotel
             b = seq[pos] if pos < len(seq) else None
-            detour = poi_db.travel_hours(a, f) if a is not None else 0
+            detour = poi_db.travel_hours(a, f, mode) if a is not None else 0
             if b is not None and a is not None:
-                detour += poi_db.travel_hours(f, b) - poi_db.travel_hours(a, b)
-            arrive_est = times[pos] + (poi_db.travel_hours(a, f) if a is not None else 0)
+                detour += poi_db.travel_hours(f, b, mode) - poi_db.travel_hours(a, b, mode)
+            arrive_est = times[pos] + (poi_db.travel_hours(a, f, mode) if a is not None else 0)
             wait = max(0.0, ws_t - arrive_est)          # 早到等待
             late = max(0.0, arrive_est - we_t)          # 晚于窗尾（基本必被剔除）
             cost = detour + 0.6 * wait + 10.0 * late
@@ -280,39 +300,48 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
 
 
 def _repair_by_drop(day_pois: list, city: dict, day_no: int, max_drop: int = 3,
-                    weekday: str | None = None, hotel: dict | None = None):
+                    weekday: str | None = None, hotel: dict | None = None,
+                    mode: str | None = None):
     """二级修复：重排后仍有违规 → 剔除肇事 POI（模拟 Agent Loop 的剔除+反馈）。"""
     pois = list(day_pois)
     dropped = []
     for _ in range(max_drop):
-        tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
+        tl = _build_timeline(order_day(pois, hotel=hotel, city=city, mode=mode),
+                             city, day_no, weekday, hotel, mode=mode)
         if not tl["violations"]:
             break
         bad_name = tl["violations"][-1]["poi"]
         bad = next((p for p in pois if p["name"] == bad_name), None)
         if bad is None and bad_name == "返程" and pois:
             # M6 修复链补洞：返程超时的「肇事点」不在列表里 → 剔除离酒店最远的点（返程腿最长的贡献者）
-            bad = (max(pois, key=lambda p: poi_db.travel_hours(p, hotel))
+            bad = (max(pois, key=lambda p: poi_db.travel_hours(p, hotel, mode))
                    if hotel is not None else pois[-1])
         if bad is None or len(pois) <= 1:
             break
         pois.remove(bad)
         dropped.append({"id": bad["id"], "name": bad["name"],
                         "reason": tl["violations"][-1]["reason"]})
-    tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
+    tl = _build_timeline(order_day(pois, hotel=hotel, city=city, mode=mode),
+                         city, day_no, weekday, hotel, mode=mode)
     tl["dropped"] = dropped
     return tl
 
 
 def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
-                   hotel: dict | None, cap: float, theme: str | None = None):
-    """主题里程预算修复：当日交通里程超预算 → 迭代剔除「最远腿」POI（贡献最长绕行的点）再重排。"""
+                   hotel: dict | None, cap: float, theme: str | None = None,
+                   mode: str | None = None):
+    """主题里程预算修复：当日交通里程超预算 → 迭代剔除「最远腿」POI（贡献最长绕行的点）再重排。
+
+    约束感知：每次剔点只接受「里程收敛且不引入新违规」的候选（按最远腿降序逐个试剔）；
+    剔谁都违规则停止——硬约束优先于里程预算，宁可超预算也不产出违规行程。
+    """
     label = {"cycling": "骑行", "hiking": "徒步", "family": "亲子"}.get(theme, "骑行")
     pois = list(day_pois)
     dropped = []
     while len(pois) > 2:
-        tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
-        if tl["travel_km"] <= cap:
+        tl = _build_timeline(order_day(pois, hotel=hotel, city=city, mode=mode),
+                             city, day_no, weekday, hotel, mode=mode)
+        if tl["travel_km"] <= cap and not tl["violations"]:
             break
 
         # 全天大点豁免：迪士尼/海昌类（时长≥8h）须独占一天，不参与「最远腿」剔除——
@@ -327,11 +356,22 @@ def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
             others = [q for q in _pois if q is not p]
             return max((poi_db.haversine_km(p["lat"], p["lng"], q["lat"], q["lng"])
                         for q in others), default=0.0)
-        bad = max(droppable, key=_far_leg)
-        pois.remove(bad)
-        dropped.append({"id": bad["id"], "name": bad["name"],
+        chosen, chosen_tl = None, None
+        for cand in sorted(droppable, key=_far_leg, reverse=True):
+            trial = [p for p in pois if p is not cand]
+            ttl = _build_timeline(order_day(trial, hotel=hotel, city=city, mode=mode),
+                                  city, day_no, weekday, hotel, mode=mode)
+            if not ttl["violations"]:  # 剔它不引入新违规才接受
+                chosen, chosen_tl = cand, ttl
+                break
+        if chosen is None:
+            break
+        pois.remove(chosen)
+        dropped.append({"id": chosen["id"], "name": chosen["name"],
                         "reason": f"{label}里程超预算（>{cap:.0f} km/天），剔除远点收敛路线"})
-    tl = _build_timeline(order_day(pois, hotel=hotel, city=city), city, day_no, weekday, hotel)
+        tl = chosen_tl
+    tl = _build_timeline(order_day(pois, hotel=hotel, city=city, mode=mode),
+                         city, day_no, weekday, hotel, mode=mode)
     tl["dropped"] = dropped
     return tl
 
@@ -342,11 +382,13 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
     """day_map: {1: [poi_id,...], ...}  —— 尊重 LLM 给定顺序(order_given)，逐日排时序。
 
     date0: 行程起始日期（YYYY-MM-DD）——传入后按天推算星期，闭馆日作为硬约束校验/剔除。
+    query: 命中主题画像（骑行/徒步）时，通行时间与 hop 标签按该方式的速度模型计算。
     """
     result_days, all_violations, total_km = [], [], 0.0
     all_dropped = []
     cap = theme_km_cap(query)
     theme = detect_theme(query)
+    mode = travel_mode(query)
     for d in sorted(day_map):
         ids = day_map[d]
         pois = [all_pois[i] for i in ids if i in all_pois]
@@ -368,15 +410,14 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
                             for p in extra]
                 extra_ids = {p["id"] for p in extra}
                 pois = [p for p in pois if p["id"] not in extra_ids]
-        seq = pois if order_given else order_day(pois, hotel=hotel, city=city)
-        tl = _build_timeline(seq, city, d, wd, hotel)
-        # 主题画像：先做每日里程预算收敛，再做硬约束修复（两者正交）
-        if cap and tl["travel_km"] > cap and len(pois) > 2:
-            tl = _cap_km_repair(pois, city, d, wd, hotel, cap, theme)
+        seq = pois if order_given else order_day(pois, hotel=hotel, city=city, mode=mode)
+        tl = _build_timeline(seq, city, d, wd, hotel, mode=mode)
+        # 硬约束修复先行（重排 → 剔点），收敛到 0 违规；预算收敛在其结果上做，
+        # 避免旧序「预算修复后违规修复链从全量重建」把预算成果冲掉
         if tl["violations"]:
             # 一级修复：放弃原顺序，贪婪重排
-            repaired = order_day(pois, hotel=hotel, city=city)
-            tl2 = _build_timeline(repaired, city, d, wd, hotel)
+            repaired = order_day(pois, hotel=hotel, city=city, mode=mode)
+            tl2 = _build_timeline(repaired, city, d, wd, hotel, mode=mode)
             tl["repairs"] = len(tl["violations"])
             if len(tl2["violations"]) < len(tl["violations"]):
                 tl2["reordered"] = True
@@ -386,10 +427,16 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
                 tl["reordered"] = False
             # 二级修复：重排无效说明总量超载 → 剔除肇事 POI
             if tl["violations"]:
-                tl3 = _repair_by_drop(pois, city, d, weekday=wd, hotel=hotel)
+                tl3 = _repair_by_drop(pois, city, d, weekday=wd, hotel=hotel, mode=mode)
                 tl3["repairs"] = tl["repairs"]
                 tl3["reordered"] = True
                 tl = tl3
+        # 主题画像：每日里程预算收敛（约束感知剔点，不引入新违规）
+        if cap and tl["travel_km"] > cap:
+            kept = [p for p in pois
+                    if p["id"] not in {x["id"] for x in tl.get("dropped", [])}]
+            if len(kept) > 2:
+                tl = _cap_km_repair(kept, city, d, wd, hotel, cap, theme, mode=mode)
         all_violations.extend(tl["violations"])
         all_dropped.extend(tl.get("dropped", []))
         total_km += tl["travel_km"]

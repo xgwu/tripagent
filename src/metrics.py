@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """评测指标：借鉴 TripTailor 三维评估的可行版子集。"""
-from . import poi_db, retrieval
+from . import poi_db, retrieval, sequencer
 
 # best_time 建议时段 → (最早到, 最晚到)；合规 = 实际到达时刻落在窗口内
 SLOT_OK = {
@@ -52,12 +52,14 @@ def evaluate(result: dict, city: dict, query: str) -> dict:
                         "finish": d["finish"], "reordered": d.get("reordered", False),
                         "repairs": d.get("repairs", 0)})
     avg_km = round(sum(dists) / len(dists), 1) if dists else 0.0
-    # 2b) 合理性（M3 口径）：相邻 POI 平均路网通行时间（OSRM L1 缓存，与求解器目标对齐）
+    # 2b) 合理性（M3 口径）：相邻 POI 平均路网通行时间（OSRM L1 缓存，与求解器目标对齐；
+    # 骑行/徒步主题按对应速度模型口径，与时间轴一致）
+    t_mode = sequencer.travel_mode(query)
     mins = []
     for d in itin["days"]:
         ids = [s["id"] for s in d["timeline"] if s["type"] == "poi"]
         for a, b in zip(ids, ids[1:]):
-            mins.append(poi_db.travel_hours(all_pois[a], all_pois[b]) * 60)
+            mins.append(poi_db.travel_hours(all_pois[a], all_pois[b], t_mode) * 60)
     avg_min = round(sum(mins) / len(mins)) if mins else 0
     # 3) 需求覆盖：查询意图标签在选中 POI 中的命中率
     qtags = retrieval.extract_query_tags(query)

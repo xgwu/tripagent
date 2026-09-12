@@ -32,13 +32,16 @@ SLOT_WINDOWS = {
 def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
               time_limit_s: float = TIME_LIMIT_S,
               main_bonus: float = MAIN_BONUS, soft_w: float = SOFT_W,
-              hotel: dict | None = None, forced: set | None = None):
+              hotel: dict | None = None, forced: set | None = None,
+              mode: str | None = None):
     """单日 TOPTW。
 
     candidates: 备选池（parsed POI，含主选与备选）
     day_ids:    LLM 主选（有序，顺序代表优先级）
     hotel:      M6 住宿锚点 —— 传入则作为 depot（每日强制从酒店出发并返回）
     forced:     必选点集合（如住宿锚点地标）——利润放大至不可舍弃，时间可行性仍由求解器硬约束保证
+    mode:       出行方式（None=车驾 | cycling/hiking）—— 通行矩阵按该方式的速度模型计算，
+                骑行主题下求解器的时间预算与选点半径与骑行者真实能力对齐
     返回: (ordered_ids, dropped_ids, solved_flag)
     """
     forced = forced or set()
@@ -87,7 +90,7 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
         ni, nj = nodes[manager.IndexToNode(i)], nodes[manager.IndexToNode(j)]
         if manager.IndexToNode(i) == manager.IndexToNode(j):
             return 0
-        return int(round(poi_db.travel_hours(ni, nj) * 60))
+        return int(round(poi_db.travel_hours(ni, nj, mode) * 60))
 
     transit_cb = routing.RegisterTransitCallback(travel_min)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_cb)

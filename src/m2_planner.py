@@ -57,7 +57,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands: list,
                     alt_map: dict | None, forced_ids: set | None, date0: str | None,
                     hotel: dict | None, time_limit_s: float, main_bonus: float,
-                    soft_w: float) -> dict:
+                    soft_w: float, mode: str | None = None) -> dict:
     """阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）。M2/M7/跨天重平衡共用。"""
     final_day_map, solver_dropped, solved_days = {}, [], {}
     mains_dropped = []  # 提案主选被求解器剔除（世界知识被时间预算否决——闭环信号）
@@ -97,7 +97,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
         ordered, dropped, ok = toptw.solve_day(pool, day_map[d], city, all_pois,
                                                time_limit_s=time_limit_s,
                                                main_bonus=main_bonus, soft_w=soft_w,
-                                               hotel=hotel,
+                                               hotel=hotel, mode=mode,
                                                forced={i for i in day_map[d]
                                                        if i in (forced_ids or set())})
         if ok and ordered:
@@ -201,11 +201,12 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     meta = meta or {}
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     cands = retrieval.recall(city, query)
+    t_mode = sequencer.travel_mode(query)  # 骑行/徒步主题 → 求解器通行矩阵同步切换口径
     t0 = time.time()
 
     # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
     res = _solve_all_days(city, query, day_map, all_pois, cands, alt_map, forced_ids,
-                          date0, hotel, time_limit_s, main_bonus, soft_w)
+                          date0, hotel, time_limit_s, main_bonus, soft_w, mode=t_mode)
     final_day_map = res["final_day_map"]
     solver_dropped, solved_days = res["solver_dropped"], res["solved_days"]
     mains_dropped = res["mains_dropped"]
@@ -221,7 +222,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             # 移动后整体重求解（备选已消费过，不再并入）；主选必须全保留才接受
             res2 = _solve_all_days(city, query, reb_map, all_pois, cands, None,
                                    forced_ids, date0, hotel, time_limit_s,
-                                   main_bonus, soft_w)
+                                   main_bonus, soft_w, mode=t_mode)
             if res2["n_mains_kept"] == res2["n_mains"]:
                 final_day_map = res2["final_day_map"]
                 solver_dropped = res2["solver_dropped"]

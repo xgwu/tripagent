@@ -17,6 +17,13 @@ _DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 CIRCUITY = 1.4
 SPEED_KMH = 18.0
 MIN_TRAVEL_H = 0.25
+# 出行方式差异化速度模型（M8）：同一张路网/距离，按主题换速度与标签
+CYCLE_KMH = 12.0          # 骑行有效速度（含等灯/避让）
+WALK_KMH = 4.5            # 步行有效速度
+HOP_WALK_KM = 1.2         # 通行段 <1.2km 视为步行（各模式共用阈值）
+CYCLE_MAX_KM = 6.0        # 骑行模式下超过 6km 的腿改按车程（共享单车跨区不现实）
+WALK_MODE_MAX_KM = 3.0    # 徒步模式下步行上限（超过仍按车驾）
+MIN_SLOW_TRAVEL_H = 5/60  # 步行/骑行的单程下限：不被 15min 车程下限吞掉短腿差异
 
 
 def load_city(name: str = "杭州") -> dict:
@@ -47,13 +54,27 @@ def _load_travel_cache():
     return _travel_cache
 
 
-def travel_hours(p1: dict, p2: dict) -> float:
-    """两 POI 间通行时间（小时）。L1 缓存优先（OSRM 路网），L3 直线兜底。"""
+def travel_hours(p1: dict, p2: dict, mode: str | None = None) -> float:
+    """两 POI 间通行时间（小时）。L1 缓存优先（OSRM 路网），L3 直线兜底。
+
+    mode：出行方式（None=车驾混合 | "cycling"=骑行 | "hiking"=徒步）。
+    骑行：<1.2km 按步行，1.2~6km 按骑行速度（路网距离 = 直线×绕路系数），
+    >6km 骑不现实 → 回退车驾口径；徒步：<3km 按步行，超过仍按车驾。
+    距离口径与既有 L3 模型一致，不引入新缓存。
+    """
+    km = haversine_km(p1["lat"], p1["lng"], p2["lat"], p2["lng"])
+    if mode == "cycling":
+        if km < HOP_WALK_KM:
+            return max(MIN_SLOW_TRAVEL_H, km / WALK_KMH)
+        if km <= CYCLE_MAX_KM:
+            return max(MIN_SLOW_TRAVEL_H, km * CIRCUITY / CYCLE_KMH)
+    elif mode == "hiking":
+        if km < WALK_MODE_MAX_KM:
+            return max(MIN_SLOW_TRAVEL_H, km * CIRCUITY / WALK_KMH)
     if p1.get("id") and p2.get("id"):
         m = _load_travel_cache().get(p1["id"], {}).get(p2["id"])
         if m is not None:
             return max(MIN_TRAVEL_H, m / 60.0)
-    km = haversine_km(p1["lat"], p1["lng"], p2["lat"], p2["lng"])
     return max(MIN_TRAVEL_H, km * CIRCUITY / SPEED_KMH)
 
 
