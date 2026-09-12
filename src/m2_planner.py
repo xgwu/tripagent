@@ -286,6 +286,9 @@ REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请�
 tips 要求：可操作的实用建议（早到避峰/排队策略/片区串玩/返程安排），依据只能是时间轴
 事实、排程事实与常识性行前经验；禁止编造具体价格、电话、预约链接等无法核实的信息，
 不写「建议查询官网」这类废话，每条不超过 30 字。
+闭馆提示规则：涉及闭馆/营业时间的表述只能依据排程事实中给出的各点闭馆日数据，
+禁止凭「博物馆周一闭馆」之类的常识假设生成闭馆提示（不少场馆闭馆日并非周一，
+如上海城市规划展示馆为周三闭馆）——数据说当天开馆就不要写闭馆。
 用户需求：{query}
 
 {timeline}
@@ -303,6 +306,7 @@ def _hm_min(hm: str) -> int:
 def _regen_reasons(city, query, itin, all_pois):
     try:
         lines, fact_lines = [], []
+        closed_ctx = {}  # day -> (weekday, 当天 POI 命中的闭馆日集合)——tips 确定性校验用
         for d in itin["days"]:
             seq = " → ".join(
                 f'{s["name"]}（{s["start"]}-{s["end"]}）'
@@ -319,6 +323,18 @@ def _regen_reasons(city, query, itin, all_pois):
                     f"Day {d['day']} 排程事实：首点 {pois_seq[0]}；末点 {pois_seq[-1]}；"
                     f"通行段 {'；'.join(hops) if hops else '无（单点）'}；收尾时刻 {d.get('finish')}"
                     + (f"；{'；'.join(waits)}" if waits else ""))
+            # 闭馆日事实：给 LLM 权威数据，防止凭常识幻觉出「周一闭馆」类矛盾 tips
+            closed_facts = [
+                f'{s["name"]} 闭馆日为{"、".join(p["closed_days"])}'
+                f'（当天{d["weekday"] or "未知"}）'
+                for s in d["timeline"] if s["type"] == "poi"
+                for p in [all_pois.get(s.get("id"), {})]
+                if p.get("closed_days")]
+            if closed_facts:
+                fact_lines.append(f"Day {d['day']} 闭馆数据：{'；'.join(closed_facts)}")
+            closed_ctx[d["day"]] = (d.get("weekday"),
+                                    {cd for s in d["timeline"] if s["type"] == "poi"
+                                     for cd in all_pois.get(s.get("id"), {}).get("closed_days", [])})
         raw = llm_client.chat([
             {"role": "system", "content": m1_planner.system_prompt(city)},
             {"role": "user", "content": REGEN_PROMPT.format(
@@ -337,6 +353,11 @@ def _regen_reasons(city, query, itin, all_pois):
                 if isinstance(tips, list):
                     tips = [str(x).strip() for x in tips
                             if isinstance(x, str) and x.strip()][:3]
+                    # 确定性守门：提示「闭馆」但数据不支持 → 剔除该条（LLM 常识幻觉兜底）
+                    wd, day_closed = closed_ctx.get(d.get("day"), (None, set()))
+                    if wd and "闭馆" in "".join(tips) and wd not in day_closed:
+                        tips = [t for t in tips
+                                if "闭馆" not in t or any(c in t for c in day_closed)]
                     if tips:
                         entry["tips"] = tips
                 out[d.get("day")] = entry
