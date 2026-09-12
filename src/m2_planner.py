@@ -274,28 +274,38 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "itinerary": itin}
 
 
-REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请为每一天重写「主题」和 2~3 句「选择理由」，
+REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请为每一天重写「主题」和 2~4 句「选点+排序理由」，
 必须与时间轴完全一致（主题和理由都只能提到时间轴里实际存在的 POI），体现本地人的体验节奏。
 注意：不要把时间轴里不存在的地点写进主题（例如时间轴没有宋城就不能叫「宋城怀古」）。
+理由除说明为什么选这些点外，还须解释顺序逻辑——依据只能来自下方「排程事实」：
+顺路串线、开门/用餐时间、离住宿远近、早到等待，不要编造事实之外的理由。
 用户需求：{query}
 
 {timeline}
+
+{facts}
 
 严格输出 JSON：{{"days": [{{"day": 1, "theme": "6~12字主题", "reason": "..."}}]}}"""
 
 
 def _regen_reasons(city, query, itin, all_pois):
     try:
-        lines = []
+        lines, fact_lines = [], []
         for d in itin["days"]:
             seq = " → ".join(
                 f'{s["name"]}（{s["start"]}-{s["end"]}）'
-                if s["type"] == "poi" else f'{s["name"]}（{s["start"]}-{s["end"]}）'
-                for s in d["timeline"])
+                for s in d["timeline"] if s["type"] != "hop")
             lines.append(f"Day {d['day']}：{seq}")
+            hops = [s["name"] for s in d["timeline"] if s["type"] == "hop"]
+            pois_seq = [s["name"] for s in d["timeline"] if s["type"] == "poi"]
+            if pois_seq:
+                fact_lines.append(
+                    f"Day {d['day']} 排程事实：首点 {pois_seq[0]}；末点 {pois_seq[-1]}；"
+                    f"通行段 {'；'.join(hops) if hops else '无（单点）'}；收尾时刻 {d.get('finish')}")
         raw = llm_client.chat([
             {"role": "system", "content": m1_planner.system_prompt(city)},
-            {"role": "user", "content": REGEN_PROMPT.format(query=query, timeline="\n".join(lines))}],
+            {"role": "user", "content": REGEN_PROMPT.format(
+                query=query, timeline="\n".join(lines), facts="\n".join(fact_lines))}],
             temperature=0.2, seed=42)
         parsed = llm_client.parse_json_safe(raw)
         out = {}

@@ -67,6 +67,7 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
   .note{font-size:12px}
 }
 .note{color:var(--mut);font-size:12.5px}
+.hopline{color:var(--mut);font-size:11.5px;line-height:1.4;padding:0 2px 3px 14px}
 .dayreason{padding:0 12px 10px;color:var(--mut);font-size:12.5px;line-height:1.65}
 .hint{font-size:12px;color:var(--mut);margin-top:4px}
 .swapbtn{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11px;cursor:pointer;margin-left:auto;flex-shrink:0}
@@ -236,6 +237,7 @@ function poiThumb(p){
 function dayCard(d,meta){
   const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
   const rows=(d.timeline||[]).map(s=>{
+    if(s.type==="hop")return `<div class="hopline">↳ ${s.name}</div>`;
     const isPoi=s.type==="poi";
     const p=isPoi&&meta&&meta.pois[s.id];
     const img=isPoi?poiThumb(p):"";
@@ -396,6 +398,7 @@ function buildDoc(meta,r){
   const cards=it.days.map(d=>{
     const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
     const rows=(d.timeline||[]).map(s=>{
+      if(s.type==="hop")return `<tr><td class="t"></td><td class="i"></td><td style="color:#9ca3af;font-size:12px">↳ ${s.name}</td><td class="pic"></td></tr>`;
       const p=s.type==="poi"&&meta&&meta.pois[s.id];
       const img=s.type==="poi"?poiThumb(p):"";
       return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":(ICON[s.type]||"")}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
@@ -500,7 +503,7 @@ function exportPNG(){
   // 预计算高度
   let H=150;
   (it.days||[]).forEach(d=>{
-    H+=44+8+(d.timeline||[]).length*(lh+10)+18;
+    H+=44+8+(d.timeline||[]).reduce((a,s)=>a+(s.type==="hop"?20:lh+10),0)+18;
     if(d.reason){x2.font='12px "Microsoft YaHei",sans-serif';H+=wrap(d.reason,W-2*m).length*19+6;}
     (d.violations||[]).forEach(()=>H+=20);
   });
@@ -527,6 +530,12 @@ function exportPNG(){
     x2.fillText(km,W-m-kw,y+24);
     y+=44+8;
     (d.timeline||[]).forEach(s=>{
+      if(s.type==="hop"){
+        x2.fillStyle="#9ca3af";x2.font='11.5px "Microsoft YaHei",sans-serif';
+        x2.fillText(`↳ ${s.name}`,m+110,y+12);
+        y+=20;
+        return;
+      }
       x2.fillStyle="#52606d";x2.font='12.5px "Microsoft YaHei",sans-serif';
       x2.fillText(`${s.start}–${s.end}`,m,y+16);
       x2.fillStyle="#1f2933";x2.font='13.5px "Microsoft YaHei",sans-serif';

@@ -109,7 +109,11 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                     continue
                 if prev is not None:
                     travel_h += th
-                    travel_km += poi_db.haversine_km(prev["lat"], prev["lng"], p["lat"], p["lng"])
+                    km_f = poi_db.haversine_km(prev["lat"], prev["lng"], p["lat"], p["lng"])
+                    travel_km += km_f
+                    timeline.append({"type": "hop", "name": _hop_label(km_f, th),
+                                     "start": _fmt(t), "end": _fmt(t2), "min": int(round(th * 60)),
+                                     "km": round(km_f, 1)})
                 # 营业时间/闭馆日/当日上限校验（与非美食 POI 同一套）
                 if weekday and weekday in p.get("closed_days", []):
                     violations.append({"poi": p["name"], "day": day_no,
@@ -134,13 +138,19 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
             continue
 
         # ---- 非美食 POI：原逻辑 ----
+        hop = None
         if prev is not None:
             th = poi_db.travel_hours(prev, p)
             km = poi_db.haversine_km(prev["lat"], prev["lng"], p["lat"], p["lng"])
             travel_h += th
             travel_km += km
+            hop = {"type": "hop", "name": _hop_label(km, th),
+                   "start": _fmt(t), "end": _fmt(t + th), "min": int(round(th * 60)),
+                   "km": round(km, 1)}
             t += th
         arrive = t
+        if hop:
+            timeline.append(hop)  # 通行段信息行：先走完这段路，再谈吃饭/等待/游览
         # 餐块：若到达时刻已跨过饭点且该餐未安排，先吃再逛（通行途中用餐）
         _insert_generic_meals(t)
         if t < p["open_h"]:
@@ -178,6 +188,12 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
 
 def _fmt(h: float) -> str:
     return f"{int(h):02d}:{int(round((h - int(h)) * 60)):02d}"
+
+
+def _hop_label(km: float, th: float) -> str:
+    """通行段标签：<1.2km 视为步行，否则车程（与时间轴 hop 行共用）。"""
+    mode = "步行" if km < 1.2 else "车程"
+    return f"{mode} {int(round(th * 60))} 分钟 · {km:.1f}km"
 
 
 def _day_score_key(p: dict):
