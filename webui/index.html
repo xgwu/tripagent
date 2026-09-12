@@ -92,8 +92,6 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 <div class="panel">
   <div><label>旅行需求（纯自然语言：城市、天数、出发日期、住宿都写在需求里）</label>
     <textarea id="query" placeholder="例：10月1日出发，带5岁孩子去杭州玩3天，住西湖国宾馆附近，不要太累，最好有动物或者博物馆"></textarea>
-    <div class="hint">天数（「3天」「两日」，最多 5 天）、出发日期（「明天」「下周六」「10月1日」）、住宿（「住外滩附近」「酒店订在全季」）都可直接写在需求里；未提天数默认 2 天，未提城市默认上海。</div>
-    <div class="hint" id="citiesHint"></div>
     <div class="chips" id="chips"></div>
   </div>
   <div class="row">
@@ -116,8 +114,6 @@ async function boot(){
   const r=await (await fetch("/api/cities")).json();
   CITY.cities=r.cities; CITY.llm=r.llm; CITY.amap_key=r.amap_key||"";
   CITY.staticmap_key=r.staticmap_key||""; // P2-3 静态图缩略
-  // P4：目的地支持范围说明（动态取自 /api/cities，扩城无需改文案）
-  $("citiesHint").innerHTML="🗺 当前支持的目的地："+r.cities.map(c=>`<b>${c.name}</b>（${c.n_pois} 个景点）`).join("、")+`；暂只支持以上 ${r.cities.length} 城，未提及城市时默认规划 <b>上海</b>。`;
   chip();
   llmBadge();
   // P1-2：?share=<id> → 直接渲染已保存的行程快照
