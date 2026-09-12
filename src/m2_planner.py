@@ -258,6 +258,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     for d in itin["days"]:
         info = themes.get(d["day"], {})
         d["theme"], d["reason"] = info.get("theme", ""), info.get("reason", "")
+        d["tips"] = info.get("tips", [])
 
     return {"mode": mode, "query": query, "days": days,
             "candidates": meta.get("candidates"), "invalid_poi_ids": meta.get("invalid_poi_ids"),
@@ -276,18 +277,26 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "itinerary": itin}
 
 
-REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请为每一天重写「主题」和 2~4 句「选点+排序理由」，
-必须与时间轴完全一致（主题和理由都只能提到时间轴里实际存在的 POI），体现本地人的体验节奏。
+REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请为每一天重写「主题」、2~4 句「选点+排序理由」
+和 1~3 条「tips」（实用建议），必须与时间轴完全一致（主题和理由都只能提到时间轴里实际存在的 POI），体现本地人的体验节奏。
 注意：不要把时间轴里不存在的地点写进主题（例如时间轴没有宋城就不能叫「宋城怀古」）。
 理由除说明为什么选这些点外，还须解释顺序逻辑——依据只能来自下方「排程事实」：
 顺路串线、开门/用餐时间、离住宿远近、早到等待，不要编造事实之外的理由。
+tips 要求：可操作的实用建议（早到避峰/排队策略/片区串玩/返程安排），依据只能是时间轴
+事实、排程事实与常识性行前经验；禁止编造具体价格、电话、预约链接等无法核实的信息，
+不写「建议查询官网」这类废话，每条不超过 30 字。
 用户需求：{query}
 
 {timeline}
 
 {facts}
 
-严格输出 JSON：{{"days": [{{"day": 1, "theme": "6~12字主题", "reason": "..."}}]}}"""
+严格输出 JSON：{{"days": [{{"day": 1, "theme": "6~12字主题", "reason": "...", "tips": ["...", "..."]}}]}}"""
+
+
+def _hm_min(hm: str) -> int:
+    h, m = hm.split(":")
+    return int(h) * 60 + int(m)
 
 
 def _regen_reasons(city, query, itin, all_pois):
@@ -300,10 +309,15 @@ def _regen_reasons(city, query, itin, all_pois):
             lines.append(f"Day {d['day']}：{seq}")
             hops = [s["name"] for s in d["timeline"] if s["type"] == "hop"]
             pois_seq = [s["name"] for s in d["timeline"] if s["type"] == "poi"]
+            waits = [f'{s["name"]} 早到等待 {_hm_min(s["start"]) - _hm_min(s["arrive"])} 分钟'
+                     for s in d["timeline"]
+                     if s["type"] == "poi" and s.get("arrive")
+                     and _hm_min(s["start"]) - _hm_min(s["arrive"]) > 0]
             if pois_seq:
                 fact_lines.append(
                     f"Day {d['day']} 排程事实：首点 {pois_seq[0]}；末点 {pois_seq[-1]}；"
-                    f"通行段 {'；'.join(hops) if hops else '无（单点）'}；收尾时刻 {d.get('finish')}")
+                    f"通行段 {'；'.join(hops) if hops else '无（单点）'}；收尾时刻 {d.get('finish')}"
+                    + (f"；{'；'.join(waits)}" if waits else ""))
         raw = llm_client.chat([
             {"role": "system", "content": m1_planner.system_prompt(city)},
             {"role": "user", "content": REGEN_PROMPT.format(
@@ -313,11 +327,17 @@ def _regen_reasons(city, query, itin, all_pois):
         out = {}
         for d in parsed.get("days", []):
             if d.get("reason"):
-                # theme+reason 都基于最终时间轴重生成（修复主题残留被剔主选点的问题）
+                # theme+reason+tips 都基于最终时间轴重生成（修复主题残留被剔主选点的问题）
                 entry = {"reason": d["reason"]}
                 t = d.get("theme")
                 if isinstance(t, str) and t.strip():
                     entry["theme"] = t.strip()[:20]
+                tips = d.get("tips")
+                if isinstance(tips, list):
+                    tips = [str(x).strip() for x in tips
+                            if isinstance(x, str) and x.strip()][:3]
+                    if tips:
+                        entry["tips"] = tips
                 out[d.get("day")] = entry
         return out, bool(out)
     except Exception:  # noqa

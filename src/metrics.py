@@ -47,6 +47,7 @@ def evaluate(result: dict, city: dict, query: str) -> dict:
             km_day.append(round(km, 1))
         per_day.append({"day": d["day"], "n_pois": len(ids), "adjacent_km": km_day,
                         "theme": d.get("theme", ""), "reason": d.get("reason", ""),
+                        "tips": d.get("tips", []),
                         "travel_km": round(d["travel_km"], 1),
                         "finish": d["finish"], "reordered": d.get("reordered", False),
                         "repairs": d.get("repairs", 0)})

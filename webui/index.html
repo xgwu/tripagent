@@ -75,6 +75,8 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 .note{color:var(--mut);font-size:12.5px}
 .hopline{color:var(--mut);font-size:11.5px;line-height:1.4;padding:0 2px 3px 14px}
 .dayreason{padding:0 12px 10px;color:var(--mut);font-size:12.5px;line-height:1.65}
+.daytips{padding:0 12px 10px;font-size:12.5px;line-height:1.75;color:var(--ink)}
+.daytips .tico{margin-right:4px}
 .hint{font-size:12px;color:var(--mut);margin-top:4px}
 .swapbtn{background:transparent;color:var(--mut);border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:11px;cursor:pointer;margin-left:auto;flex-shrink:0}
 .swapbtn:hover{color:var(--blue);border-color:var(--blue)}
@@ -256,7 +258,8 @@ function dayCard(d,meta,wdrops){
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
   const whynot=(wdrops&&wdrops.length)?`<details class="whynot"><summary>为什么没去这些点（${wdrops.length}）</summary>${wdrops.map(x=>`<div class="wnrow"><span>${x.name}</span><span class="wnr">${cleanDropReason(x.reason)}</span></div>`).join("")}</details>`:"";
-  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${d.reason?`<div class="dayreason">${d.reason}</div>`:""}${viol}${drop}${whynot}</div>`;
+  const tips=(d.tips&&d.tips.length)?`<div class="daytips">${d.tips.map(t=>`<div><span class="tico">💡</span>${t}</div>`).join("")}</div>`:"";
+  return `<div class="daycard"><div class="dayhead" style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span style="font-weight:400;font-size:12px">交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></div><div class="tl">${rows}</div>${d.reason?`<div class="dayreason">${d.reason}</div>`:""}${tips}${viol}${drop}${whynot}</div>`;
 }
 
 function cleanDropReason(rs){
@@ -418,7 +421,8 @@ function buildDoc(meta,r){
       return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":(ICON[s.type]||"")}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
     }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
-    ${d.reason?`<p style="margin:10px 2px;color:#6b7280;font-size:13px;line-height:1.7">${d.reason}</p>`:""}<table>${rows}</table></div>`;
+    ${d.reason?`<p style="margin:10px 2px;color:#6b7280;font-size:13px;line-height:1.7">${d.reason}</p>`:""}
+    ${(d.tips&&d.tips.length)?`<p style="margin:4px 2px 10px;font-size:12.5px;color:#92400e;line-height:1.8">${d.tips.map(t=>"💡 "+t).join("<br>")}</p>`:""}<table>${rows}</table></div>`;
   }).join("");
   const avoided=(it.dropped_pois||[]).filter(x=>(x.reason||"").includes("当日闭馆"));
   return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><title>TripAgent 行程单｜${r.query.slice(0,20)}</title>
@@ -519,6 +523,7 @@ function exportPNG(){
   (it.days||[]).forEach(d=>{
     H+=44+8+(d.timeline||[]).reduce((a,s)=>a+(s.type==="hop"?20:lh+10),0)+18;
     if(d.reason){x2.font='12px "Microsoft YaHei",sans-serif';H+=wrap(d.reason,W-2*m).length*19+6;}
+    if(d.tips&&d.tips.length)H+=d.tips.length*18+4;
     (d.violations||[]).forEach(()=>H+=20);
   });
   H+=56;
@@ -564,6 +569,11 @@ function exportPNG(){
       wrap(d.reason,W-2*m).forEach(t=>{x2.fillText(t,m,y+14);y+=19;});
       y+=6;
     }
+    if(d.tips&&d.tips.length){
+      x2.fillStyle="#b7791f";x2.font='12px "Microsoft YaHei",sans-serif';
+      d.tips.forEach(t=>{x2.fillText("💡 "+t,m,y+14);y+=18;});
+      y+=4;
+    }
     (d.violations||[]).forEach(v=>{
       x2.fillStyle="#c0392b";x2.font='12px "Microsoft YaHei",sans-serif';
       wrap(`⚠ ${v.poi}：${v.reason}`,W-2*m).forEach(t=>{x2.fillText(t,m,y+14);y+=20;});
@@ -596,6 +606,7 @@ async function swapPoi(day,poiId){
     const r=await res.json();
     if(r.ok){
       Object.assign(d,r.day); // timeline/travel_km/finish/violations/dropped/weekday 全量更新
+      d.tips=[]; // 换点后时间轴已变，旧 tips 不再对齐，清空（reason 同理为既有行为）
       $("status").innerHTML=`<span class="badge b-green">🔁 ${r.swap.from} → ${r.swap.to}${r.swap.same_category?"（同类目）":"（就近）"}</span>`;
       render(LAST);
     }else{
