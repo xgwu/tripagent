@@ -57,15 +57,27 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands: list,
                     alt_map: dict | None, forced_ids: set | None, date0: str | None,
                     hotel: dict | None, time_limit_s: float, main_bonus: float,
-                    soft_w: float, mode: str | None = None) -> dict:
-    """阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）。M2/M7/跨天重平衡共用。"""
+                    soft_w: float, mode: str | None = None,
+                    reuse: dict | None = None) -> dict:
+    """阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）。M2/M7/跨天重平衡共用。
+
+    reuse：{day: 上次求解后的有序 id 列表}——重平衡未触及的天直接复用原解，
+    不再花 2s/天 重解（跨天重平衡只动少数天，全量重解是纯浪费）。
+    """
     final_day_map, solver_dropped, solved_days = {}, [], {}
     mains_dropped = []  # 提案主选被求解器剔除（世界知识被时间预算否决——闭环信号）
     used_all = {i for ids in day_map.values() for i in ids}
     used_backup = set()
     n_mains = n_mains_kept = 0
     n_llm_alts = 0
+    tasks = []  # (day, pool)：建池串行（维护 used_backup），求解并行
     for d in sorted(day_map):
+        if reuse and reuse.get(d):
+            final_day_map[d] = list(reuse[d])
+            solved_days[d] = True
+            n_mains += len(day_map.get(d) or [])
+            n_mains_kept += len(reuse[d])  # 复用原解：主选全保留
+            continue
         mains = [all_pois[i] for i in day_map[d] if i in all_pois]
         if not mains:
             continue
@@ -94,12 +106,32 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                 pool.append(p)
                 used_backup.add(i)
                 n_llm_alts += 1
-        ordered, dropped, ok = toptw.solve_day(pool, day_map[d], city, all_pois,
-                                               time_limit_s=time_limit_s,
-                                               main_bonus=main_bonus, soft_w=soft_w,
-                                               hotel=hotel, mode=mode,
-                                               forced={i for i in day_map[d]
-                                                       if i in (forced_ids or set())})
+        tasks.append((d, pool))
+
+    # P0 性能：各日求解相互独立，线程并行（OR-Tools routing 求解释放 GIL，
+    # 实测 2 天 4s→2s）。建池/合并保持串行以维护 used_backup 等共享状态。
+    def _solve_one(item):
+        d, pool = item
+        return d, toptw.solve_day(pool, day_map[d], city, all_pois,
+                                  time_limit_s=time_limit_s,
+                                  main_bonus=main_bonus, soft_w=soft_w,
+                                  hotel=hotel, mode=mode,
+                                  forced={i for i in day_map[d]
+                                          if i in (forced_ids or set())})
+
+    results = {}
+    if tasks:
+        if len(tasks) == 1:
+            d, r = _solve_one(tasks[0])
+            results[d] = r
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as ex:
+                for d, r in ex.map(_solve_one, tasks):
+                    results[d] = r
+
+    for d in sorted(results):
+        ordered, dropped, ok = results[d]
         if ok and ordered:
             final_day_map[d] = ordered
             solved_days[d] = True
@@ -385,10 +417,16 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                                                    date0, hotel, query,
                                                    forced_ids=forced_ids)
         if n_day_moves:
-            # 移动后整体重求解（备选已消费过，不再并入）；主选必须全保留才接受
+            # 移动后整体重求解（备选已消费过，不再并入）；主选必须全保留才接受。
+            # P0 性能：只重解点位集合变化的天，未触及的天直接复用原解
+            moved = {d for d in reb_map
+                     if {i for i in reb_map[d] if i in all_pois}
+                     != {i for i in (final_day_map.get(d) or []) if i in all_pois}}
+            reuse = ({d: ids for d, ids in final_day_map.items() if d not in moved}
+                     if moved else None)
             res2 = _solve_all_days(city, query, reb_map, all_pois, cands, None,
                                    forced_ids, date0, hotel, time_limit_s,
-                                   main_bonus, soft_w, mode=t_mode)
+                                   main_bonus, soft_w, mode=t_mode, reuse=reuse)
             if res2["n_mains_kept"] == res2["n_mains"]:
                 final_day_map = res2["final_day_map"]
                 solver_dropped = res2["solver_dropped"]

@@ -336,30 +336,39 @@ def _nl_cache_put(qkey: str, val: dict) -> None:
         pass
 
 
-def llm_extract(query: str) -> dict | None:
-    """LLM 结构化抽取兜底：正则未命中的 city/days/date0/hotel 从 DeepSeek 拿。
+def _llm_preflight(query: str) -> dict | None:
+    """P0-3 合并前置：一次 LLM 同时完成「结构化抽取 + 澄清判断」（原为两次串行调用）。
 
-    - 仅在 LLM 可用时调用（llm=0 离线路径永不触发，CI/eval 不受影响）
-    - 结果按 sha1(query) 缓存 7 天（含「抽不到」的空结果，防重复消耗 token）
+    - 仅在 LLM 可用时调用；结果按 sha1(query) 缓存 7 天（含空结果，防重复消耗 token）
+    - /api/clarify 与 /api/plan 共享同一次调用的结果，新查询省一次 LLM 往返（约 2~5s）
     - 任何异常静默返回 None，规划流程回退正则/默认值
     """
     import hashlib
     from src import llm_client
     if not (query or "").strip() or not llm_client.llm_available():
         return None
-    qkey = hashlib.sha1(query.encode("utf-8")).hexdigest()
+    qkey = "P:" + hashlib.sha1(query.encode("utf-8")).hexdigest()
     hit = _nl_cache_get(qkey)
     if hit is not None:
         return hit or None
     today = _date.today().isoformat()
     sys_p = (
-        "你是旅行需求的参数抽取器。从用户需求中抽取以下字段，只输出 JSON："
-        '{"city": "目的地城市名或null", "days": 行程天数整数或null, '
+        "你是旅行行程助手的前置分析器，对用户需求一次完成「参数抽取」和「澄清判断」，"
+        '只输出 JSON：{"city": "目的地城市名或null", "days": 行程天数整数或null, '
         '"date0": "出发日期YYYY-MM-DD或null", "hotel": "住宿酒店名或区域名或null", '
-        '"multi_cities": ["多城联游时的城市列表或null"]}。'
-        "规则：相对日期（明天/下周六/月底/国庆等）以今天为基准换算；"
+        '"multi_cities": ["多城联游时的城市列表或null"], '
+        '"need": 是否需要追问布尔值, "question": "一句话追问或null", '
+        '"options": ["选项1", "选项2"]}。\n'
+        "抽取规则：相对日期（明天/下周六/月底/国庆等）以今天为基准换算；"
         "「住的地方离西湖近点」这类模糊住宿描述抽出区域名（如 西湖）；"
-        "「玩一周」=7天但上限按5算；没有明确信息就填 null，不要猜。"
+        "「玩一周」=7天但上限按5算；没有明确信息就填 null，不要猜。\n"
+        "澄清判断规则（保守，大多数需求应 need=false 直接生成）：\n"
+        "- 行程天数完全未提及（如只说「去杭州玩」）→ 可以问；已写「3天」「周末」等则不问\n"
+        "- 同行人员完全未提及且明显影响节奏（亲子/老人/情侣/团队）→ 可以问；已提及则不问\n"
+        "- 用户表达了强偏好但存在明显歧义（如「热闹的地方」不知指夜市还是商圈）→ 可以问\n"
+        "不问的：目的地城市（未提及会用默认城市）、预算、交通方式、住宿（未提及就不排酒店）、"
+        "具体日期（未提及就按近期规划）。只问最关键的一个问题，选项 2~4 个、每个不超过 12 字；"
+        "不追问时 question/options 填 null。\n"
         f"今天是 {today}。"
     )
     try:
@@ -369,81 +378,62 @@ def llm_extract(query: str) -> dict | None:
         obj = json.loads(txt) if isinstance(txt, str) else (txt or {})
     except Exception:  # noqa: 网络限流/解析失败 → 静默回退
         return None
-    out: dict = {}
+    nl: dict = {}
+    clarify: dict = {"need": False}
     if isinstance(obj, dict):
         c = obj.get("city")
         if isinstance(c, str) and c.strip():
-            out["city_raw"] = c.strip()[:12]
+            nl["city_raw"] = c.strip()[:12]
             if c.strip() in CITIES:
-                out["city"] = c.strip()
+                nl["city"] = c.strip()
         mc = obj.get("multi_cities")
         if isinstance(mc, list):
             mc = [x for x in mc if isinstance(x, str) and x.strip() in CITIES]
             if len(mc) >= 2:
-                out["multi_cities"] = mc
+                nl["multi_cities"] = mc
         d = obj.get("days")
         if isinstance(d, int) and 1 <= d <= 5:
-            out["days"] = d
+            nl["days"] = d
         dt = obj.get("date0")
         if isinstance(dt, str):
             try:
-                out["date0"] = _date.fromisoformat(dt).isoformat()
+                nl["date0"] = _date.fromisoformat(dt).isoformat()
             except ValueError:
                 pass
         h = obj.get("hotel")
         if isinstance(h, str) and h.strip():
-            out["hotel"] = h.strip()[:24]
+            nl["hotel"] = h.strip()[:24]
+        if obj.get("need") is True:
+            question = obj.get("question")
+            options = [o for o in (obj.get("options") or [])
+                       if isinstance(o, str) and o.strip()]
+            if isinstance(question, str) and question.strip() and 2 <= len(options) <= 4:
+                clarify = {"need": True, "question": question.strip()[:60],
+                           "options": [o.strip()[:12] for o in options]}
+    out = {"nl": nl, "clarify": clarify}
     _nl_cache_put(qkey, out)
-    return out or None
+    return out
+
+
+def llm_extract(query: str) -> dict | None:
+    """LLM 结构化抽取兜底：正则未命中的 city/days/date0/hotel 从 DeepSeek 拿。
+
+    P0-3 起内部转调合并前置 _llm_preflight（抽取+澄清一次调用），结果共享缓存。
+    """
+    pre = _llm_preflight(query)
+    return (pre or {}).get("nl") or None
 
 
 def llm_clarify(query: str) -> dict | None:
     """多轮澄清（对照文档 P1）：LLM 判断需求是否缺失会实质影响行程设计的信息。
 
-    - 仅在 LLM 可用时调用；结果按 sha1(query) 缓存 7 天（复用 NL 缓存文件）
-    - 保守策略：大多数需求不追问；最多一个问题 + 2~4 个选项
-    - 任何异常静默返回 None（前端视为无需追问，直接规划）
+    P0-3 起内部转调合并前置 _llm_preflight（抽取+澄清一次调用），结果共享缓存。
+    - 仅在 LLM 可用时调用；任何异常静默返回 None（前端视为无需追问，直接规划）
     """
-    import hashlib
-    from src import llm_client
-    if not (query or "").strip() or not llm_client.llm_available():
+    pre = _llm_preflight(query)
+    if pre is None:
         return None
-    qkey = "C:" + hashlib.sha1(query.encode("utf-8")).hexdigest()
-    hit = _nl_cache_get(qkey)
-    if hit is not None:
-        return hit or None
-    sys_p = (
-        "你是旅行行程助手的澄清判断器。判断用户需求是否缺失会「实质改变行程设计」的关键信息，"
-        '只输出 JSON：{"need": true或false, "question": "一句话追问", '
-        '"options": ["选项1", "选项2"]}。\n'
-        "判断标准（保守，大多数需求应 need=false 直接生成）：\n"
-        "- 行程天数完全未提及（如只说「去杭州玩」）→ 可以问；已写「3天」「周末」等则不问\n"
-        "- 同行人员完全未提及且明显影响节奏（亲子/老人/情侣/团队）→ 可以问；已提及则不问\n"
-        "- 用户表达了强偏好但存在明显歧义（如「热闹的地方」不知指夜市还是商圈）→ 可以问\n"
-        "不问的：目的地城市（未提及会用默认城市）、预算、交通方式、住宿（未提及就不排酒店）、"
-        "具体日期（未提及就按近期规划）。只问最关键的一个问题，选项 2~4 个、每个不超过 12 字。"
-    )
-    try:
-        txt = llm_client.chat([{"role": "system", "content": sys_p},
-                               {"role": "user", "content": query}],
-                              temperature=0.0, timeout=12, retries=1)
-        obj = json.loads(txt) if isinstance(txt, str) else (txt or {})
-    except Exception:  # noqa: 网络/解析失败 → 不追问直接规划
-        return None
-    out: dict = {}
-    if isinstance(obj, dict) and obj.get("need") is True:
-        question = obj.get("question")
-        options = [o for o in (obj.get("options") or [])
-                   if isinstance(o, str) and o.strip()]
-        if isinstance(question, str) and question.strip() and 2 <= len(options) <= 4:
-            out = {"need": True, "question": question.strip()[:60],
-                   "options": [o.strip()[:12] for o in options]}
-        else:
-            out = {"need": False}
-    else:
-        out = {"need": False}
-    _nl_cache_put(qkey, out)
-    return out
+    return pre.get("clarify") or {"need": False}
 
 
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
