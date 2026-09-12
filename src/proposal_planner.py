@@ -57,7 +57,7 @@ PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 {date_line}{weather_line}
 自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去），每天 4-6 个停留点。
 停留点必须是游客可游览的真实地点（景点/场馆/历史街区/公园/餐厅/市场等），不要把酒店、商铺门店当作停留点（住宿由系统另行安排）。
-路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。全天大点规则：时长约 8 小时以上的大型景点（如迪士尼、海昌海洋公园这类主题乐园）须独占一整天，当天不要再排其他停留点。
+路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。全天大点规则：时长约 8 小时以上的大型景点（如迪士尼、海昌海洋公园这类主题乐园）须独占一整天，当天不要再排其他停留点。远郊大点片区规则：距市中心 12 公里以外的半日型大点（4 小时以上的海洋馆/动物园/乐园等，如萧山的海洋公园）当天只能与同一片区的点位组合、或独占一天，绝不要把它与 10 公里外的其他片区（如运河、西湖东岸）混排在同一天——车程往返加游玩必超亲子一日预算；远郊大点想搭配市区点时，只搭它返回途中顺路的点。
 跨天片区分散规则：不同天安排不同片区——同一条马路/街区（如武康路、田子坊、外滩）及其 1 公里范围内的点位只能出现在其中一天，相邻两天绝不能去同一片区；咖啡店等口碑配套每天最多 1 家，跟着当天主片区选，不要两天都往同一片区跑。配套顺路规则：咖啡店/餐厅等配套必须顺路——选位于当天相邻主选之间、或紧邻某个主选（步行可达，约 1.5 公里内）的店，绝不要为了某家网红店跨区绕路（例如上午在世博、下午去陆家嘴，就选两家之间沿线的店，不要折道武康路）。正餐规则：午餐/晚餐时段安排正经吃饭的地方（餐厅/名小吃/美食街），咖啡馆不能当正餐——咖啡只作为逛点之间的休憩加项，用户喜欢咖啡时另选顺路咖啡店，不要用它顶替午餐。
 招牌体验规则：先用世界知识判断用户需求的核心期待——每个城市都有公认必去的招牌景点（如上海的迪士尼度假区、北京环球影城、广州长隆），亲子/带娃类需求通常正期待这类招牌。若需求主题与某招牌景点高度匹配，必须把它作为主选排进某一天（独占一天，勿放 alternates）；只有当你有明确理由认为用户不会感兴趣（如需求明确排斥主题乐园）时才可不放。住宿锚点规则：用户指定住宿位置（如「住迪士尼附近」）时，行程必须包含该位置对应的标志性景点（住迪士尼附近则必含迪士尼），且该景点独占一天、优先安排在第一天，其余天数再安排其他区域。傍晚密度规则：博物馆/美术馆/展馆类场馆普遍 17 点前后闭馆，每天要为傍晚（17 点后）搭配至少 1 个晚间型停留点——夜展/灯光夜景/历史街区夜游/滨江步道/咖啡街区/书院茶馆等，避免傍晚大片空白；每天 4-6 个停留点中应含 1-2 个晚间型。
 备选规则：每天可附 0-2 个 alternates——你认为时间充裕时值得加上的点、或主选可能闭馆/排队过久时的同区域替补；备选不必与主选相邻，系统会按约束自动取舍。
@@ -332,6 +332,62 @@ def _revise_proposal(city: dict, query: str, days: int, proposal: dict,
         return None
 
 
+# ---- 远郊大点同天片区守门（确定性，0 LLM 成本）----
+# 根因：LLM 提案偶发把距市中心 >12km 的半日型大点（4h+，如萧山海洋公园）与
+# 10km 外的片区（运河/西湖东岸）混排同天——往返车程+游玩必超亲子日里程预算，
+# 修复链按「剔最远点」会把大点剔掉，需求主题（动物等）随之丢失。
+# 求解前把错配点移到离它们最近的天：大点与同片区点组合或独占日，交由补强兜底。
+FAR_BIG_KM = 12.0          # 远郊判定：距市中心超过该值
+FAR_BIG_MIN_H = 4.0        # 半日型大点时长下限（8h+ 全天型另有独占日规则）
+FAR_BIG_SPREAD_KM = 10.0   # 大点与同天其他点的最大允许直线距离
+FAR_REGROUP_PASSES = 2     # 最多整理轮数（防跨天震荡）
+
+
+def _far_big_point_regroup(day_map: dict, all_pois: dict) -> list:
+    moves = []
+    if len(day_map) < 2:
+        return moves
+    for _pass in range(FAR_REGROUP_PASSES):
+        moved_any = False
+        for d in sorted(day_map):
+            ids = day_map.get(d) or []
+            if len(ids) < 2:
+                continue
+            big = next((p for p in (all_pois[i] for i in ids if i in all_pois)
+                        if p.get("dist_center_km", 0) > FAR_BIG_KM
+                        and float(p.get("dur") or 0) >= FAR_BIG_MIN_H), None)
+            if big is None:
+                continue
+            misplaced = [i for i in ids if i != big["id"]
+                         and poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
+                                                 big["lat"], big["lng"]) > FAR_BIG_SPREAD_KM]
+            if not misplaced:
+                continue
+            for i in misplaced:
+                best_d, best_km = None, None
+                for d2 in day_map:
+                    if d2 == d:
+                        continue
+                    pts = [all_pois[j] for j in day_map.get(d2, [])
+                           if j in all_pois and j != i]
+                    if not pts:
+                        continue
+                    km = sum(poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
+                                                 p["lat"], p["lng"]) for p in pts) / len(pts)
+                    if best_km is None or km < best_km:
+                        best_d, best_km = d2, km
+                if best_d is None:
+                    continue
+                day_map[d].remove(i)
+                day_map[best_d].append(i)
+                moves.append({"id": i, "name": all_pois[i]["name"],
+                              "from": d, "to": best_d})
+                moved_any = True
+        if not moved_any:
+            break
+    return moves
+
+
 def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict,
                         all_pois: dict, days: int, query: str, anchor_poi: dict | None):
     """落地后确定性修整：锚点注入（开关控制）→ 缺天补齐 → 单天 MIN_STOPS 补强。"""
@@ -356,6 +412,10 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                     if ed in extra_themes:
                         themes[missing[k]] = extra_themes[ed]
                 grounding["days_topped_up"] = missing
+    # 远郊大点同天片区守门：错配点在求解前移到最近的天（防主题点被里程守门剔除）
+    regroup = _far_big_point_regroup(day_map, all_pois)
+    if regroup:
+        grounding["far_regroup"] = regroup
     # 单天补强：缺口剔除导致某天只剩 1-2 个点 → 从未用候选离线补足（P0-3 缺口二次提案）
     if day_map:
         MIN_STOPS = 3
@@ -369,7 +429,14 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                 rest = [p for i, p in all_pois.items() if i not in used]
                 if not rest:
                     break
-                extra_map, _et = offline_planner.plan_days(city, rest, query, 1)
+                # 当天已有点的 10km 邻域优先——防止补点再造跨片区混排
+                #（远郊大点日尤其重要：补进远处点会让里程守门再次剔掉大点）
+                day_pts = [all_pois[pid] for pid in day_map.get(d, []) if pid in all_pois]
+                near = [p for p in rest
+                        if day_pts and min(poi_db.haversine_km(p["lat"], p["lng"],
+                                                               q["lat"], q["lng"])
+                                           for q in day_pts) <= 10.0]
+                extra_map, _et = offline_planner.plan_days(city, near or rest, query, 1)
                 new = [pid for pid in extra_map.get(1, []) if pid not in used]
                 if not new:  # 候选耗尽或规划器无法给出新点
                     break
