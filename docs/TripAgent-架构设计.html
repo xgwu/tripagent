@@ -395,17 +395,29 @@ li{margin:5px 0}
 <tr><td>跨天问题：LLM REVISE vs 确定性局部搜索</td><td>LLM 修正贵且不稳定；Google 论文用 set packing 局部搜索</td><td>确定性 day-swap 为主，LLM REVISE 只兜选点层</td></tr>
 </table>
 
-<h2>11 · 已知边界与演进方向（P2）</h2>
+<h2>11 · M8 行程质量打磨新增机制（2026-09-12）</h2>
+<table>
+<tr><th>机制</th><th>位置</th><th>设计要点</th></tr>
+<tr><td>交通模型 mode 化</td><td><code>poi_db.travel_hours(mode)</code></td><td>cycling（&lt;1.2km 步行 / 1.2~6km 骑行 12km/h / &gt;6km 车程）与 hiking（&lt;3km 步行）差异化速度；query→<code>travel_mode()</code> 自动推导，穿透 sequencer/TOPTW/重平衡/metrics；无新缓存</td></tr>
+<tr><td>修复链顺序重构</td><td><code>sequencer.build_itinerary</code></td><td>硬约束修复先行 → 里程预算收敛在后（<code>_cap_km_repair</code> 约束感知：剔点只接受不引入新违规的候选）；修复旧序「预算修复成果被违规修复链全量重建冲掉」</td></tr>
+<tr><td>跨天片区分散守门</td><td><code>proposal_planner._crossday_area_overlap</code></td><td>相邻两天 &lt;1.2km 点位对 → 晚一天记「片区重复」接入闭环 REVISE；采纳条件=剔除+重复总数下降防震荡</td></tr>
+<tr><td>日内填空 stage 3.5</td><td><code>m2_planner._fill_evenings</code></td><td>finish 距 day_end 空窗 &gt;2h → 从未用召回池补晚间可行点，逐点试加走全量校验（违规/剔除/里程预算任一不过即拒）；单日 ≤4 点</td></tr>
+<tr><td>美食绕行守门 stage 3.4</td><td><code>m2_planner._fix_food_detours</code></td><td>food 点 detour=t(a,f)+t(f,b)−t(a,b) &gt;25min → 顺路同类店替换（替代池含带咖啡 tag 场馆保意图）或剔除；酒店作首末邻点</td></tr>
+<tr><td>咖啡馆非正餐分流</td><td><code>sequencer.is_cafe</code></td><td>咖啡/茶饮不参与餐窗竞争、不占修剪名额、不顶替正餐餐块——午餐时段物理保证有正餐</td></tr>
+<tr><td>软窗罚分封顶</td><td><code>toptw.SOFT_CAP_MIN</code></td><td>偏差 &gt;60min 不再允许（等效罚分封顶 300 分）；营业窗优先于封顶；morning 点要么贴时段排、要么弃利润</td></tr>
+<tr><td>确定性后过滤</td><td><code>m2_planner._regen_reasons</code></td><td>REGEN 排程事实注入闭馆日数据；tips 与闭馆数据矛盾的条目剔除（防「周一闭馆」类常识幻觉）</td></tr>
+</table>
+
+<h2>12 · 已知边界与演进方向（P2）</h2>
 <ul>
 <li><b>向量检索匹配层</b>：四级匹配前置 embedding 相似度，进一步压缩 L4 辅助匹配的调用率与延迟</li>
-<li><b>交通缓存 L2 补全</b>：约 2,900/18,166 对为真实路况，余量靠 L2 直线系数，可用 <code>--l2</code> 增量补真实路网</li>
-<li><b>文案 Tips 行</b>：库内 note 字段（闭馆提醒/排队建议）可提取为独立展示标签</li>
-<li><b>POI 库扩容</b>：缺口探测器当前清零，新城市经 <code>onboard_city.sh new</code> 一条命令接入</li>
+<li><b>交通缓存 L2 补全</b>：高德实况覆盖集中于早期城市，<code>expand_travel_cache.py --auto</code> 可增量补真实路网；新扩城市（北京/成都增量）当前以 L1 OSRM 为主</li>
+<li><b>POI 库扩容</b>：缺口探测器当前清零，新城市经 <code>onboard_city.sh new</code> 一条命令接入（北京 2026-09 实战验证，80 POI 全自动）；闭馆日快照建议行前抽查</li>
 <li><b>多城联游</b>：detect_multi_city + plan_multi 已有骨架，跨城交通衔接（高铁站锚点）待深化</li>
 </ul>
 
 <div class="panel" style="margin-top:40px">
-<span class="kv">本文档基于 main@c64afb6 真实代码结构编写 · 配套文档：<code>docs/README-milestones.md</code>（里程碑与评测）· <code>docs/TripAgent-项目报告.html</code>（项目全景）· 评测报告 <code>output/m7_report.html</code></span>
+<span class="kv">本文档基于 main 真实代码结构编写（2026-09-12 更新，含 M8 打磨八连）· 配套文档：<code>docs/README-milestones.md</code>（里程碑与评测）· <code>docs/TripAgent-项目报告.html</code>（项目全景）· 评测报告 <code>output/m7_report.html</code></span>
 </div>
 
 </div>

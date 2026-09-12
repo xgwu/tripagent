@@ -142,11 +142,18 @@ def _rating(p: dict) -> float:
     return 4.0
 
 
+# 名称脏数据过滤：高德类目词（如「地标」「步行街」）会命中公司/商户等非景点
+JUNK_NAME_RE = re.compile(
+    r"有限公司|股份公司|公司|集团|专卖店|经销|办事处|售楼|营业部|写字楼|驾校|训练基地")
+
+
 def sanitize(raw: list, center: dict, prefix: str, cap: int = 80) -> list:
     """校坐标：丢离群点、近邻去重、续号编 ID；超 cap 按评分保留头部
     （OSRM 公共服务器 /table 上限 100 点，80 留余量；自建 OSRM 可调大）。"""
     kept = []
     for p in raw:
+        if JUNK_NAME_RE.search(p["name"]):
+            continue  # 名称脏数据（公司/商户误采，北京/成都实战教训）
         if haversine_km(p["lat"], p["lng"], center["lat"], center["lng"]) > 60:
             continue  # 离群脏数据
         if any(p["name"] == k["name"] or haversine_km(p["lat"], p["lng"], k["lat"], k["lng"]) < 0.2

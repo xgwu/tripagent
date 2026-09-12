@@ -1,0 +1,1705 @@
+{
+ "city": "北京",
+ "center": {
+  "lat": 39.9042,
+  "lng": 116.4074
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "BJ001",
+   "name": "中国工艺美术馆(中国非物质文化遗产馆)",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "美术馆",
+    "美术馆"
+   ],
+   "lat": 40.003726,
+   "lng": 116.39758,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@湖景东路16号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ002",
+   "name": "东单公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.904917,
+   "lng": 116.41709,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@崇文门内大街9号(东单地铁站H西南口步行380米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ003",
+   "name": "东鹏夜市",
+   "category": "nightlife",
+   "tags": [
+    "购物服务",
+    "购物相关场所",
+    "购物相关场所"
+   ],
+   "lat": 39.865779,
+   "lng": 116.51627,
+   "duration_h": 1.5,
+   "open": "18:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@陶庄路与化工路辅路交叉口东180米；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ005",
+   "name": "中国国家博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.905374,
+   "lng": 116.401304,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东长安街16号天安门广场东侧；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ006",
+   "name": "中国妇女儿童博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.910429,
+   "lng": 116.423493,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@北极阁路9号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ007",
+   "name": "中国海关博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.907129,
+   "lng": 116.432995,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@建国门内大街2号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ008",
+   "name": "中国科学技术馆",
+   "category": "family",
+   "tags": [
+    "科教文化服务",
+    "科技馆",
+    "科技馆"
+   ],
+   "lat": 40.006023,
+   "lng": 116.398595,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@北辰东路5号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ009",
+   "name": "中国美术馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.925255,
+   "lng": 116.408939,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@五四大街1号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ010",
+   "name": "中国警察博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.905174,
+   "lng": 116.403839,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东长安街14号公安部办公大楼D座；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ011",
+   "name": "中国钱币博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.902127,
+   "lng": 116.39493,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西交民巷17号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ012",
+   "name": "中国铁道博物馆正阳门馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.899798,
+   "lng": 116.400346,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@前门大街甲2号(前门地铁站E2北口旁)；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ013",
+   "name": "中央礼品文物管理中心",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.897847,
+   "lng": 116.410901,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西兴隆街1号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ014",
+   "name": "中山公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.910707,
+   "lng": 116.394407,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@中华路4号(天安门西侧)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ015",
+   "name": "中粮·祥云小镇",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "商场",
+    "购物中心"
+   ],
+   "lat": 40.088227,
+   "lng": 116.537301,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@后沙峪安泰大街9号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ016",
+   "name": "乐园夜市场(五道口店)",
+   "category": "nightlife",
+   "tags": [
+    "餐饮服务",
+    "外国餐厅",
+    "韩国料理"
+   ],
+   "lat": 39.991883,
+   "lng": 116.336856,
+   "duration_h": 1.5,
+   "open": "18:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@华清嘉园12号楼酒吧街底商3层火鬼上三楼；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ017",
+   "name": "乐寿堂",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 39.998707,
+   "lng": 116.278384,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@新建宫门路19号颐和园内(东侧)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ018",
+   "name": "什刹海",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 39.941893,
+   "lng": 116.385121,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@地安门西大街49号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ019",
+   "name": "什刹海-前海",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 39.936167,
+   "lng": 116.393076,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@地安门西大街49号什刹海(东南角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ020",
+   "name": "前门公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.899465,
+   "lng": 116.397657,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天安门广场(前门地铁站I西南口步行230米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ021",
+   "name": "前门步行街",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "特色商业街",
+    "步行街"
+   ],
+   "lat": 39.891701,
+   "lng": 116.398273,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@前门大街与珠市口西大街辅路交叉口西北20米；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ022",
+   "name": "北京(通州)大运河文化旅游景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.892911,
+   "lng": 116.713365,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@大成街1号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ023",
+   "name": "北京动物园",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "动物园"
+   ],
+   "lat": 39.942105,
+   "lng": 116.336701,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西直门外大街137号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ024",
+   "name": "北京动物园-北区",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "动物园"
+   ],
+   "lat": 39.944563,
+   "lng": 116.339523,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西直门外大街137号北京动物园内(东北角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ025",
+   "name": "北京动物园-奥运熊猫馆",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "动物园"
+   ],
+   "lat": 39.939619,
+   "lng": 116.338825,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西直门外大街137号北京动物园(东南角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ026",
+   "name": "北京动物园-犀牛河马馆",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "动物园"
+   ],
+   "lat": 39.944171,
+   "lng": 116.337085,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西直门外大街137号北京动物园内(北侧)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ027",
+   "name": "北京动物园-西区",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "动物园"
+   ],
+   "lat": 39.94164,
+   "lng": 116.332783,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@西直门外大街137号北京动物园内(西侧)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ028",
+   "name": "北京古代建筑博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.877536,
+   "lng": 116.392052,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东经路21号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ031",
+   "name": "北京明城墙遗址公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.901264,
+   "lng": 116.427901,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@崇文门东大街9号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ032",
+   "name": "北京检察博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.902326,
+   "lng": 116.400382,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东交民巷39号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ034",
+   "name": "北京街(法华寺街)",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "特色商业街",
+    "步行街"
+   ],
+   "lat": 39.887331,
+   "lng": 116.421128,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@法华寺街91号(红桥市场斜对面红桥路口西边)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ035",
+   "name": "北京警察博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.901997,
+   "lng": 116.404998,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东交民巷36号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ036",
+   "name": "北京金融街",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "特色商业街",
+    "特色商业街|地名地址信息"
+   ],
+   "lat": 39.916114,
+   "lng": 116.363614,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@金城坊街与锦什坊街交叉口东60米；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ037",
+   "name": "北海公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.928775,
+   "lng": 116.391802,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@文津街1号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ038",
+   "name": "十七孔桥",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 39.990481,
+   "lng": 116.27833,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@青龙桥街道新建宫门路19号颐和园内(南侧)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ039",
+   "name": "十里河天娇文化城",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "特色商业街",
+    "特色商业街"
+   ],
+   "lat": 39.862173,
+   "lng": 116.457228,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@十八里店(十里河地铁站D东南口步行260米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ040",
+   "name": "千禧商业街",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "特色商业街",
+    "特色商业街"
+   ],
+   "lat": 39.890098,
+   "lng": 116.284625,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@卢沟桥靛厂路千禧购物街1-4号楼；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ041",
+   "name": "华熙LIVE·五棵松商业街区",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "商场",
+    "商场"
+   ],
+   "lat": 39.910215,
+   "lng": 116.279619,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@复兴路69号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ042",
+   "name": "南锣鼓巷",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.937182,
+   "lng": 116.402394,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@交道口街道南大街(南锣鼓巷地铁站E西北口旁)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ043",
+   "name": "南门涮肉(东单店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "火锅店"
+   ],
+   "lat": 39.907405,
+   "lng": 116.421739,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@建国门内大街26号新闻大厦北门3层；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ044",
+   "name": "南门涮肉(北洼路店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "火锅店"
+   ],
+   "lat": 39.936461,
+   "lng": 116.305392,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@北京城区北洼路28号地下一层至地上二层；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ045",
+   "name": "南门涮肉(后海店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "火锅店"
+   ],
+   "lat": 39.93805,
+   "lng": 116.393887,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@南官房胡同1号(什刹海地铁站出入口步行400米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ046",
+   "name": "南门涮肉(天坛南门店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "火锅店"
+   ],
+   "lat": 39.873818,
+   "lng": 116.413584,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@永定门东街东里13-1-2；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ047",
+   "name": "南门涮肉(河边店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "火锅店"
+   ],
+   "lat": 39.950378,
+   "lng": 116.411779,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@安定门东滨河路东河沿乙9号楼；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ048",
+   "name": "史家胡同博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.918163,
+   "lng": 116.422412,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@朝阳门街道东四南大街史家胡同24号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ049",
+   "name": "四季民福烤鸭店(东四十条店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "特色/地方风味餐厅"
+   ],
+   "lat": 39.933909,
+   "lng": 116.430109,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东四街道平安大街东四十条23号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ050",
+   "name": "四季民福烤鸭店(呼家楼店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "特色/地方风味餐厅"
+   ],
+   "lat": 39.922029,
+   "lng": 116.460554,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@向军南里二巷5号15号楼(呼家楼站D西南口步行190m)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ051",
+   "name": "四季民福烤鸭店(安德路店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "特色/地方风味餐厅"
+   ],
+   "lat": 39.951312,
+   "lng": 116.400796,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@安德路甲10号1号楼(N31酒店旁)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ052",
+   "name": "四季民福烤鸭店(故宫店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "北京菜"
+   ],
+   "lat": 39.914525,
+   "lng": 116.402873,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@南池子大街11号故宫东门旁(距趣拿步行780m)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ053",
+   "name": "四季民福烤鸭店(王府井东安门店)",
+   "category": "food",
+   "tags": [
+    "餐饮服务",
+    "中餐厅",
+    "特色/地方风味餐厅"
+   ],
+   "lat": 39.915563,
+   "lng": 116.408131,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东安门大街53号万程华府酒店1楼；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ054",
+   "name": "回龙观首开LONG街",
+   "category": "shopping",
+   "tags": [
+    "购物服务",
+    "商场",
+    "购物中心"
+   ],
+   "lat": 40.084725,
+   "lng": 116.371438,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@龙锦二街与霍营西路交叉口南320米；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ055",
+   "name": "国家自然博物馆",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.883183,
+   "lng": 116.399833,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天桥南大街126号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ056",
+   "name": "圆明园遗址公园",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 40.006502,
+   "lng": 116.300875,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@清华西路28号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ057",
+   "name": "地标原产地体验中心管理处",
+   "category": "photo",
+   "tags": [
+    "政府机构及社会团体",
+    "政府机关",
+    "政府机关相关|公司企业"
+   ],
+   "lat": 39.858196,
+   "lng": 116.465817,
+   "duration_h": 1.0,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@大洋路酒水一条街5号楼(吕营大街与周家庄路交叉口)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ058",
+   "name": "夜游神臭豆腐",
+   "category": "nightlife",
+   "tags": [
+    "餐饮服务",
+    "餐饮相关场所",
+    "餐饮相关"
+   ],
+   "lat": 39.925291,
+   "lng": 116.516977,
+   "duration_h": 1.5,
+   "open": "18:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@朝阳北路停车场(青年路地铁站B东北口步行350米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ059",
+   "name": "大柳树市场",
+   "category": "nightlife",
+   "tags": [
+    "购物服务",
+    "综合市场",
+    "综合市场|购物服务"
+   ],
+   "lat": 39.872767,
+   "lng": 116.505127,
+   "duration_h": 1.5,
+   "open": "18:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@东四环双龙华庭(南楼梓庄地铁站C东南口步行350米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ060",
+   "name": "大栅栏西街商业",
+   "category": "shopping",
+   "tags": [
+    "地名地址信息",
+    "交通地名",
+    "交通地名|购物服务"
+   ],
+   "lat": 39.894366,
+   "lng": 116.391526,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@大栅栏西街110号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ061",
+   "name": "天坛公园",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.881913,
+   "lng": 116.410829,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天坛东里甲1号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ062",
+   "name": "天坛公园-东天门",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.881568,
+   "lng": 116.417772,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天坛街道天坛路甲1号天坛公园内(东侧)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ063",
+   "name": "天坛公园-圜丘",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.876964,
+   "lng": 116.413162,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天坛路甲1号天坛公园内(东南角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ064",
+   "name": "天坛公园-斋宫",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.879763,
+   "lng": 116.406686,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天坛东路甲1号天坛公园内(西南角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ065",
+   "name": "天坛公园-科普园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.885827,
+   "lng": 116.407237,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@天坛路天坛公园(西北角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ066",
+   "name": "太空人爬行动物博物馆(798总店)",
+   "category": "family",
+   "tags": [
+    "购物服务",
+    "专卖店",
+    "宠物用品店"
+   ],
+   "lat": 39.98675,
+   "lng": 116.492499,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@798艺术区707街A05幢3-103号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ067",
+   "name": "好园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.918686,
+   "lng": 116.419431,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@史家胡同53号(灯市口地铁站A西北口步行260米)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ068",
+   "name": "宋庆龄同志故居",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "纪念馆"
+   ],
+   "lat": 39.945525,
+   "lng": 116.383071,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@后海北沿46号；营业时间与闭馆日待人工核实；周一闭馆（国内场馆通行规范，2026-09 批量回填，建议行前抽查）",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "BJ069",
+   "name": "巧克巧蔻·巧克力博物馆(北京馆)",
+   "category": "culture",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 39.897505,
+   "lng": 116.394916,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@廊坊头条2号院5号楼1层01号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ070",
+   "name": "故宫博物院",
+   "category": "culture",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "世界遗产|科教文化服务"
+   ],
+   "lat": 39.917839,
+   "lng": 116.397029,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@景山前街4号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ071",
+   "name": "故宫博物院-东北角楼",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.922473,
+   "lng": 116.401021,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@景山前街4号故宫博物院内(东北角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ072",
+   "name": "故宫博物院-神武门",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 39.922305,
+   "lng": 116.396786,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@景山前街4号北京故宫博物馆；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ073",
+   "name": "故宫博物院-西北角楼",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.92215,
+   "lng": 116.392575,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@景山前街4号故宫博物院(西北角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ074",
+   "name": "日坛公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.915538,
+   "lng": 116.443795,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@朝外街道朝阳门外日坛北路6号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ076",
+   "name": "明十三陵景区",
+   "category": "photo",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 40.280532,
+   "lng": 116.235741,
+   "duration_h": 1.0,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@十三陵镇昌赤路；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ077",
+   "name": "景山公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 39.925875,
+   "lng": 116.396551,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@景山西街44号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ078",
+   "name": "景山公园-明思宗殉国处",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.924529,
+   "lng": 116.399039,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@景山西街44号景山公园内(东南角)；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ079",
+   "name": "月亮河美食欢乐夜市",
+   "category": "nightlife",
+   "tags": [
+    "购物服务",
+    "特色商业街",
+    "特色商业街|餐饮服务"
+   ],
+   "lat": 39.918172,
+   "lng": 116.677273,
+   "duration_h": 1.5,
+   "open": "18:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@芙蓉西路3号；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  },
+  {
+   "id": "BJ080",
+   "name": "永定门公园东城园区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 39.876485,
+   "lng": 116.399645,
+   "duration_h": 2.0,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "坐标/名称来自高德采集，@永定门内大街与木料巷交叉口南220米；营业时间与闭馆日待人工核实",
+   "closed_days": []
+  }
+ ]
+}

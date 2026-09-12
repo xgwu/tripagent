@@ -213,7 +213,24 @@ li{margin:4px 0;font-size:14.5px}
 <p class="note">三个案例分别对应提案层、落地层、求解层的缺陷——每次修复都沉淀为回归用例或稳定性脚本。</p>
 </div>
 
-<h2>九、部署与运行</h2>
+<h2>九、行程质量打磨八连（2026-09-11/12 线上反馈驱动）</h2>
+<div class="panel">
+<p>M8 阶段以「真实用户查询 → 复现 → 根因 → 修复 → 端到端验证 → 回归」的节奏完成八轮迭代，覆盖展示、交通、正餐、时段四类体验问题：</p>
+<table>
+  <tr><th>问题</th><th>根因</th><th>修复（提交）</th></tr>
+  <tr><td>骑行主题仍按车程标时间</td><td>travel_hours 单一速度模型</td><td>mode 化速度模型（骑行 12km/h/步行/车程分级），穿透全链路；修复链顺序重构「硬约束先行→预算收敛在后」（4aa58b0）</td></tr>
+  <tr><td>武康路连去两天</td><td>只挡同 POI，不挡同片区</td><td>提示词片区分散规则 + 确定性守门 <code>_crossday_area_overlap</code> 接入闭环（db6cf78）</td></tr>
+  <tr><td>tips 说「周一闭馆」但馆周一开</td><td>LLM 常识幻觉（库内数据正确）</td><td>闭馆日事实注入 REGEN + 矛盾 tips 确定性剔除（6c9a860）</td></tr>
+  <tr><td>博物馆行程 15 点收尾</td><td>场馆闭馆早，落选点进不了傍晚空窗</td><td>日内填空 stage（空窗>2h 补晚间可行点，全量校验不变糟）（1cb3054）</td></tr>
+  <tr><td>为一家咖啡店横穿城区</td><td>food 点被餐窗钉死 + 几何从未被检查</td><td>三层：P1 提案顺路规则 → P2 正餐最小绕行重插 → P0 守门替换/剔除（53e7dea+3cabfc1）</td></tr>
+  <tr><td>午餐被安排咖啡馆</td><td>咖啡 category=food 占住午餐窗，餐块不插</td><td><code>is_cafe()</code> 识别，咖啡降级普通逛点，正餐餐块永远照插（fe9596d）</td></tr>
+  <tr><td>傍晚大片空白（软窗侧）</td><td>morning 软窗罚分线性无上限</td><td>SOFT_CAP_MIN=60min 等效封顶 + PROPOSE 傍晚密度规则（2d872a5）</td></tr>
+  <tr><td>tips/展示缺口</td><td>—</td><td>每日 Tips、折叠剔除原因、hop 通行段、虚线地图、多轮澄清（f522a1f 等）</td></tr>
+</table>
+<p class="note">数据资产同步扩容：北京 onboarding（80 POI + 15 场馆周一闭馆回填）；成都清脏 4 条 + 补招牌 8 点（金沙遗址闭馆改造期间不入库，官网核实）。</p>
+</div>
+
+<h2>十、部署与运行</h2>
 <div class="panel">
 <p><b>线上入口</b>：<a href="https://tripagent-planner2.app.workbuddy.host/" style="color:var(--blue)">https://tripagent-planner2.app.workbuddy.host/</a>（Python 单端口服务，WorkBuddy 应用发布）</p>
 <pre># 单次规划（M7 经验提案）
@@ -231,13 +248,12 @@ scripts/onboard_city.sh expand 上海</pre>
 <p class="note">配置：config.json（业务，进 git）+ secrets.json（密钥，gitignore）；LLM 走 OpenAI 兼容 API（DeepSeek 实测），地图/路网走高德 + OSRM。</p>
 </div>
 
-<h2>十、后续方向（P2）</h2>
+<h2>十一、后续方向（P2）</h2>
 <div class="panel">
 <ul>
   <li><b>向量检索匹配层</b>：四级匹配前置 embedding 相似度，降 LLM 辅助匹配调用量与落地延迟；</li>
-  <li><b>交通缓存 L2 增量刷新</b>：build_travel_cache --l2 周期性补全 18,166 对中的高德实况覆盖；</li>
-  <li><b>文案 Tips 行</b>：从库内 note 提取闭馆提醒/排队建议，独立标签展示；</li>
-  <li><b>数据更新管道</b>：营业时间为常规快照，需接实时核验（对照可行性分析 §3.2）。</li>
+  <li><b>交通缓存 L2 全量刷新</b>：高德实况覆盖目前集中于早期城市，可周期性增量补全；</li>
+  <li><b>数据更新管道</b>：营业时间为常规快照，需接实时核验（对照可行性分析 §3.2）；北京/成都新点闭馆日建议行前抽查。</li>
 </ul>
 </div>
 

@@ -1,1247 +1,1234 @@
 {
- "city": "杭州",
- "center": {
-  "lat": 30.2794,
-  "lng": 120.1616
- },
- "day_start": "09:00",
- "day_end": "21:30",
- "meal_slots": {
-  "lunch": [
-   "12:00",
-   "13:00"
-  ],
-  "dinner": [
-   "18:00",
-   "19:00"
+  "city": "杭州",
+  "center": {
+    "lat": 30.2794,
+    "lng": 120.1616
+  },
+  "day_start": "09:00",
+  "day_end": "21:30",
+  "meal_slots": {
+    "lunch": [
+      "12:00",
+      "13:00"
+    ],
+    "dinner": [
+      "18:00",
+      "19:00"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "HZ001",
+      "name": "断桥残雪·白堤",
+      "category": "nature",
+      "tags": [
+        "photo",
+        "经典",
+        "西湖",
+        "步行"
+      ],
+      "lat": 30.259,
+      "lng": 120.15,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "west",
+      "family_ok": true,
+      "note": "西湖必打卡起点，白堤步行至孤山",
+      "closed_days": []
+    },
+    {
+      "id": "HZ002",
+      "name": "平湖秋月",
+      "category": "nature",
+      "tags": [
+        "photo",
+        "西湖"
+      ],
+      "lat": 30.257,
+      "lng": 120.145,
+      "duration_h": 0.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "孤山东南端赏湖平台",
+      "closed_days": []
+    },
+    {
+      "id": "HZ003",
+      "name": "曲院风荷",
+      "category": "nature",
+      "tags": [
+        "photo",
+        "西湖",
+        "夏季荷花"
+      ],
+      "lat": 30.257,
+      "lng": 120.137,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "苏堤北起点，夏季赏荷最佳",
+      "closed_days": []
+    },
+    {
+      "id": "HZ004",
+      "name": "岳王庙",
+      "category": "history",
+      "tags": [
+        "历史",
+        "文化"
+      ],
+      "lat": 30.258,
+      "lng": 120.135,
+      "duration_h": 1.0,
+      "open": "07:30",
+      "close": "17:30",
+      "best_time": "any",
+      "price": 25,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "岳飞墓庙，给孩子讲精忠报国",
+      "closed_days": []
+    },
+    {
+      "id": "HZ005",
+      "name": "苏堤春晓",
+      "category": "nature",
+      "tags": [
+        "photo",
+        "经典",
+        "西湖",
+        "步行"
+      ],
+      "lat": 30.245,
+      "lng": 120.135,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "west",
+      "family_ok": true,
+      "note": "2.8公里经典漫步线，贯穿西湖南北",
+      "closed_days": []
+    },
+    {
+      "id": "HZ006",
+      "name": "花港观鱼",
+      "category": "nature",
+      "tags": [
+        "亲子",
+        "西湖",
+        "轻松"
+      ],
+      "lat": 30.233,
+      "lng": 120.137,
+      "duration_h": 1.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "红鱼池喂鱼，孩子最喜欢的一站",
+      "closed_days": []
+    },
+    {
+      "id": "HZ007",
+      "name": "三潭印月·西湖游船",
+      "category": "nature",
+      "tags": [
+        "经典",
+        "西湖",
+        "游船"
+      ],
+      "lat": 30.24,
+      "lng": 120.143,
+      "duration_h": 1.5,
+      "open": "08:00",
+      "close": "17:00",
+      "best_time": "afternoon",
+      "price": 55,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "船+小瀛洲岛，1元纸币背面取景地",
+      "closed_days": []
+    },
+    {
+      "id": "HZ008",
+      "name": "雷峰塔",
+      "category": "history",
+      "tags": [
+        "photo",
+        "夕阳",
+        "西湖"
+      ],
+      "lat": 30.231,
+      "lng": 120.149,
+      "duration_h": 1.5,
+      "open": "08:00",
+      "close": "19:00",
+      "best_time": "afternoon",
+      "price": 40,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "雷峰夕照，电梯登顶俯瞰西湖全景",
+      "closed_days": []
+    },
+    {
+      "id": "HZ009",
+      "name": "柳浪闻莺",
+      "category": "nature",
+      "tags": [
+        "轻松",
+        "西湖"
+      ],
+      "lat": 30.239,
+      "lng": 120.155,
+      "duration_h": 1.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 3,
+      "area": "south",
+      "family_ok": true,
+      "note": "南线草坪公园，人少适合放空",
+      "closed_days": []
+    },
+    {
+      "id": "HZ010",
+      "name": "湖滨步行街·音乐喷泉",
+      "category": "nightlife",
+      "tags": [
+        "夜生活",
+        "购物",
+        "喷泉"
+      ],
+      "lat": 30.252,
+      "lng": 120.161,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "22:30",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "喷泉整点场次（19:00/20:00），人挤人提前占位",
+      "closed_days": []
+    },
+    {
+      "id": "HZ011",
+      "name": "灵隐寺·飞来峰",
+      "category": "culture",
+      "tags": [
+        "经典",
+        "寺庙",
+        "石刻"
+      ],
+      "lat": 30.241,
+      "lng": 120.097,
+      "duration_h": 2.5,
+      "open": "06:30",
+      "close": "18:00",
+      "best_time": "morning",
+      "price": 75,
+      "rating": 5,
+      "area": "west",
+      "family_ok": true,
+      "note": "飞来峰造像+济公道场，早晨人少清净",
+      "closed_days": []
+    },
+    {
+      "id": "HZ012",
+      "name": "法喜寺（上天竺）",
+      "category": "culture",
+      "tags": [
+        "寺庙",
+        "小众"
+      ],
+      "lat": 30.236,
+      "lng": 120.094,
+      "duration_h": 1.5,
+      "open": "06:00",
+      "close": "18:00",
+      "best_time": "morning",
+      "price": 10,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "网红祈福寺，素面值得试",
+      "closed_days": []
+    },
+    {
+      "id": "HZ013",
+      "name": "龙井村",
+      "category": "culture",
+      "tags": [
+        "茶文化",
+        "轻松",
+        "经典半日线"
+      ],
+      "lat": 30.219,
+      "lng": 120.101,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "22:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "茶园漫步+农家茶歇，与灵隐寺构成经典半日线",
+      "closed_days": []
+    },
+    {
+      "id": "HZ014",
+      "name": "中国茶叶博物馆（双峰馆）",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "茶文化",
+        "亲子"
+      ],
+      "lat": 30.221,
+      "lng": 120.11,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "16:30",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "免费免预约，茶园环绕，龙井主题",
+      "closed_days": []
+    },
+    {
+      "id": "HZ015",
+      "name": "九溪烟树",
+      "category": "outdoor",
+      "tags": [
+        "徒步",
+        "自然",
+        "轻松"
+      ],
+      "lat": 30.213,
+      "lng": 120.115,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "southwest",
+      "family_ok": true,
+      "note": "溪水+枫林浅步行，夏天可踩水",
+      "closed_days": []
+    },
+    {
+      "id": "HZ016",
+      "name": "云栖竹径",
+      "category": "nature",
+      "tags": [
+        "徒步",
+        "竹林",
+        "小众"
+      ],
+      "lat": 30.209,
+      "lng": 120.102,
+      "duration_h": 1.5,
+      "open": "07:00",
+      "close": "18:00",
+      "best_time": "morning",
+      "price": 8,
+      "rating": 4,
+      "area": "southwest",
+      "family_ok": true,
+      "note": "千年古竹林，避暑清净",
+      "closed_days": []
+    },
+    {
+      "id": "HZ017",
+      "name": "茅家埠",
+      "category": "nature",
+      "tags": [
+        "小众",
+        "湿地",
+        "轻松"
+      ],
+      "lat": 30.234,
+      "lng": 120.11,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 3,
+      "area": "west",
+      "family_ok": true,
+      "note": "上香古道起点，游人稀少的西湖西线",
+      "closed_days": []
+    },
+    {
+      "id": "HZ018",
+      "name": "杭州植物园",
+      "category": "nature",
+      "tags": [
+        "亲子",
+        "轻松"
+      ],
+      "lat": 30.252,
+      "lng": 120.121,
+      "duration_h": 2.0,
+      "open": "07:00",
+      "close": "17:30",
+      "best_time": "morning",
+      "price": 10,
+      "rating": 4,
+      "area": "northwest",
+      "family_ok": true,
+      "note": "百草园+大草坪，遛娃好去处",
+      "closed_days": []
+    },
+    {
+      "id": "HZ019",
+      "name": "青芝坞",
+      "category": "food",
+      "tags": [
+        "美食",
+        "文艺"
+      ],
+      "lat": 30.258,
+      "lng": 120.117,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "21:30",
+      "best_time": "evening",
+      "price": 80,
+      "rating": 4,
+      "area": "northwest",
+      "family_ok": true,
+      "note": "植物园旁美食小镇，杭帮菜民宿聚集",
+      "closed_days": []
+    },
+    {
+      "id": "HZ020",
+      "name": "河坊街·清河坊",
+      "category": "food",
+      "tags": [
+        "美食",
+        "古街",
+        "夜生活"
+      ],
+      "lat": 30.243,
+      "lng": 120.167,
+      "duration_h": 2.0,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "evening",
+      "price": 60,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "南宋古街+定胜糕/龙须糖，游客主街",
+      "closed_days": []
+    },
+    {
+      "id": "HZ021",
+      "name": "南宋御街",
+      "category": "culture",
+      "tags": [
+        "古街",
+        "历史"
+      ],
+      "lat": 30.248,
+      "lng": 120.166,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "比河坊街安静，骑楼建筑+博物馆",
+      "closed_days": []
+    },
+    {
+      "id": "HZ022",
+      "name": "南宋德寿宫遗址博物馆",
+      "category": "history",
+      "tags": [
+        "博物馆",
+        "历史",
+        "需预约"
+      ],
+      "lat": 30.245,
+      "lng": 120.165,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "16:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "宋韵顶流，需提前3天预约，周一闭馆",
+      "closed_days": [
+        "周一"
+      ]
+    },
+    {
+      "id": "HZ023",
+      "name": "胡雪岩故居",
+      "category": "history",
+      "tags": [
+        "历史",
+        "建筑"
+      ],
+      "lat": 30.241,
+      "lng": 120.169,
+      "duration_h": 1.0,
+      "open": "08:00",
+      "close": "17:30",
+      "best_time": "afternoon",
+      "price": 20,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "清末巨商豪宅，江南园林极致",
+      "closed_days": []
+    },
+    {
+      "id": "HZ024",
+      "name": "吴山城隍阁",
+      "category": "photo",
+      "tags": [
+        "登高",
+        "夜景"
+      ],
+      "lat": 30.241,
+      "lng": 120.164,
+      "duration_h": 1.5,
+      "open": "08:00",
+      "close": "21:00",
+      "best_time": "evening",
+      "price": 30,
+      "rating": 3,
+      "area": "central",
+      "family_ok": true,
+      "note": "登阁看西湖+城区双景",
+      "closed_days": []
+    },
+    {
+      "id": "HZ025",
+      "name": "浙江省博物馆（孤山馆）",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "亲子"
+      ],
+      "lat": 30.256,
+      "lng": 120.143,
+      "duration_h": 2.0,
+      "open": "09:00",
+      "close": "17:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "孤山馆区，出来就是西湖，周一闭馆",
+      "closed_days": [
+        "周一"
+      ]
+    },
+    {
+      "id": "HZ026",
+      "name": "中国丝绸博物馆",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "小众",
+        "亲子"
+      ],
+      "lat": 30.224,
+      "lng": 120.14,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "17:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "玉皇山下，时装馆+织造馆，周一闭馆",
+      "closed_days": [
+        "周一"
+      ]
+    },
+    {
+      "id": "HZ027",
+      "name": "太子湾公园",
+      "category": "nature",
+      "tags": [
+        "亲子",
+        "野餐",
+        "春季郁金香"
+      ],
+      "lat": 30.23,
+      "lng": 120.133,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "3-4月郁金香季人多，平时是遛娃野餐地",
+      "closed_days": []
+    },
+    {
+      "id": "HZ028",
+      "name": "虎跑公园",
+      "category": "nature",
+      "tags": [
+        "泉",
+        "轻松"
+      ],
+      "lat": 30.209,
+      "lng": 120.125,
+      "duration_h": 1.0,
+      "open": "06:30",
+      "close": "18:00",
+      "best_time": "morning",
+      "price": 15,
+      "rating": 3,
+      "area": "south",
+      "family_ok": true,
+      "note": "虎跑泉+弘一法师纪念室",
+      "closed_days": []
+    },
+    {
+      "id": "HZ029",
+      "name": "满觉陇（满陇桂雨）",
+      "category": "nature",
+      "tags": [
+        "秋季桂花",
+        "茶村",
+        "小众"
+      ],
+      "lat": 30.216,
+      "lng": 120.12,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "southwest",
+      "family_ok": true,
+      "note": "9-10月桂花满山，村子里喝桂花龙井",
+      "closed_days": []
+    },
+    {
+      "id": "HZ030",
+      "name": "西溪国家湿地公园",
+      "category": "nature",
+      "tags": [
+        "亲子",
+        "摇橹船",
+        "半日+"
+      ],
+      "lat": 30.273,
+      "lng": 120.06,
+      "duration_h": 3.5,
+      "open": "08:00",
+      "close": "17:30",
+      "best_time": "morning",
+      "price": 80,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "摇橹船进芦苇荡，福堤免票区可散步",
+      "closed_days": []
+    },
+    {
+      "id": "HZ031",
+      "name": "中国湿地博物馆",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "亲子",
+        "室内"
+      ],
+      "lat": 30.276,
+      "lng": 120.063,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "16:30",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 3,
+      "area": "west",
+      "family_ok": true,
+      "note": "西溪北门旁，雨天遛娃备选，周一闭馆",
+      "closed_days": [
+        "周一"
+      ]
+    },
+    {
+      "id": "HZ032",
+      "name": "宋城·宋城千古情",
+      "category": "family",
+      "tags": [
+        "亲子",
+        "演出",
+        "主题乐园"
+      ],
+      "lat": 30.186,
+      "lng": 120.072,
+      "duration_h": 4.0,
+      "open": "10:00",
+      "close": "21:00",
+      "best_time": "afternoon",
+      "price": 320,
+      "rating": 4,
+      "area": "southwest",
+      "family_ok": true,
+      "note": "《千古情》演出是核心，建议15:00入园看夜场",
+      "closed_days": []
+    },
+    {
+      "id": "HZ033",
+      "name": "京杭大运河·拱宸桥",
+      "category": "culture",
+      "tags": [
+        "运河",
+        "古街",
+        "亲子"
+      ],
+      "lat": 30.32,
+      "lng": 120.142,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "north",
+      "family_ok": true,
+      "note": "拱宸桥+桥西历史街区，运河游船夜航可选",
+      "closed_days": []
+    },
+    {
+      "id": "HZ034",
+      "name": "桥西历史文化街区",
+      "category": "culture",
+      "tags": [
+        "古街",
+        "文艺"
+      ],
+      "lat": 30.32,
+      "lng": 120.14,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "21:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "north",
+      "family_ok": true,
+      "note": "刀剪剑/伞博物馆都在步行圈，免费",
+      "closed_days": []
+    },
+    {
+      "id": "HZ035",
+      "name": "小河直街",
+      "category": "culture",
+      "tags": [
+        "文艺",
+        "小众",
+        "咖啡馆"
+      ],
+      "lat": 30.316,
+      "lng": 120.139,
+      "duration_h": 1.0,
+      "open": "10:00",
+      "close": "21:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "north",
+      "family_ok": true,
+      "note": "运河民居改造，适合下午茶",
+      "closed_days": []
+    },
+    {
+      "id": "HZ036",
+      "name": "胜利河美食街",
+      "category": "food",
+      "tags": [
+        "夜市",
+        "美食",
+        "本地人"
+      ],
+      "lat": 30.313,
+      "lng": 120.143,
+      "duration_h": 1.5,
+      "open": "16:00",
+      "close": "23:00",
+      "best_time": "evening",
+      "price": 80,
+      "rating": 3,
+      "area": "north",
+      "family_ok": true,
+      "note": "本地夜宵聚集地，可与运河串联",
+      "closed_days": []
+    },
+    {
+      "id": "HZ037",
+      "name": "良渚古城遗址公园",
+      "category": "history",
+      "tags": [
+        "世界遗产",
+        "亲子",
+        "需预约"
+      ],
+      "lat": 30.376,
+      "lng": 119.995,
+      "duration_h": 3.0,
+      "open": "09:00",
+      "close": "17:00",
+      "best_time": "morning",
+      "price": 60,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "5000年文明实证，观光车代步，距市区约25km",
+      "closed_days": []
+    },
+    {
+      "id": "HZ038",
+      "name": "良渚博物院",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "亲子",
+        "建筑"
+      ],
+      "lat": 30.386,
+      "lng": 120.007,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "16:30",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "大卫·奇普菲尔德设计，与遗址公园同日串联",
+      "closed_monday": true,
+      "closed_days": []
+    },
+    {
+      "id": "HZ039",
+      "name": "六和塔",
+      "category": "history",
+      "tags": [
+        "古塔",
+        "钱塘江"
+      ],
+      "lat": 30.199,
+      "lng": 120.132,
+      "duration_h": 1.5,
+      "open": "07:00",
+      "close": "17:30",
+      "best_time": "afternoon",
+      "price": 30,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "登塔看钱塘江大桥，塔内旋梯陡注意安全",
+      "closed_days": []
+    },
+    {
+      "id": "HZ040",
+      "name": "白塔公园",
+      "category": "photo",
+      "tags": [
+        "文艺",
+        "小众",
+        "火车"
+      ],
+      "lat": 30.202,
+      "lng": 120.155,
+      "duration_h": 1.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 3,
+      "area": "south",
+      "family_ok": true,
+      "note": "绿皮火车+铁路遗迹，拍照遛娃",
+      "closed_days": []
+    },
+    {
+      "id": "HZ041",
+      "name": "钱江新城·城市阳台",
+      "category": "photo",
+      "tags": [
+        "夜景",
+        "现代",
+        "灯光秀"
+      ],
+      "lat": 30.247,
+      "lng": 120.211,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 3,
+      "area": "east",
+      "family_ok": true,
+      "note": "G20灯光秀（周五六晚），看现代杭州",
+      "closed_days": []
+    },
+    {
+      "id": "HZ042",
+      "name": "知味观·味庄（杨公堤）",
+      "category": "food",
+      "tags": [
+        "杭帮菜",
+        "老字号"
+      ],
+      "lat": 30.25,
+      "lng": 120.132,
+      "duration_h": 1.5,
+      "open": "11:00",
+      "close": "20:30",
+      "best_time": "lunch",
+      "price": 120,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "西湖醋鱼/东坡肉，杨公堤园林环境",
+      "closed_days": []
+    },
+    {
+      "id": "HZ043",
+      "name": "绿茶餐厅（龙井总店）",
+      "category": "food",
+      "tags": [
+        "杭帮菜",
+        "性价比"
+      ],
+      "lat": 30.231,
+      "lng": 120.113,
+      "duration_h": 1.0,
+      "open": "10:30",
+      "close": "21:00",
+      "best_time": "lunch",
+      "price": 70,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "龙井路店就在茶园边，面包诱惑必点",
+      "closed_days": []
+    },
+    {
+      "id": "HZ044",
+      "name": "新丰小吃（湖滨店）",
+      "category": "food",
+      "tags": [
+        "小吃",
+        "早餐",
+        "性价比"
+      ],
+      "lat": 30.254,
+      "lng": 120.162,
+      "duration_h": 0.5,
+      "open": "06:30",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 20,
+      "rating": 3,
+      "area": "central",
+      "family_ok": true,
+      "note": "本地人早餐：虾肉馄饨+牛肉粉丝",
+      "closed_days": []
+    },
+    {
+      "id": "HZ045",
+      "name": "武林夜市",
+      "category": "shopping",
+      "tags": [
+        "夜市",
+        "购物"
+      ],
+      "lat": 30.272,
+      "lng": 120.163,
+      "duration_h": 1.0,
+      "open": "17:00",
+      "close": "22:30",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 3,
+      "area": "central",
+      "family_ok": true,
+      "note": "武林广场地铁直达，手作摊+小吃",
+      "closed_days": []
+    },
+    {
+      "id": "HZ046",
+      "name": "湘湖",
+      "category": "nature",
+      "tags": [
+        "亲子",
+        "骑行",
+        "人少"
+      ],
+      "lat": 30.128,
+      "lng": 120.227,
+      "duration_h": 3.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "西湖的「姐妹湖」，人少景美可租船骑行",
+      "closed_days": []
+    },
+    {
+      "id": "HZ047",
+      "name": "杭州极地海洋公园",
+      "category": "family",
+      "tags": [
+        "亲子",
+        "室内",
+        "演出"
+      ],
+      "lat": 30.126,
+      "lng": 120.243,
+      "duration_h": 5.0,
+      "open": "09:00",
+      "close": "17:00",
+      "best_time": "morning",
+      "price": 350,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "白鲸/企鹅演出，低龄娃全天项目",
+      "closed_days": []
+    },
+    {
+      "id": "HZ048",
+      "name": "中国刀剪剑博物馆",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "亲子",
+        "免费"
+      ],
+      "lat": 30.318,
+      "lng": 120.143,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "16:30",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 3,
+      "area": "north",
+      "family_ok": true,
+      "note": "拱宸桥西，孩子喜欢，周一闭馆",
+      "closed_days": [
+        "周一"
+      ]
+    },
+    {
+      "id": "HZ049",
+      "name": "浙江省博物馆之江馆",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "十大镇馆之宝"
+      ],
+      "lat": 30.196,
+      "lng": 120.03,
+      "duration_h": 3.0,
+      "open": "09:00",
+      "close": "17:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "之江文化中心，需预约，距市区约20km",
+      "closed_monday": true,
+      "closed_days": []
+    },
+    {
+      "id": "HZ050",
+      "name": "西湖文化广场·浙江自然博物院",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "亲子",
+        "室内"
+      ],
+      "lat": 30.279,
+      "lng": 120.163,
+      "duration_h": 2.0,
+      "open": "09:00",
+      "close": "16:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "恐龙化石+动物标本，雨天遛娃首选，周一闭馆",
+      "closed_days": [
+        "周一"
+      ]
+    },
+    {
+      "id": "HZ051",
+      "name": "南宋官窑博物馆",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "历史",
+        "陶瓷"
+      ],
+      "lat": 30.2158,
+      "lng": 120.1638,
+      "duration_h": 1.5,
+      "open": "08:30",
+      "close": "16:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "南复路60号，杭州四大专题博物馆之一，免费；近玉皇山/八卦田",
+      "closed_days": []
+    },
+    {
+      "id": "HZ052",
+      "name": "浙江省科技馆",
+      "category": "family",
+      "tags": [
+        "科技馆",
+        "亲子",
+        "室内"
+      ],
+      "lat": 30.2763,
+      "lng": 120.1647,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "17:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "north",
+      "family_ok": true,
+      "note": "西湖文化广场2号，免费免预约；注意周一、周二双闭馆",
+      "closed_days": []
+    },
+    {
+      "id": "HZ053",
+      "name": "胡庆余堂中药博物馆",
+      "category": "culture",
+      "tags": [
+        "博物馆",
+        "中药",
+        "历史"
+      ],
+      "lat": 30.2437,
+      "lng": 120.1692,
+      "duration_h": 1,
+      "open": "08:30",
+      "close": "17:00",
+      "best_time": "any",
+      "price": 10,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "大井巷95号，全国唯一国家级中药专业博物馆；全年无休（已核实365天开放），近河坊街",
+      "closed_days": []
+    },
+    {
+      "id": "HZ054",
+      "name": "楼外楼（孤山店）",
+      "category": "food",
+      "tags": [
+        "杭帮菜",
+        "西湖醋鱼",
+        "老字号"
+      ],
+      "lat": 30.250209,
+      "lng": 120.140723,
+      "duration_h": 1.5,
+      "open": "10:30",
+      "close": "19:30",
+      "best_time": "lunch",
+      "price": 150,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "孤山路30号，西湖边150年老字号（西湖醋鱼/东坡肉/龙井虾仁），建议正餐时段（@西湖街道孤山路30号(近平湖秋月)）",
+      "closed_days": []
+    },
+    {
+      "id": "HZ055",
+      "name": "武林门码头（京杭大运河夜游）",
+      "category": "nightlife",
+      "tags": [
+        "夜游",
+        "运河",
+        "游船"
+      ],
+      "lat": 30.27422,
+      "lng": 120.16482,
+      "duration_h": 1.5,
+      "open": "19:00",
+      "close": "21:30",
+      "best_time": "evening",
+      "price": 100,
+      "rating": 4,
+      "area": "north",
+      "family_ok": true,
+      "note": "环城北路运河畔，乘漕舫夜游京杭大运河（拱宸桥方向），灯光夜景最佳（@环城北路226号）",
+      "closed_days": []
+    }
   ]
- },
- "meal_cost": {
-  "lunch": 50,
-  "dinner": 80
- },
- "pois": [
-  {
-   "id": "HZ001",
-   "name": "断桥残雪·白堤",
-   "category": "nature",
-   "tags": [
-    "photo",
-    "经典",
-    "西湖",
-    "步行"
-   ],
-   "lat": 30.259,
-   "lng": 120.15,
-   "duration_h": 1.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 5,
-   "area": "west",
-   "family_ok": true,
-   "note": "西湖必打卡起点，白堤步行至孤山",
-   "closed_days": []
-  },
-  {
-   "id": "HZ002",
-   "name": "平湖秋月",
-   "category": "nature",
-   "tags": [
-    "photo",
-    "西湖"
-   ],
-   "lat": 30.257,
-   "lng": 120.145,
-   "duration_h": 0.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "any",
-   "price": 0,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "孤山东南端赏湖平台",
-   "closed_days": []
-  },
-  {
-   "id": "HZ003",
-   "name": "曲院风荷",
-   "category": "nature",
-   "tags": [
-    "photo",
-    "西湖",
-    "夏季荷花"
-   ],
-   "lat": 30.257,
-   "lng": 120.137,
-   "duration_h": 1.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "苏堤北起点，夏季赏荷最佳",
-   "closed_days": []
-  },
-  {
-   "id": "HZ004",
-   "name": "岳王庙",
-   "category": "history",
-   "tags": [
-    "历史",
-    "文化"
-   ],
-   "lat": 30.258,
-   "lng": 120.135,
-   "duration_h": 1.0,
-   "open": "07:30",
-   "close": "17:30",
-   "best_time": "any",
-   "price": 25,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "岳飞墓庙，给孩子讲精忠报国",
-   "closed_days": []
-  },
-  {
-   "id": "HZ005",
-   "name": "苏堤春晓",
-   "category": "nature",
-   "tags": [
-    "photo",
-    "经典",
-    "西湖",
-    "步行"
-   ],
-   "lat": 30.245,
-   "lng": 120.135,
-   "duration_h": 1.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 5,
-   "area": "west",
-   "family_ok": true,
-   "note": "2.8公里经典漫步线，贯穿西湖南北",
-   "closed_days": []
-  },
-  {
-   "id": "HZ006",
-   "name": "花港观鱼",
-   "category": "nature",
-   "tags": [
-    "亲子",
-    "西湖",
-    "轻松"
-   ],
-   "lat": 30.233,
-   "lng": 120.137,
-   "duration_h": 1.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "红鱼池喂鱼，孩子最喜欢的一站",
-   "closed_days": []
-  },
-  {
-   "id": "HZ007",
-   "name": "三潭印月·西湖游船",
-   "category": "nature",
-   "tags": [
-    "经典",
-    "西湖",
-    "游船"
-   ],
-   "lat": 30.24,
-   "lng": 120.143,
-   "duration_h": 1.5,
-   "open": "08:00",
-   "close": "17:00",
-   "best_time": "afternoon",
-   "price": 55,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "船+小瀛洲岛，1元纸币背面取景地",
-   "closed_days": []
-  },
-  {
-   "id": "HZ008",
-   "name": "雷峰塔",
-   "category": "history",
-   "tags": [
-    "photo",
-    "夕阳",
-    "西湖"
-   ],
-   "lat": 30.231,
-   "lng": 120.149,
-   "duration_h": 1.5,
-   "open": "08:00",
-   "close": "19:00",
-   "best_time": "afternoon",
-   "price": 40,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "雷峰夕照，电梯登顶俯瞰西湖全景",
-   "closed_days": []
-  },
-  {
-   "id": "HZ009",
-   "name": "柳浪闻莺",
-   "category": "nature",
-   "tags": [
-    "轻松",
-    "西湖"
-   ],
-   "lat": 30.239,
-   "lng": 120.155,
-   "duration_h": 1.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "any",
-   "price": 0,
-   "rating": 3,
-   "area": "south",
-   "family_ok": true,
-   "note": "南线草坪公园，人少适合放空",
-   "closed_days": []
-  },
-  {
-   "id": "HZ010",
-   "name": "湖滨步行街·音乐喷泉",
-   "category": "nightlife",
-   "tags": [
-    "夜生活",
-    "购物",
-    "喷泉"
-   ],
-   "lat": 30.252,
-   "lng": 120.161,
-   "duration_h": 1.5,
-   "open": "10:00",
-   "close": "22:30",
-   "best_time": "evening",
-   "price": 0,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "喷泉整点场次（19:00/20:00），人挤人提前占位",
-   "closed_days": []
-  },
-  {
-   "id": "HZ011",
-   "name": "灵隐寺·飞来峰",
-   "category": "culture",
-   "tags": [
-    "经典",
-    "寺庙",
-    "石刻"
-   ],
-   "lat": 30.241,
-   "lng": 120.097,
-   "duration_h": 2.5,
-   "open": "06:30",
-   "close": "18:00",
-   "best_time": "morning",
-   "price": 75,
-   "rating": 5,
-   "area": "west",
-   "family_ok": true,
-   "note": "飞来峰造像+济公道场，早晨人少清净",
-   "closed_days": []
-  },
-  {
-   "id": "HZ012",
-   "name": "法喜寺（上天竺）",
-   "category": "culture",
-   "tags": [
-    "寺庙",
-    "小众"
-   ],
-   "lat": 30.236,
-   "lng": 120.094,
-   "duration_h": 1.5,
-   "open": "06:00",
-   "close": "18:00",
-   "best_time": "morning",
-   "price": 10,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "网红祈福寺，素面值得试",
-   "closed_days": []
-  },
-  {
-   "id": "HZ013",
-   "name": "龙井村",
-   "category": "culture",
-   "tags": [
-    "茶文化",
-    "轻松",
-    "经典半日线"
-   ],
-   "lat": 30.219,
-   "lng": 120.101,
-   "duration_h": 2.0,
-   "open": "00:00",
-   "close": "22:00",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "茶园漫步+农家茶歇，与灵隐寺构成经典半日线",
-   "closed_days": []
-  },
-  {
-   "id": "HZ014",
-   "name": "中国茶叶博物馆（双峰馆）",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "茶文化",
-    "亲子"
-   ],
-   "lat": 30.221,
-   "lng": 120.11,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "16:30",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "免费免预约，茶园环绕，龙井主题",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ015",
-   "name": "九溪烟树",
-   "category": "outdoor",
-   "tags": [
-    "徒步",
-    "自然",
-    "轻松"
-   ],
-   "lat": 30.213,
-   "lng": 120.115,
-   "duration_h": 2.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "southwest",
-   "family_ok": true,
-   "note": "溪水+枫林浅步行，夏天可踩水",
-   "closed_days": []
-  },
-  {
-   "id": "HZ016",
-   "name": "云栖竹径",
-   "category": "nature",
-   "tags": [
-    "徒步",
-    "竹林",
-    "小众"
-   ],
-   "lat": 30.209,
-   "lng": 120.102,
-   "duration_h": 1.5,
-   "open": "07:00",
-   "close": "18:00",
-   "best_time": "morning",
-   "price": 8,
-   "rating": 4,
-   "area": "southwest",
-   "family_ok": true,
-   "note": "千年古竹林，避暑清净",
-   "closed_days": []
-  },
-  {
-   "id": "HZ017",
-   "name": "茅家埠",
-   "category": "nature",
-   "tags": [
-    "小众",
-    "湿地",
-    "轻松"
-   ],
-   "lat": 30.234,
-   "lng": 120.11,
-   "duration_h": 1.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "any",
-   "price": 0,
-   "rating": 3,
-   "area": "west",
-   "family_ok": true,
-   "note": "上香古道起点，游人稀少的西湖西线",
-   "closed_days": []
-  },
-  {
-   "id": "HZ018",
-   "name": "杭州植物园",
-   "category": "nature",
-   "tags": [
-    "亲子",
-    "轻松"
-   ],
-   "lat": 30.252,
-   "lng": 120.121,
-   "duration_h": 2.0,
-   "open": "07:00",
-   "close": "17:30",
-   "best_time": "morning",
-   "price": 10,
-   "rating": 4,
-   "area": "northwest",
-   "family_ok": true,
-   "note": "百草园+大草坪，遛娃好去处",
-   "closed_days": []
-  },
-  {
-   "id": "HZ019",
-   "name": "青芝坞",
-   "category": "food",
-   "tags": [
-    "美食",
-    "文艺"
-   ],
-   "lat": 30.258,
-   "lng": 120.117,
-   "duration_h": 1.5,
-   "open": "10:00",
-   "close": "21:30",
-   "best_time": "evening",
-   "price": 80,
-   "rating": 4,
-   "area": "northwest",
-   "family_ok": true,
-   "note": "植物园旁美食小镇，杭帮菜民宿聚集",
-   "closed_days": []
-  },
-  {
-   "id": "HZ020",
-   "name": "河坊街·清河坊",
-   "category": "food",
-   "tags": [
-    "美食",
-    "古街",
-    "夜生活"
-   ],
-   "lat": 30.243,
-   "lng": 120.167,
-   "duration_h": 2.0,
-   "open": "10:00",
-   "close": "22:00",
-   "best_time": "evening",
-   "price": 60,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "南宋古街+定胜糕/龙须糖，游客主街",
-   "closed_days": []
-  },
-  {
-   "id": "HZ021",
-   "name": "南宋御街",
-   "category": "culture",
-   "tags": [
-    "古街",
-    "历史"
-   ],
-   "lat": 30.248,
-   "lng": 120.166,
-   "duration_h": 1.5,
-   "open": "10:00",
-   "close": "22:00",
-   "best_time": "evening",
-   "price": 0,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "比河坊街安静，骑楼建筑+博物馆",
-   "closed_days": []
-  },
-  {
-   "id": "HZ022",
-   "name": "南宋德寿宫遗址博物馆",
-   "category": "history",
-   "tags": [
-    "博物馆",
-    "历史",
-    "需预约"
-   ],
-   "lat": 30.245,
-   "lng": 120.165,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "16:30",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "宋韵顶流，需提前3天预约，周一闭馆",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ023",
-   "name": "胡雪岩故居",
-   "category": "history",
-   "tags": [
-    "历史",
-    "建筑"
-   ],
-   "lat": 30.241,
-   "lng": 120.169,
-   "duration_h": 1.0,
-   "open": "08:00",
-   "close": "17:30",
-   "best_time": "afternoon",
-   "price": 20,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "清末巨商豪宅，江南园林极致",
-   "closed_days": []
-  },
-  {
-   "id": "HZ024",
-   "name": "吴山城隍阁",
-   "category": "photo",
-   "tags": [
-    "登高",
-    "夜景"
-   ],
-   "lat": 30.241,
-   "lng": 120.164,
-   "duration_h": 1.5,
-   "open": "08:00",
-   "close": "21:00",
-   "best_time": "evening",
-   "price": 30,
-   "rating": 3,
-   "area": "central",
-   "family_ok": true,
-   "note": "登阁看西湖+城区双景",
-   "closed_days": []
-  },
-  {
-   "id": "HZ025",
-   "name": "浙江省博物馆（孤山馆）",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "亲子"
-   ],
-   "lat": 30.256,
-   "lng": 120.143,
-   "duration_h": 2.0,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "孤山馆区，出来就是西湖，周一闭馆",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ026",
-   "name": "中国丝绸博物馆",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "小众",
-    "亲子"
-   ],
-   "lat": 30.224,
-   "lng": 120.14,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "玉皇山下，时装馆+织造馆，周一闭馆",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ027",
-   "name": "太子湾公园",
-   "category": "nature",
-   "tags": [
-    "亲子",
-    "野餐",
-    "春季郁金香"
-   ],
-   "lat": 30.23,
-   "lng": 120.133,
-   "duration_h": 1.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "3-4月郁金香季人多，平时是遛娃野餐地",
-   "closed_days": []
-  },
-  {
-   "id": "HZ028",
-   "name": "虎跑公园",
-   "category": "nature",
-   "tags": [
-    "泉",
-    "轻松"
-   ],
-   "lat": 30.209,
-   "lng": 120.125,
-   "duration_h": 1.0,
-   "open": "06:30",
-   "close": "18:00",
-   "best_time": "morning",
-   "price": 15,
-   "rating": 3,
-   "area": "south",
-   "family_ok": true,
-   "note": "虎跑泉+弘一法师纪念室",
-   "closed_days": []
-  },
-  {
-   "id": "HZ029",
-   "name": "满觉陇（满陇桂雨）",
-   "category": "nature",
-   "tags": [
-    "秋季桂花",
-    "茶村",
-    "小众"
-   ],
-   "lat": 30.216,
-   "lng": 120.12,
-   "duration_h": 2.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "southwest",
-   "family_ok": true,
-   "note": "9-10月桂花满山，村子里喝桂花龙井",
-   "closed_days": []
-  },
-  {
-   "id": "HZ030",
-   "name": "西溪国家湿地公园",
-   "category": "nature",
-   "tags": [
-    "亲子",
-    "摇橹船",
-    "半日+"
-   ],
-   "lat": 30.273,
-   "lng": 120.06,
-   "duration_h": 3.5,
-   "open": "08:00",
-   "close": "17:30",
-   "best_time": "morning",
-   "price": 80,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "摇橹船进芦苇荡，福堤免票区可散步",
-   "closed_days": []
-  },
-  {
-   "id": "HZ031",
-   "name": "中国湿地博物馆",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "亲子",
-    "室内"
-   ],
-   "lat": 30.276,
-   "lng": 120.063,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "16:30",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 3,
-   "area": "west",
-   "family_ok": true,
-   "note": "西溪北门旁，雨天遛娃备选，周一闭馆",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ032",
-   "name": "宋城·宋城千古情",
-   "category": "family",
-   "tags": [
-    "亲子",
-    "演出",
-    "主题乐园"
-   ],
-   "lat": 30.186,
-   "lng": 120.072,
-   "duration_h": 4.0,
-   "open": "10:00",
-   "close": "21:00",
-   "best_time": "afternoon",
-   "price": 320,
-   "rating": 4,
-   "area": "southwest",
-   "family_ok": true,
-   "note": "《千古情》演出是核心，建议15:00入园看夜场",
-   "closed_days": []
-  },
-  {
-   "id": "HZ033",
-   "name": "京杭大运河·拱宸桥",
-   "category": "culture",
-   "tags": [
-    "运河",
-    "古街",
-    "亲子"
-   ],
-   "lat": 30.32,
-   "lng": 120.142,
-   "duration_h": 2.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "north",
-   "family_ok": true,
-   "note": "拱宸桥+桥西历史街区，运河游船夜航可选",
-   "closed_days": []
-  },
-  {
-   "id": "HZ034",
-   "name": "桥西历史文化街区",
-   "category": "culture",
-   "tags": [
-    "古街",
-    "文艺"
-   ],
-   "lat": 30.32,
-   "lng": 120.14,
-   "duration_h": 1.5,
-   "open": "10:00",
-   "close": "21:00",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "north",
-   "family_ok": true,
-   "note": "刀剪剑/伞博物馆都在步行圈，免费",
-   "closed_days": []
-  },
-  {
-   "id": "HZ035",
-   "name": "小河直街",
-   "category": "culture",
-   "tags": [
-    "文艺",
-    "小众",
-    "咖啡馆"
-   ],
-   "lat": 30.316,
-   "lng": 120.139,
-   "duration_h": 1.0,
-   "open": "10:00",
-   "close": "21:00",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "north",
-   "family_ok": true,
-   "note": "运河民居改造，适合下午茶",
-   "closed_days": []
-  },
-  {
-   "id": "HZ036",
-   "name": "胜利河美食街",
-   "category": "food",
-   "tags": [
-    "夜市",
-    "美食",
-    "本地人"
-   ],
-   "lat": 30.313,
-   "lng": 120.143,
-   "duration_h": 1.5,
-   "open": "16:00",
-   "close": "23:00",
-   "best_time": "evening",
-   "price": 80,
-   "rating": 3,
-   "area": "north",
-   "family_ok": true,
-   "note": "本地夜宵聚集地，可与运河串联",
-   "closed_days": []
-  },
-  {
-   "id": "HZ037",
-   "name": "良渚古城遗址公园",
-   "category": "history",
-   "tags": [
-    "世界遗产",
-    "亲子",
-    "需预约"
-   ],
-   "lat": 30.376,
-   "lng": 119.995,
-   "duration_h": 3.0,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "morning",
-   "price": 60,
-   "rating": 4,
-   "area": "suburb",
-   "family_ok": true,
-   "note": "5000年文明实证，观光车代步，距市区约25km",
-   "closed_days": []
-  },
-  {
-   "id": "HZ038",
-   "name": "良渚博物院",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "亲子",
-    "建筑"
-   ],
-   "lat": 30.386,
-   "lng": 120.007,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "16:30",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 4,
-   "area": "suburb",
-   "family_ok": true,
-   "note": "大卫·奇普菲尔德设计，与遗址公园同日串联",
-   "closed_monday": true,
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ039",
-   "name": "六和塔",
-   "category": "history",
-   "tags": [
-    "古塔",
-    "钱塘江"
-   ],
-   "lat": 30.199,
-   "lng": 120.132,
-   "duration_h": 1.5,
-   "open": "07:00",
-   "close": "17:30",
-   "best_time": "afternoon",
-   "price": 30,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "登塔看钱塘江大桥，塔内旋梯陡注意安全",
-   "closed_days": []
-  },
-  {
-   "id": "HZ040",
-   "name": "白塔公园",
-   "category": "photo",
-   "tags": [
-    "文艺",
-    "小众",
-    "火车"
-   ],
-   "lat": 30.202,
-   "lng": 120.155,
-   "duration_h": 1.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 3,
-   "area": "south",
-   "family_ok": true,
-   "note": "绿皮火车+铁路遗迹，拍照遛娃",
-   "closed_days": []
-  },
-  {
-   "id": "HZ041",
-   "name": "钱江新城·城市阳台",
-   "category": "photo",
-   "tags": [
-    "夜景",
-    "现代",
-    "灯光秀"
-   ],
-   "lat": 30.247,
-   "lng": 120.211,
-   "duration_h": 1.5,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "evening",
-   "price": 0,
-   "rating": 3,
-   "area": "east",
-   "family_ok": true,
-   "note": "G20灯光秀（周五六晚），看现代杭州",
-   "closed_days": []
-  },
-  {
-   "id": "HZ042",
-   "name": "知味观·味庄（杨公堤）",
-   "category": "food",
-   "tags": [
-    "杭帮菜",
-    "老字号"
-   ],
-   "lat": 30.25,
-   "lng": 120.132,
-   "duration_h": 1.5,
-   "open": "11:00",
-   "close": "20:30",
-   "best_time": "lunch",
-   "price": 120,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "西湖醋鱼/东坡肉，杨公堤园林环境",
-   "closed_days": []
-  },
-  {
-   "id": "HZ043",
-   "name": "绿茶餐厅（龙井总店）",
-   "category": "food",
-   "tags": [
-    "杭帮菜",
-    "性价比"
-   ],
-   "lat": 30.231,
-   "lng": 120.113,
-   "duration_h": 1.0,
-   "open": "10:30",
-   "close": "21:00",
-   "best_time": "lunch",
-   "price": 70,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "龙井路店就在茶园边，面包诱惑必点",
-   "closed_days": []
-  },
-  {
-   "id": "HZ044",
-   "name": "新丰小吃（湖滨店）",
-   "category": "food",
-   "tags": [
-    "小吃",
-    "早餐",
-    "性价比"
-   ],
-   "lat": 30.254,
-   "lng": 120.162,
-   "duration_h": 0.5,
-   "open": "06:30",
-   "close": "20:00",
-   "best_time": "morning",
-   "price": 20,
-   "rating": 3,
-   "area": "central",
-   "family_ok": true,
-   "note": "本地人早餐：虾肉馄饨+牛肉粉丝",
-   "closed_days": []
-  },
-  {
-   "id": "HZ045",
-   "name": "武林夜市",
-   "category": "shopping",
-   "tags": [
-    "夜市",
-    "购物"
-   ],
-   "lat": 30.272,
-   "lng": 120.163,
-   "duration_h": 1.0,
-   "open": "17:00",
-   "close": "22:30",
-   "best_time": "evening",
-   "price": 0,
-   "rating": 3,
-   "area": "central",
-   "family_ok": true,
-   "note": "武林广场地铁直达，手作摊+小吃",
-   "closed_days": []
-  },
-  {
-   "id": "HZ046",
-   "name": "湘湖",
-   "category": "nature",
-   "tags": [
-    "亲子",
-    "骑行",
-    "人少"
-   ],
-   "lat": 30.128,
-   "lng": 120.227,
-   "duration_h": 3.0,
-   "open": "00:00",
-   "close": "23:59",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "suburb",
-   "family_ok": true,
-   "note": "西湖的「姐妹湖」，人少景美可租船骑行",
-   "closed_days": []
-  },
-  {
-   "id": "HZ047",
-   "name": "杭州极地海洋公园",
-   "category": "family",
-   "tags": [
-    "亲子",
-    "室内",
-    "演出"
-   ],
-   "lat": 30.126,
-   "lng": 120.243,
-   "duration_h": 5.0,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "morning",
-   "price": 350,
-   "rating": 4,
-   "area": "suburb",
-   "family_ok": true,
-   "note": "白鲸/企鹅演出，低龄娃全天项目",
-   "closed_days": []
-  },
-  {
-   "id": "HZ048",
-   "name": "中国刀剪剑博物馆",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "亲子",
-    "免费"
-   ],
-   "lat": 30.318,
-   "lng": 120.143,
-   "duration_h": 1.5,
-   "open": "09:00",
-   "close": "16:30",
-   "best_time": "afternoon",
-   "price": 0,
-   "rating": 3,
-   "area": "north",
-   "family_ok": true,
-   "note": "拱宸桥西，孩子喜欢，周一闭馆",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ049",
-   "name": "浙江省博物馆之江馆",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "十大镇馆之宝"
-   ],
-   "lat": 30.196,
-   "lng": 120.03,
-   "duration_h": 3.0,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "suburb",
-   "family_ok": true,
-   "note": "之江文化中心，需预约，距市区约20km",
-   "closed_monday": true,
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ050",
-   "name": "西湖文化广场·浙江自然博物院",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "亲子",
-    "室内"
-   ],
-   "lat": 30.279,
-   "lng": 120.163,
-   "duration_h": 2.0,
-   "open": "09:00",
-   "close": "16:30",
-   "best_time": "morning",
-   "price": 0,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "恐龙化石+动物标本，雨天遛娃首选，周一闭馆",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ051",
-   "name": "南宋官窑博物馆",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "历史",
-    "陶瓷"
-   ],
-   "lat": 30.2158,
-   "lng": 120.1638,
-   "duration_h": 1.5,
-   "open": "08:30",
-   "close": "16:30",
-   "best_time": "any",
-   "price": 0,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "南复路60号，杭州四大专题博物馆之一，免费；近玉皇山/八卦田",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ052",
-   "name": "浙江省科技馆",
-   "category": "family",
-   "tags": [
-    "科技馆",
-    "亲子",
-    "室内"
-   ],
-   "lat": 30.2763,
-   "lng": 120.1647,
-   "duration_h": 2.5,
-   "open": "09:00",
-   "close": "17:00",
-   "best_time": "any",
-   "price": 0,
-   "rating": 4,
-   "area": "north",
-   "family_ok": true,
-   "note": "西湖文化广场2号，免费免预约；注意周一、周二双闭馆",
-   "closed_days": [
-    "周一",
-    "周二"
-   ]
-  },
-  {
-   "id": "HZ053",
-   "name": "胡庆余堂中药博物馆",
-   "category": "culture",
-   "tags": [
-    "博物馆",
-    "中药",
-    "历史"
-   ],
-   "lat": 30.2437,
-   "lng": 120.1692,
-   "duration_h": 1,
-   "open": "08:30",
-   "close": "17:00",
-   "best_time": "any",
-   "price": 10,
-   "rating": 4,
-   "area": "central",
-   "family_ok": true,
-   "note": "大井巷95号，全国唯一国家级中药专业博物馆；全年无休（已核实365天开放），近河坊街",
-   "closed_days": [
-    "周一"
-   ]
-  },
-  {
-   "id": "HZ054",
-   "name": "楼外楼（孤山店）",
-   "category": "food",
-   "tags": [
-    "杭帮菜",
-    "西湖醋鱼",
-    "老字号"
-   ],
-   "lat": 30.250209,
-   "lng": 120.140723,
-   "duration_h": 1.5,
-   "open": "10:30",
-   "close": "19:30",
-   "best_time": "lunch",
-   "price": 150,
-   "rating": 4,
-   "area": "west",
-   "family_ok": true,
-   "note": "孤山路30号，西湖边150年老字号（西湖醋鱼/东坡肉/龙井虾仁），建议正餐时段（@西湖街道孤山路30号(近平湖秋月)）",
-   "closed_days": []
-  },
-  {
-   "id": "HZ055",
-   "name": "武林门码头（京杭大运河夜游）",
-   "category": "nightlife",
-   "tags": [
-    "夜游",
-    "运河",
-    "游船"
-   ],
-   "lat": 30.27422,
-   "lng": 120.16482,
-   "duration_h": 1.5,
-   "open": "19:00",
-   "close": "21:30",
-   "best_time": "evening",
-   "price": 100,
-   "rating": 4,
-   "area": "north",
-   "family_ok": true,
-   "note": "环城北路运河畔，乘漕舫夜游京杭大运河（拱宸桥方向），灯光夜景最佳（@环城北路226号）",
-   "closed_days": []
-  }
- ]
 }
