@@ -219,47 +219,18 @@ def _day_score_key(p: dict):
     return pref
 
 
-def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = None,
-              mode: str | None = None) -> list:
-    """贪婪最近邻 + 建议时段偏置：从早到晚排一条线（有酒店则从酒店出发选首点）。
-
-    mode：出行方式 → 通行时间口径与时间轴一致（骑行主题下按骑行时间找最近邻）。
-    city 传入时启用餐窗感知：先排非美食线，再把美食 POI 插入到
-    「绕行最小 + 最贴近其目标餐窗时刻」的位置（配合 _build_timeline 的美食硬约束）。
-    """
-    if not day_pois:
-        return []
-    foods = [p for p in day_pois if p.get("category") == "food"]
-    rest = [p for p in day_pois if p.get("category") != "food"]
-
-    def _greedy(pool: list) -> list:
-        if not pool:
-            return []
-        remaining = list(pool)
-        if hotel is not None:
-            cur = min(remaining, key=lambda p: poi_db.travel_hours(hotel, p, mode))
-        else:
-            cur = start_poi or max(remaining, key=lambda p: (p["rating"] - 3 * _day_score_key(p), p["rating"]))
-        seq = [cur]
-        remaining.remove(cur)
-        while remaining:
-            nxt = min(remaining, key=lambda p: (
-                poi_db.travel_hours(cur, p, mode) + 0.8 * abs(_day_score_key(p) - _day_score_key(cur)),
-                -p["rating"]))
-            seq.append(nxt)
-            remaining.remove(nxt)
-            cur = nxt
-        return seq
-
+def _insert_foods(seq_rest: list, foods: list, hotel, city: dict,
+                  mode: str | None = None) -> list:
+    """餐窗感知的美食点插入：把 foods 逐个插入 seq_rest 的
+    「绕行最小 + 最贴近其目标餐窗时刻」位置（配合 _build_timeline 的美食硬约束）。"""
     if city is None or not foods:
-        return _greedy(day_pois)
-
-    seq = _greedy(rest)
+        return list(seq_rest) + list(foods)
+    seq = list(seq_rest)
     meals = city["meal_slots"]
     win_mid = {k: (poi_db.hhmm_to_h(meals[k][0]) + poi_db.hhmm_to_h(meals[k][1])) / 2
                for k in ("lunch", "dinner")}
     # 美食点按目标餐窗先后插入（午市偏好先插，避免两个点抢同一窗）
-    foods.sort(key=lambda p: (win_mid.get(FOOD_PREF_WIN.get(p.get("best_time"), "lunch"), 12.5), -p["rating"]))
+    foods = sorted(foods, key=lambda p: (win_mid.get(FOOD_PREF_WIN.get(p.get("best_time"), "lunch"), 12.5), -p["rating"]))
     wins_left = list(win_mid)  # 尚未分配的餐窗
     day_start = poi_db.hhmm_to_h(city["day_start"])
     for f in foods:
@@ -297,6 +268,44 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
                 best_pos, best_cost = pos, cost
         seq.insert(best_pos, f)
     return seq
+
+
+def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = None,
+              mode: str | None = None) -> list:
+    """贪婪最近邻 + 建议时段偏置：从早到晚排一条线（有酒店则从酒店出发选首点）。
+
+    mode：出行方式 → 通行时间口径与时间轴一致（骑行主题下按骑行时间找最近邻）。
+    city 传入时启用餐窗感知：先排非美食线，再把美食 POI 插入到
+    「绕行最小 + 最贴近其目标餐窗时刻」的位置（配合 _build_timeline 的美食硬约束）。
+    """
+    if not day_pois:
+        return []
+    foods = [p for p in day_pois if p.get("category") == "food"]
+    rest = [p for p in day_pois if p.get("category") != "food"]
+
+    def _greedy(pool: list) -> list:
+        if not pool:
+            return []
+        remaining = list(pool)
+        if hotel is not None:
+            cur = min(remaining, key=lambda p: poi_db.travel_hours(hotel, p, mode))
+        else:
+            cur = start_poi or max(remaining, key=lambda p: (p["rating"] - 3 * _day_score_key(p), p["rating"]))
+        seq = [cur]
+        remaining.remove(cur)
+        while remaining:
+            nxt = min(remaining, key=lambda p: (
+                poi_db.travel_hours(cur, p, mode) + 0.8 * abs(_day_score_key(p) - _day_score_key(cur)),
+                -p["rating"]))
+            seq.append(nxt)
+            remaining.remove(nxt)
+            cur = nxt
+        return seq
+
+    if city is None or not foods:
+        return _greedy(day_pois)
+
+    return _insert_foods(_greedy(rest), foods, hotel, city, mode)
 
 
 def _repair_by_drop(day_pois: list, city: dict, day_no: int, max_drop: int = 3,
@@ -411,6 +420,13 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
                 extra_ids = {p["id"] for p in extra}
                 pois = [p for p in pois if p["id"] not in extra_ids]
         seq = pois if order_given else order_day(pois, hotel=hotel, city=city, mode=mode)
+        # P2：尊重给定顺序（非美食点相对顺序不变），但美食点做最小绕行位重插——
+        # LLM 给定顺序常把网红咖啡店钉死在中段，造成大绕路；重插由餐窗感知成本函数兜底
+        if order_given and city is not None:
+            _foods = [p for p in seq if p.get("category") == "food"]
+            if _foods and len(seq) > len(_foods):
+                seq = _insert_foods([p for p in seq if p.get("category") != "food"],
+                                    _foods, hotel, city, mode)
         tl = _build_timeline(seq, city, d, wd, hotel, mode=mode)
         # 硬约束修复先行（重排 → 剔点），收敛到 0 违规；预算收敛在其结果上做，
         # 避免旧序「预算修复后违规修复链从全量重建」把预算成果冲掉
