@@ -315,8 +315,60 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
 
 # ---- 阶段3.5：日内填空 ----
 FILL_SLACK_MIN_H = 2.0   # finish 距 day_end 空窗超过该值才触发补点
+GAP_WAIT_MAX_H = 2.0     # 时间线内 poi 早到空跳（start-arrive）超过该值视为中间断档
+LATE_OPEN_H = 16.5       # 开门晚于该时刻的点视为「晚开点」（夜游/夜市类，应压轴而非占白天空间）
 FILL_STOP_SLACK_H = 1.5  # 补到空窗低于该值即停（行程轻松感优先于极致填满）
 FILL_MAX_PER_DAY = 4     # 单日最多补点数，防过度打包
+
+
+def _fix_gap_reorder(day_map: dict, city: dict, all_pois: dict,
+                     date0: str | None, hotel: dict | None, query: str,
+                     t_mode: str | None) -> tuple[dict, dict]:
+    """中间断档治理：晚开点（夜游/夜市类 open 晚）排在序列前部时，sequencer 早到
+    会空跳至开门时刻（如 11:30 结束→19:00 才有下一站，中间 7h 断档且 0 违规）。
+
+    将造成断档的晚开点移到序列末尾压轴（夜间体验本就该收尾），移动后 0 违规
+    且断档改善才接受；中间让出的空间由阶段 3.5 日内填空插点填满。
+    返回 (更新后的 day_map, {day: [被移到末尾的点名]}）。
+    """
+    fixed: dict = {}
+    for d in sorted(day_map):
+        ids = list(day_map.get(d) or [])
+        if len(ids) < 2:
+            continue
+        for _ in range(2):  # 最多治 2 个断档点
+            it = sequencer.build_itinerary({d: ids}, city, all_pois, date0=date0,
+                                           hotel=hotel, query=query)
+            day = it["days"][0]
+            if day["violations"] or day.get("dropped"):
+                break
+            # 扫描时间线：找第一个早到空跳 > 阈值的 poi（断档制造者）
+            gap_id, gap_wait = None, 0.0
+            for s in day["timeline"]:
+                if s["type"] == "poi" and s.get("arrive"):
+                    w = poi_db.hhmm_to_h(s["start"]) - poi_db.hhmm_to_h(s["arrive"])
+                    if w > GAP_WAIT_MAX_H and w > gap_wait:
+                        gap_id, gap_wait = s["id"], w
+            if not gap_id or gap_id == ids[-1]:
+                break  # 无断档，或断档点已在末尾（前面空间交给日内填空插点）
+            ids2 = [i for i in ids if i != gap_id] + [gap_id]
+            it2 = sequencer.build_itinerary({d: ids2}, city, all_pois, date0=date0,
+                                            hotel=hotel, query=query)
+            d2 = it2["days"][0]
+            n2 = len([s for s in d2["timeline"] if s["type"] == "poi"])
+            # 接受条件：0 违规 + 点一个不少 + 断档严格改善
+            w2 = max((poi_db.hhmm_to_h(s["start"]) - poi_db.hhmm_to_h(s["arrive"]))
+                     for s in d2["timeline"] if s["type"] == "poi" and s.get("arrive")) \
+                if any(s["type"] == "poi" and s.get("arrive") for s in d2["timeline"]) else 0.0
+            if (not d2["violations"] and not d2.get("dropped") and n2 == len(ids2)
+                    and w2 < gap_wait):
+                name = all_pois.get(gap_id, {}).get("name", gap_id)
+                fixed.setdefault(d, []).append(name)
+                ids = ids2
+            else:
+                break
+        day_map[d] = ids
+    return day_map, fixed
 
 
 def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
@@ -347,10 +399,17 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
             day = it["days"][0]
             if day["violations"] or day.get("dropped"):
                 break
-            finish_h = poi_db.hhmm_to_h(day["finish"])
+            poi_items = [s for s in day["timeline"] if s["type"] == "poi"]
+            # 压轴晚开点（夜游/夜市 open 晚）不占白天行程空间：有效收尾/补点定位
+            # 均以「排除末尾晚开点」为准，让白天点插在晚开点之前填满中间空间
+            n_tail_late = 0
+            while len(poi_items) - n_tail_late > 1 and \
+                    (all_pois.get(poi_items[-1 - n_tail_late].get("id"), {}).get("open_h") or 0) >= LATE_OPEN_H:
+                n_tail_late += 1
+            last_t = poi_items[-1 - n_tail_late]
+            finish_h = poi_db.hhmm_to_h(last_t["end"])
             if day_end - finish_h <= FILL_SLACK_MIN_H:
                 break
-            last_t = [s for s in day["timeline"] if s["type"] == "poi"][-1]
             last = all_pois.get(last_t.get("id")) or last_t
             # 候选打分：评分高、离当日末点近、营业够晚优先；闭馆太早的直接不可行
             feasible = []
@@ -359,6 +418,9 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
                     continue
                 th = poi_db.travel_hours(last, p, t_mode)
                 if finish_h + th + p["dur"] > min(p["close_h"], day_end):
+                    continue
+                # 防自造断档：候选开门远晚于预计到达 → 顺排会空跳等待，跳过
+                if p["open_h"] - (finish_h + th) > 1.0:
                     continue
                 score = p["rating"] - 0.2 * haversine_km(last["lat"], last["lng"],
                                                          p["lat"], p["lng"])
@@ -370,7 +432,9 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
             feasible.sort(key=lambda x: -x[0])
             added = False
             for _s, pick in feasible[:3]:  # 只试最优 3 个，控制 sequencer 重排成本
-                trial = ids + [pick["id"]]
+                # 晚开点压轴时插到它前面（白天点填中间空间），否则追加尾部
+                k = len(ids) - n_tail_late
+                trial = ids[:k] + [pick["id"]] + ids[k:]
                 it2 = sequencer.build_itinerary({d: trial}, city, all_pois, date0=date0,
                                                 hotel=hotel, query=query)
                 day2 = it2["days"][0]
@@ -517,6 +581,18 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     final_day_map, food_fixes = _fix_food_detours(final_day_map, city, all_pois,
                                                   date0, hotel, t_mode)
     if food_fixes:
+        itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
+                                         hotel=hotel, query=query)
+
+    # ---- 阶段3.45：中间断档治理（确定性，0 LLM 成本）----
+    # 晚开点（夜游/夜市 open 晚）排在序列前部 → sequencer 早到空跳至开门时刻，
+    # 中间出现数小时断档（如 11:30 结束→19:00 才有下一站，0 违规静默通过）。
+    # 将断档制造者移到序列末尾压轴，中间空间交给阶段3.5 填空（晚开点前插白天点）。
+    final_day_map = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+                     for d in itin["days"]}
+    final_day_map, gap_fixes = _fix_gap_reorder(final_day_map, city, all_pois,
+                                                date0, hotel, query, t_mode)
+    if gap_fixes:
         itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
                                          hotel=hotel, query=query)
 
