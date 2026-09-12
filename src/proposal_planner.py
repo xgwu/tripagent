@@ -22,6 +22,7 @@ PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去），每天 4-6 个停留点。
 停留点必须是游客可游览的真实地点（景点/场馆/历史街区/公园/餐厅/市场等），不要把酒店、商铺门店当作停留点（住宿由系统另行安排）。
 路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。全天大点规则：时长约 8 小时以上的大型景点（如迪士尼、海昌海洋公园这类主题乐园）须独占一整天，当天不要再排其他停留点。
+跨天片区分散规则：不同天安排不同片区——同一条马路/街区（如武康路、田子坊、外滩）及其 1 公里范围内的点位只能出现在其中一天，相邻两天绝不能去同一片区；咖啡店等口碑配套每天最多 1 家，跟着当天主片区选，不要两天都往同一片区跑。
 招牌体验规则：先用世界知识判断用户需求的核心期待——每个城市都有公认必去的招牌景点（如上海的迪士尼度假区、北京环球影城、广州长隆），亲子/带娃类需求通常正期待这类招牌。若需求主题与某招牌景点高度匹配，必须把它作为主选排进某一天（独占一天，勿放 alternates）；只有当你有明确理由认为用户不会感兴趣（如需求明确排斥主题乐园）时才可不放。住宿锚点规则：用户指定住宿位置（如「住迪士尼附近」）时，行程必须包含该位置对应的标志性景点（住迪士尼附近则必含迪士尼），且该景点独占一天、优先安排在第一天，其余天数再安排其他区域。
 备选规则：每天可附 0-2 个 alternates——你认为时间充裕时值得加上的点、或主选可能闭馆/排队过久时的同区域替补；备选不必与主选相邻，系统会按约束自动取舍。
 参考清单——以下{city}地点带完整数据（坐标/开放时间/适玩时长），排入即可直接落地；若与你更想推荐的地点重合，以你的专业判断为准：
@@ -45,6 +46,7 @@ MATCH_PROMPT = """## 行程中的地点
 MAX_REVISE_ROUNDS = 2     # 最多修正轮数（每轮一次 LLM 调用）
 GROUNDING_RATE_MIN = 0.85 # 落地率低于此阈值必触发修正（有无 gaps 均触发）
 DROP_FEEDBACK_MIN = 2     # compose 剔除点数达到该值才触发剔除原因反馈（避免小剔大动）
+AREA_OVERLAP_KM = 1.2     # 相邻两天点位距离小于该值视为片区重复（「武康路连去两天」类问题）
 
 REVISE_SYSTEM = """你是旅行行程修正助手。系统已尝试把一份行程提案落地到 POI 库，部分地点无法落地、
 或被时间窗/里程等约束剔除。请在保留原行程结构与天数划分的前提下，输出一份修正版提案。"""
@@ -59,6 +61,7 @@ REVISE_PROMPT = """原需求：{query}
 规则：
 - 「无法落地」：该地点在 POI 库中不存在，须替换为同类/同区域的真实地点（优先参考下方清单）或删除，不要保留原名。
 - 「被约束剔除」：附有剔除原因（如里程预算、时间窗冲突），替换为与当天其他点更近、更兼容的点，或删除该点。
+- 「片区重复」：该点与相邻一天的某个点同在一片区（附距离），把它换成其他片区的同类点，使各天片区互不重叠；配套（咖啡店等）跟随当天新片区选。
 - 其余地点、主题、顺序尽量原样保留；不要增加新的无法落地的地点。
 
 参考清单——以下{city}地点带完整数据（坐标/开放时间/适玩时长），排入即可直接落地：
@@ -66,6 +69,34 @@ REVISE_PROMPT = """原需求：{query}
 
 严格输出 JSON：
 {{"days": [{{"day": 1, "theme": "主题", "reason": "整体思路", "stops": [{{"name": "灵隐寺", "note": "为什么去"}}]}}]}}"""
+
+
+def _crossday_area_overlap(day_ids: dict, all_pois: dict) -> list:
+    """跨天片区重叠检测：相邻两天存在 <AREA_OVERLAP_KM 的点位对 → 晚一天的点记为「片区重复」。
+
+    「武康路连去两天」类问题的确定性守门：M1 精确去重只挡同 POI 跨天重复，
+    挡不住「武康路·安福路(Day1) + 武康路咖啡店(Day2)」这类同片区不同点的重复。
+    只对晚一天的点出反馈（换点责任在后者）；供闭环 REVISE 消费。
+    """
+    from src.poi_db import haversine_km
+    feedback, days = [], sorted(day_ids)
+    for i, j in zip(days, days[1:]):
+        for bid in day_ids.get(j, []):
+            b = all_pois.get(bid)
+            if not b:
+                continue
+            for aid in day_ids.get(i, []):
+                a = all_pois.get(aid)
+                if not a:
+                    continue
+                dkm = haversine_km(a["lat"], a["lng"], b["lat"], b["lng"])
+                if dkm < AREA_OVERLAP_KM:
+                    feedback.append({
+                        "name": b["name"], "day": j,
+                        "reason": (f'与 Day{i} 的「{a["name"]}」同在一片区（相距 {dkm:.1f}km），'
+                                   "相邻两天不要重复同一片区，请换成其他片区的同类点")})
+                    break
+    return feedback
 
 
 def _norm(s: str) -> str:
@@ -402,17 +433,24 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     hotel = hotel_mod.resolve_hotel(city, hotel_text)
     r = _compose_m7(city, query, days, day_map, themes, date0, hotel,
                     anchor_poi, grounding, alt_map, time_limit_s, main_bonus, soft_w)
-    # 闭环第二触发点：约束剔除过多 → 带剔除原因反馈修正 → 重落地重求解（一轮）
+    # 闭环第二触发点：约束剔除过多 / 相邻两天片区重复 → 带原因反馈修正 → 重落地重求解（一轮）
     # 注意口径：每日 dropped 只有修复链剔除；主选被 TOPTW 剔除在 r["mains_dropped"]——
     # 求解器剔掉 LLM 主选 = 世界知识被时间预算否决（如宋城/迪士尼），是最需要闭环的信号
-    drops = [{"name": dr.get("name", ""), "reason": dr.get("reason", ""), "day": d.get("day")}
-             for d in r["itinerary"]["days"] for dr in d.get("dropped", [])]
-    seen_d = {x["name"] for x in drops}
-    drops += [{"name": x.get("name", ""), "reason": x.get("reason", ""), "day": x.get("day")}
-              for x in r.get("mains_dropped", []) if x.get("name") not in seen_d]
-    if rounds_used < MAX_REVISE_ROUNDS and len(drops) >= DROP_FEEDBACK_MIN:
+    def _collect_issues(res) -> tuple[list, list]:
+        drops = [{"name": dr.get("name", ""), "reason": dr.get("reason", ""), "day": d.get("day")}
+                 for d in res["itinerary"]["days"] for dr in d.get("dropped", [])]
+        seen_d = {x["name"] for x in drops}
+        drops += [{"name": x.get("name", ""), "reason": x.get("reason", ""), "day": x.get("day")}
+                  for x in res.get("mains_dropped", []) if x.get("name") not in seen_d]
+        day_ids = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+                   for d in res["itinerary"]["days"]}
+        return drops, _crossday_area_overlap(day_ids, all_pois)
+
+    drops, overlap = _collect_issues(r)
+    # 触发口径：剔除 ≥2 条，或存在任何跨天片区重复（单条即明显不合理，如武康路连去两天）
+    if rounds_used < MAX_REVISE_ROUNDS and (len(drops) >= DROP_FEEDBACK_MIN or overlap):
         revised = _revise_proposal(city, query, days, proposal,
-                                   grounding["gaps"], drops, hint)
+                                   grounding["gaps"], drops + overlap, hint)
         if revised is not None:
             dm2, th2, g2 = _ground(revised, city, all_pois, days)
             if dm2 and g2["grounding_rate"] >= grounding["grounding_rate"]:
@@ -423,16 +461,15 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                     r2 = _compose_m7(city, query, days, dm2, th2, date0, hotel,
                                      anchor_poi, g2, alt_map2,
                                      time_limit_s, main_bonus, soft_w)
-                    d2 = [{"name": dr.get("name", "")}
-                          for d in r2["itinerary"]["days"] for dr in d.get("dropped", [])]
-                    seen_d2 = {x["name"] for x in d2}
-                    d2 += [{"name": x.get("name", "")}
-                           for x in r2.get("mains_dropped", [])
-                           if x.get("name") not in seen_d2]
-                    if len(d2) < len(drops):  # 修正确实减少剔除才采纳，防震荡
+                    drops2, overlap2 = _collect_issues(r2)
+                    # 修正确实减少问题总数（剔除+片区重复）才采纳，防震荡
+                    if len(drops2) + len(overlap2) < len(drops) + len(overlap):
                         r = r2
                         proposal, grounding, alt_map = revised, g2, alt_map2
                         grounding["revise_rounds"] = rounds_used + 1
+    final_day_ids = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+                     for d in r["itinerary"]["days"]}
+    r["area_overlap"] = _crossday_area_overlap(final_day_ids, all_pois)
     r["proposal"] = proposal
     r["grounding"] = grounding
     r["latency_s"] = round(time.time() - t0, 1)  # A+B+C 全链路耗时
