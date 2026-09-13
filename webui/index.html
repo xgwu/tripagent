@@ -278,15 +278,34 @@ function poiThumb(p){
   return `<div class="poiimg"${click}><img loading="lazy" alt="" src="${src}" data-tile="${p.id?tile:""}" onload="this.nextElementSibling.style.display='none'" onerror="if(this.dataset.tile){this.onload=null;this.nextElementSibling.style.display='';this.src=this.dataset.tile;this.dataset.tile=''}else{this.parentNode.remove()}"><span class="pin">📍</span></div>`;
 }
 
+// 通行段真实终点：通用餐块（meal）是「到达目的地后、进点前」就地插入的，
+// hop 下一行若是 meal，真实终点在其后——不标注会误读成「步行/车程去午餐」
+function hopDest(tl,idx){
+  let j=idx+1;
+  while(j<tl.length&&tl[j].type==="hop")j++;
+  if(j<tl.length&&tl[j].type==="meal"){
+    let k=j+1;
+    while(k<tl.length&&tl[k].type==="hop")k++;
+    return (tl[k]||{}).name||"";
+  }
+  return "";
+}
+function hopLine(s,tl,idx){
+  const dest=hopDest(tl,idx);
+  return `↳ ${s.name}${dest?` → ${dest}`:""}`;
+}
+
 function dayCard(d,meta,wdrops){
   const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
-  const rows=(d.timeline||[]).map(s=>{
-    if(s.type==="hop")return `<div class="hopline">↳ ${s.name}</div>`;
+  const tl=d.timeline||[];
+  const rows=tl.map((s,idx)=>{
+    if(s.type==="hop")return `<div class="hopline">${hopLine(s,tl,idx)}</div>`;
     const isPoi=s.type==="poi";
     const p=isPoi&&meta&&meta.pois[s.id];
     const img=isPoi?poiThumb(p):"";
     const swap=isPoi?`<button class="swapbtn" title="不喜欢？换成附近的同类地点" onclick="swapPoi(${d.day},'${s.id}')">🔁 换一个</button>`:"";
-    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${s.type==="poi"?"":(ICON[s.type]||"")}</span><span style="flex:1">${s.name}</span>${img}${swap}</div>`;
+    const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="opacity:.55;font-size:12px">（途中）</span>`:"";
+    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${s.type==="poi"?"":(ICON[s.type]||"")}</span><span style="flex:1">${s.name}${onway}</span>${img}${swap}</div>`;
   }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
@@ -450,11 +469,13 @@ function buildDoc(meta,r){
   const date=r.date0?`｜${r.date0} 出发`:"";
   const cards=it.days.map(d=>{
     const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
-    const rows=(d.timeline||[]).map(s=>{
-      if(s.type==="hop")return `<tr><td class="t"></td><td class="i"></td><td style="color:#9ca3af;font-size:12px">↳ ${s.name}</td><td class="pic"></td></tr>`;
+    const tl=d.timeline||[];
+    const rows=tl.map((s,idx)=>{
+      if(s.type==="hop")return `<tr><td class="t"></td><td class="i"></td><td style="color:#9ca3af;font-size:12px">${hopLine(s,tl,idx)}</td><td class="pic"></td></tr>`;
       const p=s.type==="poi"&&meta&&meta.pois[s.id];
       const img=s.type==="poi"?poiThumb(p):"";
-      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":(ICON[s.type]||"")}</td><td>${s.name}</td><td class="pic">${img}</td></tr>`;
+      const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="color:#9ca3af;font-size:12px">（途中）</span>`:"";
+      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":(ICON[s.type]||"")}</td><td>${s.name}${onway}</td><td class="pic">${img}</td></tr>`;
     }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
     ${d.reason?`<p style="margin:10px 2px;color:#6b7280;font-size:13px;line-height:1.7">${d.reason}</p>`:""}
