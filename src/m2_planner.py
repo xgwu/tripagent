@@ -718,6 +718,9 @@ REGEN_PROMPT = """以下是已通过约束校验的最终行程时间轴。请�
 注意：不要把时间轴里不存在的地点写进主题（例如时间轴没有宋城就不能叫「宋城怀古」）。
 理由除说明为什么选这些点外，还须解释顺序逻辑——依据只能来自下方「排程事实」：
 顺路串线、开门/用餐时间、离住宿远近、早到等待，不要编造事实之外的理由。
+交通/车程细节由界面时间轴展示，文案（reason 和 tips）中禁止出现具体交通时长、
+距离数字（如「车程45分钟」「9.5km」「步行15分钟」），只描述片区转移的顺序逻辑
+（如「上午运河片区、午后转场西湖」）。
 tips 要求：可操作的实用建议（早到避峰/排队策略/片区串玩/返程安排），依据只能是时间轴
 事实、排程事实与常识性行前经验；禁止编造具体价格、电话、预约链接等无法核实的信息，
 不写「建议查询官网」这类废话，每条不超过 30 字。
@@ -753,7 +756,19 @@ def _regen_reasons(city, query, itin, all_pois, only_days=None):
             seq = " → ".join(
                 f'{s["name"]}（{s["start"]}-{s["end"]}）'
                 for s in d["timeline"] if s["type"] != "hop")
-            hops = [s["name"] for s in d["timeline"] if s["type"] == "hop"]
+            # 通行段带起止点：hop 夹在前后两个非 hop 条目之间，孤立的车程名
+            # （如「车程 45 分钟」）不给端点，LLM 会猜错归属（把博物馆→午餐
+            # 说成午餐后→下一景点）
+            tl = d["timeline"]
+            hops = []
+            for i, s in enumerate(tl):
+                if s["type"] != "hop":
+                    continue
+                prev_name = next((x["name"] for x in reversed(tl[:i])
+                                  if x["type"] != "hop"), "出发")
+                next_name = next((x["name"] for x in tl[i + 1:]
+                                  if x["type"] != "hop"), "收尾")
+                hops.append(f"{prev_name}→{next_name}：{s['name']}")
             pois_seq = [s["name"] for s in d["timeline"] if s["type"] == "poi"]
             waits = [f'{s["name"]} 早到等待 {_hm_min(s["start"]) - _hm_min(s["arrive"])} 分钟'
                      for s in d["timeline"]
