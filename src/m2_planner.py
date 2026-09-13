@@ -59,10 +59,12 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands: list,
                     alt_map: dict | None, forced_ids: set | None, date0: str | None,
                     hotel: dict | None, time_limit_s: float, main_bonus: float,
-                    soft_w: float, mode: str | None = None,
+                    soft_w: float, mode: str | dict | None = None,
                     reuse: dict | None = None) -> dict:
     """阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）。M2/M7/跨天重平衡共用。
 
+    mode: 通行口径 —— str 全局生效；{day: mode} 单日主题（“其中一天骑行”仅承载天
+    用主题口径，其余天车驾）；None 全车驾。
     reuse：{day: 上次求解后的有序 id 列表}——重平衡未触及的天直接复用原解，
     不再花 2s/天 重解（跨天重平衡只动少数天，全量重解是纯浪费）。
     """
@@ -114,10 +116,11 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
     # 实测 2 天 4s→2s）。建池/合并保持串行以维护 used_backup 等共享状态。
     def _solve_one(item):
         d, pool = item
+        m = mode.get(d) if isinstance(mode, dict) else mode
         return d, toptw.solve_day(pool, day_map[d], city, all_pois,
                                   time_limit_s=time_limit_s,
                                   main_bonus=main_bonus, soft_w=soft_w,
-                                  hotel=hotel, mode=mode,
+                                  hotel=hotel, mode=m,
                                   forced={i for i in day_map[d]
                                           if i in (forced_ids or set())})
 
@@ -226,9 +229,11 @@ FOOD_DETOUR_MIN = 25  # food 点插入相邻点之间允许的最大绕行（分
 
 
 def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | None,
-                      hotel: dict | None, t_mode: str | None) -> tuple[dict, dict]:
+                      hotel: dict | None, t_mode: str | None,
+                      theme_day: int | None = None) -> tuple[dict, dict]:
     """美食/咖啡配套绕行守门：food 点在序列中造成大绕路 → 换成顺路同类店，无顺路替代则剔除。
 
+    theme_day：单日主题承载天 —— 仅该天用主题通行口径评估绕行，其余天车驾。
     根因场景：世博文化公园 →（午间硬约束）→ 武康路 Arabica →（折返）→ 东方明珠，
     为一家网红咖啡店横穿城区。咖啡是配套不是目标——配套必须贴着当日主线路径。
     每次替换/剔除后全量走 sequencer 校验，保证只改善不变糟。
@@ -246,6 +251,7 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
         ids = list(day_map.get(d) or [])
         if len(ids) < 3:
             continue
+        m_d = t_mode if (theme_day is None or d == theme_day) else None
         wd = poi_db.trip_weekday(date0, d) if date0 else None
         for _round in range(3):  # 最多 3 轮，每轮修一条最差绕行
             seq = [all_pois[i] for i in ids if i in all_pois]
@@ -263,9 +269,9 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
                     if k == 0 or k == len(seq) - 1:
                         continue  # 无酒店锚点时首/末位无完整前后邻点，不评估
                     a, b = seq[k - 1], seq[k + 1]
-                det = (poi_db.travel_hours(a, p, t_mode)
-                       + poi_db.travel_hours(p, b, t_mode)
-                       - poi_db.travel_hours(a, b, t_mode))
+                det = (poi_db.travel_hours(a, p, m_d)
+                       + poi_db.travel_hours(p, b, m_d)
+                       - poi_db.travel_hours(a, b, m_d))
                 if det * 60 > FOOD_DETOUR_MIN and (worst is None or det > worst[0]):
                     worst = (det, k, p, a, b)
             if worst is None:
@@ -279,9 +285,9 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
                     continue
                 if wd and wd in p.get("closed_days", []):
                     continue
-                d2 = (poi_db.travel_hours(a, p, t_mode)
-                      + poi_db.travel_hours(p, b, t_mode)
-                      - poi_db.travel_hours(a, b, t_mode))
+                d2 = (poi_db.travel_hours(a, p, m_d)
+                      + poi_db.travel_hours(p, b, m_d)
+                      - poi_db.travel_hours(a, b, m_d))
                 if d2 * 60 > FOOD_DETOUR_MIN:
                     continue
                 p_coffee = "咖啡" in p["name"] or any("咖啡" in t for t in p.get("tags", []))
@@ -373,9 +379,10 @@ def _fix_gap_reorder(day_map: dict, city: dict, all_pois: dict,
 
 def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
                    query: str, date0: str | None, hotel: dict | None,
-                   t_mode: str | None) -> tuple[dict, dict]:
+                   t_mode: str | None, theme_day: int | None = None) -> tuple[dict, dict]:
     """日内填空：某天收尾时刻距 day_end 空窗 >2h → 从未用召回池补晚间可行点。
 
+    theme_day：单日主题承载天 —— 仅该天按主题速度模型评估候选可达性，其余天车驾。
     逐点试加、全量走 sequencer 校验（硬约束/修复剔除/主题里程预算），任一不达标
     即拒绝该点并换下一候选——保证填空只会让行程更满，不会更糟。
     返回 (更新后的 day_map, {day: [补入的点名]}）。
@@ -390,6 +397,7 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
         ids = list(day_map.get(d) or [])
         if not ids:
             continue
+        m_d = t_mode if (theme_day is None or d == theme_day) else None
         if any(sequencer.is_full_day(all_pois[i]) for i in ids if i in all_pois):
             continue  # 全天大点（迪士尼/海昌类）独占日不补——玩一整天后不加晚间点，
                       # 否则 17:00 出园再赶场，还会触发「迟到午餐」餐块错位
@@ -416,7 +424,7 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
             for p in pool:
                 if p["id"] in used:
                     continue
-                th = poi_db.travel_hours(last, p, t_mode)
+                th = poi_db.travel_hours(last, p, m_d)
                 if finish_h + th + p["dur"] > min(p["close_h"], day_end):
                     continue
                 # 防自造断档：候选开门远晚于预计到达 → 顺排会空跳等待，跳过
@@ -550,12 +558,16 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     cands = retrieval.recall(city, query)
     t_mode = sequencer.travel_mode(query)  # 骑行/徒步主题 → 求解器通行矩阵同步切换口径
+    # 单日主题（“其中一天骑行”）：仅承载天用主题通行口径，其余天保持车驾
+    theme_day = sequencer.scoped_theme_day(day_map, all_pois, query)
+    mode_map = ({d: (t_mode if d == theme_day else None) for d in day_map}
+                if theme_day is not None else t_mode)
     t0 = time.time()
 
     # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
     _report("solving")
     res = _solve_all_days(city, query, day_map, all_pois, cands, alt_map, forced_ids,
-                          date0, hotel, time_limit_s, main_bonus, soft_w, mode=t_mode,
+                          date0, hotel, time_limit_s, main_bonus, soft_w, mode=mode_map,
                           reuse={d: rec["ids"] for d, rec in (reuse_days or {}).items()
                                  if rec.get("ids")} or None)
     final_day_map = res["final_day_map"]
@@ -579,7 +591,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                      if moved else None)
             res2 = _solve_all_days(city, query, reb_map, all_pois, cands, None,
                                    forced_ids, date0, hotel, time_limit_s,
-                                   main_bonus, soft_w, mode=t_mode, reuse=reuse)
+                                   main_bonus, soft_w, mode=mode_map, reuse=reuse)
             if res2["n_mains_kept"] == res2["n_mains"]:
                 final_day_map = res2["final_day_map"]
                 solver_dropped = res2["solver_dropped"]
@@ -624,8 +636,9 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     # 剔除产生的空窗可由阶段3.5 补晚间点补偿
     final_day_map = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
                      for d in itin["days"]}
-    final_day_map, food_fixes = _fix_food_detours(final_day_map, city, all_pois,
-                                                  date0, hotel, t_mode)
+    final_day_map, food_fixes = _fix_food_detours(
+        final_day_map, city, all_pois, date0, hotel, t_mode,
+        theme_day=sequencer.scoped_theme_day(final_day_map, all_pois, query))
     if food_fixes:
         itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
                                          hotel=hotel, query=query)
@@ -648,8 +661,9 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     # 逐点试加并走既有 sequencer 校验（违规/剔除/里程预算任一不达标即拒绝该点）。
     final_day_map = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
                      for d in itin["days"]}
-    final_day_map, day_fills = _fill_evenings(final_day_map, city, all_pois, cands,
-                                              query, date0, hotel, t_mode)
+    final_day_map, day_fills = _fill_evenings(
+        final_day_map, city, all_pois, cands, query, date0, hotel, t_mode,
+        theme_day=sequencer.scoped_theme_day(final_day_map, all_pois, query))
     if day_fills:
         itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
                                          hotel=hotel, query=query)

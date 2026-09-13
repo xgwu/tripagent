@@ -67,6 +67,45 @@ def travel_mode(query: str | None) -> str | None:
 
 _CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
 
+# ---- 单日主题：「其中一天亲近自然骑行」类表述 ----
+# 主题关键词与「一天」同句出现 → 主题只作用于承载天，其余天保持默认车驾口径。
+# 否则整单骑行口径会把非主题日的 1.2~6km 接驳也标成「骑行」（苏州 3 天案例）。
+_DAY_SCOPED_RE = re.compile(
+    r"一[天日][^，。;；！!？?]{0,8}(骑行|骑车|单车|自行车|徒步|暴走|city\s*walk)",
+    re.IGNORECASE)
+
+# 自然锚点特征：tag 命中或名称含自然地理词 —— 单日主题承载天按命中数打分挑选
+_NATURE_TAGS = {"自然", "公园", "湿地", "湖泊", "户外", "郊野", "森林", "骑行", "徒步"}
+_NATURE_NAME_RE = re.compile(r"公园|湿地|湖|山|岛|森林|绿道|郊野")
+
+
+def theme_scoped(query: str | None) -> bool:
+    """主题是否为「单日主题」（如“其中一天骑行”）。无主题时恒为 False。"""
+    if not query or not detect_theme(query):
+        return False
+    return bool(_DAY_SCOPED_RE.search(query))
+
+
+def scoped_theme_day(day_map: dict, all_pois: dict, query: str | None) -> int | None:
+    """单日主题的承载天号：按自然锚点得分选天（并列取更小天号）。
+
+    打分：tag 强信号（自然/公园/户外…）每个计 2 分，名称弱信号（公园/湿地/湖…）
+    计 1 分——城市湖滨/山名景点（金鸡湖、虎丘）只算弱信号，避免误抢骑行日。
+    无主题 / 非单日主题 → None（主题全局生效，维持原口径）；
+    有主题但行程中无任何自然信号 → None（无处承载，不伪造骑行日）。
+    """
+    if not theme_scoped(query):
+        return None
+    best, best_s = None, 0
+    for d in sorted(day_map):
+        pois = [all_pois[i] for i in day_map.get(d, []) if i in all_pois]
+        s = sum(2 * len(set(p.get("tags") or []) & _NATURE_TAGS)
+                + (1 if _NATURE_NAME_RE.search(p.get("name", "")) else 0)
+                for p in pois)
+        if s > best_s:
+            best, best_s = d, s
+    return best
+
 
 def is_cafe(p: dict) -> bool:
     """咖啡馆/茶饮类：food 类目但非正餐——不参与餐窗竞争，不顶替正餐餐块。"""
@@ -424,6 +463,9 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
     cap = theme_km_cap(query)
     theme = detect_theme(query)
     mode = travel_mode(query)
+    # 单日主题（“其中一天骑行”）：主题口径（通行模型 + 里程预算）仅作用于承载天，
+    # 其余天回退默认车驾——非主题日的接驳不该被标成骑行/徒步
+    theme_day = scoped_theme_day(day_map, all_pois, query)
     for d in sorted(day_map):
         ids = day_map[d]
         pois = [all_pois[i] for i in ids if i in all_pois]
@@ -446,7 +488,10 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
                             for p in extra]
                 extra_ids = {p["id"] for p in extra}
                 pois = [p for p in pois if p["id"] not in extra_ids]
-        seq = pois if order_given else order_day(pois, hotel=hotel, city=city, mode=mode)
+        seq = pois if order_given else order_day(pois, hotel=hotel, city=city,
+                                                 mode=mode if theme_day in (None, d) else None)
+        mode_d = mode if theme_day in (None, d) else None
+        cap_d = cap if theme_day in (None, d) else None
         # P2：尊重给定顺序（非正餐点相对顺序不变），但正餐点做最小绕行位重插——
         # 餐窗感知成本函数兜底；咖啡馆不算正餐，留在原相对位置（时段自由）
         if order_given and city is not None:
@@ -454,14 +499,14 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
             if _foods and len(seq) > len(_foods):
                 seq = _insert_foods([p for p in seq
                                      if not (p.get("category") == "food" and not is_cafe(p))],
-                                    _foods, hotel, city, mode)
-        tl = _build_timeline(seq, city, d, wd, hotel, mode=mode)
+                                    _foods, hotel, city, mode_d)
+        tl = _build_timeline(seq, city, d, wd, hotel, mode=mode_d)
         # 硬约束修复先行（重排 → 剔点），收敛到 0 违规；预算收敛在其结果上做，
         # 避免旧序「预算修复后违规修复链从全量重建」把预算成果冲掉
         if tl["violations"]:
             # 一级修复：放弃原顺序，贪婪重排
-            repaired = order_day(pois, hotel=hotel, city=city, mode=mode)
-            tl2 = _build_timeline(repaired, city, d, wd, hotel, mode=mode)
+            repaired = order_day(pois, hotel=hotel, city=city, mode=mode_d)
+            tl2 = _build_timeline(repaired, city, d, wd, hotel, mode=mode_d)
             tl["repairs"] = len(tl["violations"])
             if len(tl2["violations"]) < len(tl["violations"]):
                 tl2["reordered"] = True
@@ -471,16 +516,16 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
                 tl["reordered"] = False
             # 二级修复：重排无效说明总量超载 → 剔除肇事 POI
             if tl["violations"]:
-                tl3 = _repair_by_drop(pois, city, d, weekday=wd, hotel=hotel, mode=mode)
+                tl3 = _repair_by_drop(pois, city, d, weekday=wd, hotel=hotel, mode=mode_d)
                 tl3["repairs"] = tl["repairs"]
                 tl3["reordered"] = True
                 tl = tl3
         # 主题画像：每日里程预算收敛（约束感知剔点，不引入新违规）
-        if cap and tl["travel_km"] > cap:
+        if cap_d and tl["travel_km"] > cap_d:
             kept = [p for p in pois
                     if p["id"] not in {x["id"] for x in tl.get("dropped", [])}]
             if len(kept) > 2:
-                tl = _cap_km_repair(kept, city, d, wd, hotel, cap, theme, mode=mode)
+                tl = _cap_km_repair(kept, city, d, wd, hotel, cap_d, theme, mode=mode_d)
         all_violations.extend(tl["violations"])
         all_dropped.extend(tl.get("dropped", []))
         total_km += tl["travel_km"]

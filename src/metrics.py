@@ -53,13 +53,17 @@ def evaluate(result: dict, city: dict, query: str) -> dict:
                         "repairs": d.get("repairs", 0)})
     avg_km = round(sum(dists) / len(dists), 1) if dists else 0.0
     # 2b) 合理性（M3 口径）：相邻 POI 平均路网通行时间（OSRM L1 缓存，与求解器目标对齐；
-    # 骑行/徒步主题按对应速度模型口径，与时间轴一致）
+    # 骑行/徒步主题按对应速度模型口径，与时间轴一致；单日主题仅承载天用主题口径）
     t_mode = sequencer.travel_mode(query)
+    dm = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+          for d in itin["days"]}
+    theme_day = sequencer.scoped_theme_day(dm, all_pois, query)
     mins = []
     for d in itin["days"]:
         ids = [s["id"] for s in d["timeline"] if s["type"] == "poi"]
+        m = t_mode if (theme_day is None or d["day"] == theme_day) else None
         for a, b in zip(ids, ids[1:]):
-            mins.append(poi_db.travel_hours(all_pois[a], all_pois[b], t_mode) * 60)
+            mins.append(poi_db.travel_hours(all_pois[a], all_pois[b], m) * 60)
     avg_min = round(sum(mins) / len(mins)) if mins else 0
     # 3) 需求覆盖：查询意图标签在选中 POI 中的命中率
     qtags = retrieval.extract_query_tags(query)
