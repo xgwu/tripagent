@@ -16,6 +16,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from src import poi_db, m1_planner, llm_client  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
+from src import gap_log  # POI 库缺口台账：规划缺口持久化（旁路，失败不拖垮主链路）
 
 # ---- 直连 opener：本机代理会拦截外网 API，urllib 需显式绕过 ----
 _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -785,6 +786,10 @@ class Handler(BaseHTTPRequestHandler):
                             merged_meta["n_pois"] += m["n_pois"]
                             merged_meta["n_closed"] += m["n_closed"]
                         stats_latency(r.get("latency_s", 0))
+                        # 缺口台账：跨城合并后的各城缺口一并落账
+                        if gap_log.append_gap_record(None, multi, query, days,
+                                                     "m7_multi", r.get("grounding")):
+                            stats_bump("plan_with_gaps")
                         return self._json({"ok": True, "city_meta": merged_meta, "result": r,
                                            "days_source": "query" if extract_days(query) else "default",
                                            "parsed": {"city": "+".join(multi), "date0": m_date0,
@@ -836,6 +841,10 @@ class Handler(BaseHTTPRequestHandler):
                     if cached is not None:
                         stats_bump("plan_cache_hit")
                         stats_latency(cached.get("latency_s", 0))
+                        # 缺口台账：缓存回放同样代表真实用户需求缺口
+                        if gap_log.append_gap_record(cname, None, query, days, mode,
+                                                     cached.get("grounding")):
+                            stats_bump("plan_with_gaps")
                         return self._json({"ok": True, "city_meta": city_meta(cname), "result": cached,
                                            "days_source": days_src,
                                            "parsed": {"city": cname, "date0": date0,
@@ -873,6 +882,10 @@ class Handler(BaseHTTPRequestHandler):
                             _llm_cache_put(cache_key, r)
                         except OSError:
                             pass
+                # 缺口台账：本次规划未落地的提案点持久化（扩城 SOP 数据源）
+                if gap_log.append_gap_record(cname, None, query, days, mode,
+                                             r.get("grounding")):
+                    stats_bump("plan_with_gaps")
                 return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
                                    "days_source": days_src,
                                    "parsed": {"city": cname, "date0": date0,
