@@ -337,6 +337,8 @@ def _llm_preflight(query: str) -> dict | None:
         '"options": ["选项1", "选项2"]}。\n'
         "抽取规则：相对日期（明天/下周六/月底/国庆等）以今天为基准换算；"
         "「住的地方离西湖近点」这类模糊住宿描述抽出区域名（如 西湖）；"
+        "hotel 仅当需求明确表达住宿意图（出现住/酒店/民宿/宾馆等字样）时抽取，"
+        "行程范围或主题描述（如「都在太湖边」「环湖骑行」）不是住宿，必须 null；"
         "「玩一周」=7天但上限按5算；没有明确信息就填 null，不要猜。\n"
         "澄清判断规则（保守，大多数需求应 need=false 直接生成）：\n"
         "- 行程天数完全未提及（如只说「去杭州玩」）→ 可以问；已写「3天」「周末」等则不问\n"
@@ -791,7 +793,13 @@ class Handler(BaseHTTPRequestHandler):
                         days, days_src = 2, "default"
                 # P4：日期/住宿优先显式参数，缺省时从需求文字提取（正则 miss 再用 LLM 兜底）
                 date0 = q.get("date") or extract_date(query) or (nl or {}).get("date0")
-                hotel_text = q.get("hotel") or extract_hotel(query) or (nl or {}).get("hotel")
+                # 住宿意图防线：NL LLM 抽取会把行程范围/主题描述（「都在太湖边」）误判为
+                # 住宿区域 → 库内地标匹配「太湖」⊂「太湖西山岛」凭空出住宿锚点。
+                # nl.hotel 只在 query 明确含住宿字样时采纳（正则通道 extract_hotel
+                # 本身要求「住」字，天然免疫；显式 hotel 参数不受影响）。
+                hotel_text = q.get("hotel") or extract_hotel(query)
+                if not hotel_text and re.search(r"住|酒店|民宿|宾馆|客栈", query):
+                    hotel_text = (nl or {}).get("hotel")
                 llm_key = self.headers.get("X-LLM-Key", "").strip()  # 访客自带 Key（不落盘）
                 use_llm = q.get("llm", "1") == "1" and bool(llm_key or llm_client.llm_available())
                 mode = q.get("mode", "m7")  # 默认走 M7 经验提案；显式 mode 保留兼容（eval 脚本）
