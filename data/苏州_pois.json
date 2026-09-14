@@ -1182,6 +1182,98 @@
       "family_ok": true,
       "note": "狮山商圈一站式购物中心，地铁3号线狮山站直达，近淮海街与苏博西馆",
       "closed_days": []
+    },
+    {
+      "id": "SZ052",
+      "name": "麻雀咖啡",
+      "category": "nightlife",
+      "tags": [
+        "咖啡",
+        "精品",
+        "文艺",
+        "citywalk"
+      ],
+      "lat": 31.2984,
+      "lng": 120.63,
+      "duration_h": 0.5,
+      "open": "11:00",
+      "close": "21:00",
+      "best_time": "afternoon",
+      "price": 35,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "苏州精品咖啡「三巨头」之一，十全街地标，白墙灰瓦工业风；手冲豆单覆盖冷门产区，离网师园约300米",
+      "closed_days": []
+    },
+    {
+      "id": "SZ053",
+      "name": "Title Coffee",
+      "category": "nightlife",
+      "tags": [
+        "咖啡",
+        "手冲",
+        "精品",
+        "晨间"
+      ],
+      "lat": 31.3002,
+      "lng": 120.6273,
+      "duration_h": 0.5,
+      "open": "08:00",
+      "close": "18:00",
+      "best_time": "morning",
+      "price": 38,
+      "rating": 5,
+      "area": "south",
+      "family_ok": true,
+      "note": "苏州精品咖啡口碑榜首（又称标题咖啡）；08:00 早开，沧浪亭片区晨间咖啡窗口，手冲见长",
+      "closed_days": []
+    },
+    {
+      "id": "SZ054",
+      "name": "啡舍咖啡馆",
+      "category": "nightlife",
+      "tags": [
+        "咖啡",
+        "日咖夜酒",
+        "临水",
+        "老牌"
+      ],
+      "lat": 31.2995,
+      "lng": 120.6389,
+      "duration_h": 1.0,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "evening",
+      "price": 40,
+      "rating": 4,
+      "area": "south",
+      "family_ok": true,
+      "note": "2007年开业的苏州首家私人咖啡馆，吴衙桥畔临水老宅，日咖夜酒；营业时间以门店公示为准",
+      "closed_days": []
+    },
+    {
+      "id": "SZ055",
+      "name": "羍市咖啡（万象天地店）",
+      "category": "nightlife",
+      "tags": [
+        "咖啡",
+        "精品烘焙",
+        "商场",
+        "阊门山塘"
+      ],
+      "lat": 31.3115,
+      "lng": 120.5995,
+      "duration_h": 0.5,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "afternoon",
+      "price": 35,
+      "rating": 4,
+      "area": "northwest",
+      "family_ok": true,
+      "note": "精品咖啡连锁（CAPRA IBEX）万象天地店，贴阊门-山塘-留园动线；营业时间以商场公示为准",
+      "closed_days": []
     }
   ]
 }

@@ -14,3 +14,6 @@ data/shares/
 nohup.out
 data/llm_cache.json
 data/proposal_cache.json
+
+# WorkBuddy 发布应用追踪标记（内部产物）
+.wbapp_*.genie
