@@ -16,6 +16,13 @@ MEAL_LEAD_H = 0.5         # 通用（不限慢节奏）：到达距饭点 ≤30m
                           # 堵「到达差几分钟不插、游完过窗尾不补」的窗口缝隙
                           # （2026-09-14 报障 10：报障 7 只给慢节奏加了 LEAD，
                           # 普通亲子档 11:45 到 2h 游览点 + 20min 车程 → 13:05 过窗尾，午餐消失）
+MEAL_EXIT_GRACE_H = 0.75  # 游完出来/收尾补餐的窗尾宽限（报障 12）：2~4h 游览横跨餐窗
+                          # 时到达太早（LEAD 不触发）、出来已过窗尾几十分钟 → 午餐被
+                          # 「途中解决」吞掉（2026-09-15 上博 10:15-13:15 案例）。刚出
+                          # 景点 ≤45min 内补块「晚午餐」现实合理，与 MAX_MEAL_WAIT_H 对称
+MEAL_END_LEAD_H = 1.5     # 收尾场景（末点游完）晚餐提前量：17:15 收工离 18:00 开餐 45min
+                          # < MEAL_LEAD_H 线 → 晚餐块整个不出现。与迟到午餐守门同 1.5h 口径
+                          # （16:30 前收工仍留白，不破坏傍晚留白设计）
 
 # 慢节奏（老人/轮椅/不累/慢节奏/悠闲/宽松）：全链路宽松化口径。
 # 定义在 sequencer（最底层），m2_planner/proposal_planner 从此 re-export，
@@ -153,7 +160,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                     for k in meal_keys}
     used_meals = set()
 
-    def _insert_generic_meals(cur_t):
+    def _insert_generic_meals(cur_t, late_grace_h: float = 0.0, lead_h: float | None = None):
         """普通餐块：到达时刻已跨过饭点（含 ≤30min 提前量）且该餐未被占用 → 插入。
 
         LEAD 通用化（2026-09-14 报障 10）：到达时刻距饭点 ≤30min 也先吃再逛，
@@ -161,9 +168,13 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         12:00-13:00 餐窗）→ 出来+车程 13:05 已过窗尾」，全天无午餐。慢节奏 0.5h
         先行验证过效果，普通档同样受此缝隙影响（报障 7 修复只覆盖了慢节奏）。
         已过餐窗尾（we）→ 视为该餐已在途中/游览中解决，标记占用不再重试。
+
+        late_grace_h（2026-09-15 报障 12）：窗尾宽限——游完景点刚出来 ≤45min 时
+        补「晚午餐/晚餐」现实合理（2~4h 游览横跨餐窗：到达太早 LEAD 不触发、
+        出来刚过窗尾，两不沾）。lead_h：饭点提前量覆盖，收尾场景放宽到 1.5h。
         """
         nonlocal t
-        lead = MEAL_LEAD_H
+        lead = MEAL_LEAD_H if lead_h is None else lead_h
         for key, mstart in meal_keys.items():
             if key not in used_meals and cur_t >= mstart - lead:
                 # 迟到午餐守门：距晚餐窗开始不足 1.5h 不再补午餐（背靠背两餐不合常理），
@@ -172,8 +183,8 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                         and cur_t >= meal_keys["dinner"] - 1.5:
                     used_meals.add("lunch")
                     continue
-                if cur_t > meal_windows[key][1] + 1e-9:
-                    used_meals.add(key)  # 已过窗尾：这餐只能算途中解决了
+                if cur_t > meal_windows[key][1] + late_grace_h + 1e-9:
+                    used_meals.add(key)  # 已过窗尾（含宽限）：这餐只能算途中解决了
                     continue
                 timeline.append({"type": "meal", "name": "午餐" if key == "lunch" else "晚餐",
                                  "start": _fmt(t), "end": _fmt(t + 1.0)})
@@ -274,12 +285,16 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         # 游完就地补餐（报障 10）：游完恰在窗内就先吃饭再走——否则去下一景点的
         # 车程会把时刻推过窗尾（12:45 出来 + 20min 车程 = 13:05 > 13:00 窗尾），
         # 午餐被「途中解决」吞掉。≥4h 长游的覆盖标记在上方已处理，此处不会重复。
-        _insert_generic_meals(t)
+        # 窗尾宽限 45min（报障 12）：2~4h 游览横跨餐窗时到达太早 LEAD 不触发、
+        # 出来刚过窗尾（13:25 上博出来，窗尾 13:00）——两不沾的盲区补「晚午餐」。
+        _insert_generic_meals(t, late_grace_h=MEAL_EXIT_GRACE_H)
         prev = p
     # 收尾补餐：末点游览结束后已到饭点且餐窗未占用 → 补餐块再返程
     # （松鹤楼类餐点被求解器剔除后，之前全天可能一块餐窗都没有——2026-09-14 老人 case）
+    # 窗尾宽限 + 晚餐提前量 1.5h（报障 12）：17:15 收工离 18:00 开餐 45min 也要有
+    # 晚餐安排；16:30 前收工仍留白（不破坏傍晚留白设计，与守门口径对称）。
     if pois:
-        _insert_generic_meals(t)
+        _insert_generic_meals(t, late_grace_h=MEAL_EXIT_GRACE_H, lead_h=MEAL_END_LEAD_H)
     # M6：返程腿 —— day_end 前回到酒店（无酒店不约束）
     if hotel is not None and pois:
         th = poi_db.travel_hours(prev, hotel, mode)
