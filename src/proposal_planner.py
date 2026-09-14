@@ -405,6 +405,14 @@ def _far_big_point_regroup(day_map: dict, all_pois: dict, family: bool = False) 
                                                      big["lat"], big["lng"]) > FAR_BIG_SPREAD_KM]
             if not misplaced:
                 continue
+            if not strict:
+                others = [all_pois[i] for i in misplaced if i in all_pois]
+                # 主题日豁免：被判「错配」的点全是远郊 → 这是环湖/海岛类远郊主题日，
+                # 点间 10-30km 是环线正常尺度，不拆（拆去邻天市区动线会被 TOPTW
+                # 以「时间预算内无法纳入」团灭，见环太湖骑行 case）。仅 family
+                # 独占日语义（strict）优先，不走此豁免。
+                if others and all(p.get("dist_center_km", 0) > FAR_BIG_KM for p in others):
+                    continue
             for i in misplaced:
                 best_d, best_km = None, None
                 for d2 in day_map:

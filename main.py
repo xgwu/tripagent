@@ -26,6 +26,11 @@ def main():
                     help="住宿锚点：酒店名（AMAP_KEY 自动定位）或「名称@lng,lat」")
     args = ap.parse_args()
 
+    # 天数解析与 webui 对齐：query 明确写了天数（「一天」「2天」「3日」）→ 优先于 --days
+    # （--days 大多是默认值 2 未被改动；query 文本是最强意图信号）
+    from src.query_days import extract_days
+    args.days = extract_days(args.query) or args.days
+
     city = poi_db.load_city(args.city)
     use_llm = (not args.no_llm) and llm_client.llm_available()
     if not use_llm:

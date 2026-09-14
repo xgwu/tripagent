@@ -178,33 +178,8 @@ def _amap_route(mode: str, o: str, d: str, key: str) -> dict | None:
             "duration_s": int(float(path.get("duration") or 0)),
             "points": points}
 
-_CN_NUM = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5}
-
-
-def extract_days(query: str):
-    """从自然语言需求提取行程天数（「3天」「玩 4 天」「两日」…），提不到返回 None。
-
-    只认 1-5（前端历史上限），「带5岁孩子」这类不会误匹配（数字后须跟 天/日）。
-    先剥离日期表达式，避免「10月1日」的「1日」被误读成 1 天。
-    """
-    q = (query or "")
-    # 日期区间「10月1日到3日」→ 天数 = 3-1+1（同月内；跨月/超上限不处理，走默认天数）
-    mr = re.search(r"(\d{1,2})月(\d{1,2})[日号]\s*[到至]\s*(\d{1,2})[日号]", q)
-    if mr:
-        b, c = int(mr.group(2)), int(mr.group(3))
-        if b <= c and 1 <= c - b + 1 <= 5:
-            return c - b + 1
-    q = re.sub(r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}[日号]?", "", q)  # 2026-10-01 / 2026年10月1日
-    q = re.sub(r"\d{1,2}月\d{1,2}[日号]", "", q)                   # 10月1日 / 9月30号
-    # 日期残片清理（不伤「3日亲子游」这类天数表达）：
-    # 两位数「11日」「30号」必是日期（行程天数上限 5）；「到3日」这类连接词后残片同理
-    q = re.sub(r"\d{2}[日号]", "", q)
-    q = re.sub(r"(?<=[到至,—-])\d{1,2}[日号]", "", q)
-    m = re.search(r"([1-5一二两三四五])\s*[天日]", q)
-    if not m:
-        return None
-    c = m.group(1)
-    return int(c) if c.isdigit() else _CN_NUM[c]
+# 天数提取公共化：实现移至 src/query_days.py（CLI main.py 共用同一实现）
+from src.query_days import extract_days  # noqa: E402
 
 
 # P2-2 多城联游：查询中出现 ≥2 个城市（或「苏杭」类别名）→ 跨城规划
