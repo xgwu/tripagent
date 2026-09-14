@@ -454,6 +454,8 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
     # 慢节奏（老人/轮椅/不累）：主选中的夜间型点（best_time=evening）确定性移除——
     # 行程白天为主；且防止 evening 软时间窗把稀疏时间轴拉出数小时空档
     # （圆融天幕街 case：前一站 12:46 结束，等 18:00 开场，空档 5.2h）。
+    # 夜生活类目（nightlife，李公堤/月光码头类）同样夜间属性，一并移除——
+    # 它们 best_time 未必标 evening，仅按字段过滤会漏网（2026-09-14 老人 case）。
     # 用户明确表达夜景/夜市/夜游兴趣时不过滤。
     if (m2_planner.SLOW_PACE_RE.search(query or "")
             and not re.search(r"夜景|夜市|夜游|夜生活|灯光秀|夜花园", query or "")):
@@ -462,7 +464,8 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
             kept = []
             for pid in day_map.get(d, []):
                 p = all_pois.get(pid)
-                if p and p.get("best_time") == "evening":
+                if p and (p.get("best_time") == "evening"
+                          or p.get("category") == "nightlife"):
                     removed_evening.append({
                         "name": p["name"], "day": d,
                         "reason": "慢节奏行程：夜间型点已移除（白天为主、留足休息）"})
@@ -534,6 +537,11 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                 continue  # family 5h+ 远郊点（野生动物世界类）同理：开放窗口仅 ~7h，不补点
             while len(day_map.get(d, [])) < MIN_STOPS:
                 rest = [p for i, p in all_pois.items() if i not in used]
+                if m2_planner.SLOW_PACE_RE.search(query or ""):
+                    # 慢节奏补强池过滤夜间型点：补进 evening/nightlife 点会在稀疏
+                    # 时间轴上等待开场拉出数小时空档（2026-09-14 报障 6 圆融天幕街）
+                    rest = [p for p in rest if p.get("best_time") != "evening"
+                            and p.get("category") != "nightlife"]
                 if not rest:
                     break
                 # 当天已有点的 10km 邻域优先——防止补点再造跨片区混排
@@ -561,6 +569,23 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                     topped.append(d)
         if topped:
             grounding["days_stops_topped_up"] = topped
+    # 慢节奏截断（最终 gate）：LLM 对「每天 2-3 点、不超 4」遵循不足——
+    # 「带老人」单词触发下提案仍排 5 点/天。确定性截断至 4（保留提案序靠前的点），
+    # 放在补强/同天调度之后，兜住前面所有环节的超员（2026-09-14 报障案例）
+    if m2_planner.SLOW_PACE_RE.search(query or ""):
+        truncated = []
+        for d in sorted(day_map):
+            ids = day_map.get(d, [])
+            if len(ids) > 4:
+                for pid in ids[4:]:
+                    p = all_pois.get(pid)
+                    if p:
+                        truncated.append({
+                            "name": p["name"], "day": d,
+                            "reason": "慢节奏行程：单天超过 4 个点已截断（保留前 4 个）"})
+                day_map[d] = ids[:4]
+        if truncated:
+            grounding["slow_truncated"] = truncated
     return day_map, themes, grounding
 
 
@@ -639,7 +664,21 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
 
     # ---- B 落地 + 闭环反馈：未落地 gaps → LLM 修正 → 再落地（共享轮次预算）----
     _report("grounding")
+    # 慢节奏提案层截断：LLM 对「每天 2-3 点、不超 4」遵循不足（「带老人」单词触发下
+    # 仍排 5 点）。在落地匹配前把每天 stops 截到 4（保 rank 靠前的点），使提案展示、
+    # day_map、TOPTW 输入三者一致——fixups 的 slow_truncated 只兜后续环节的超员
+    _prop_truncated = []
+    if m2_planner.SLOW_PACE_RE.search(query or ""):
+        for d in proposal.get("days", []):
+            stops = d.get("stops") or []
+            if len(stops) > 4:
+                _prop_truncated.append({
+                    "day": d.get("day"),
+                    "dropped": [s.get("name", "") for s in stops[4:]]})
+                d["stops"] = stops[:4]
     day_map, themes, grounding = _ground(proposal, city, all_pois, days)
+    if _prop_truncated:
+        grounding["slow_proposal_truncated"] = _prop_truncated
     rounds_used = 0
     while (rounds_used < MAX_REVISE_ROUNDS
            and (grounding["gaps"] or grounding["grounding_rate"] < GROUNDING_RATE_MIN)):

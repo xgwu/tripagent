@@ -18,8 +18,10 @@ _LAKE_PREF_RE = re.compile(r"湖")
 LAKE_BONUS = 150
 
 # ---- 慢节奏档（「带老人/轮椅/行动不便/不要太累」类 query）----
-# 宽松节奏是需求不是缺陷：提案每天 2-3 点、白天为主、傍晚不硬填点、单天补强降档
-SLOW_PACE_RE = re.compile(r"老人|轮椅|行动不便|腿脚不便|慢节奏|悠闲|不累|勿太累|宽松")
+# 宽松节奏是需求不是缺陷：提案每天 2-3 点、白天为主、傍晚不硬填点、单天补强降档。
+# 正则定义在 sequencer（2026-09-14 迁移）：慢节奏餐窗提前量在排时层生效，
+# planner 层 re-export 保持既有引用（proposal_planner 的 m2_planner.SLOW_PACE_RE）不破
+from .sequencer import SLOW_PACE_RE  # noqa: E402
 
 
 def _build_day_pool(mains: list, cands: list, used_all: set, used_backup: set,
@@ -84,6 +86,10 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
     used_backup = set()
     n_mains = n_mains_kept = 0
     n_llm_alts = 0
+    # 慢节奏（老人/轮椅/不累）：禁用邻域备选池——TOPTW 只能在提案点+LLM 备选内
+    # 求解。否则池内自由换点会把 2-3 点的慢节奏天换/捞成 5-7 站大杂烩
+    # （2026-09-14 case：提案 5 点落地 7 站排到 20:47）
+    _slow = bool(SLOW_PACE_RE.search(query or ""))
     tasks = []  # (day, pool)：建池串行（维护 used_backup），求解并行
     for d in sorted(day_map):
         if reuse and reuse.get(d):
@@ -107,19 +113,24 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
             mains = [p for p in mains if wd not in p.get("closed_days", [])]
         if not mains:
             continue
-        pool = [p for p in _build_day_pool(mains, cands, used_all, used_backup)
+        pool = [p for p in _build_day_pool(mains, [] if _slow else cands,
+                                           used_all, used_backup)
                 if not wd or wd not in p.get("closed_days", [])]
         used_backup.update(p["id"] for p in pool
                            if p["id"] not in {m["id"] for m in mains})
-        # LLM 备选并入池（低利润权重：不在 rank → 仅评分收益），供求解器换点
-        pool_ids = {p["id"] for p in pool} | {m["id"] for m in mains}
-        for i in (alt_map or {}).get(d, []):
-            p = all_pois.get(i)
-            if (p and i not in pool_ids and i not in used_all
-                    and (not wd or wd not in p.get("closed_days", []))):
-                pool.append(p)
-                used_backup.add(i)
-                n_llm_alts += 1
+        # LLM 备选并入池（低利润权重：不在 rank → 仅评分收益），供求解器换点。
+        # 慢节奏不并入：邻域池已禁，alts 再进池等于没禁——TOPTW 会从 4-8 个备选里
+        # 把 2-3 点的慢节奏天自由换/捞成 5 站（2026-09-14 实证：沧浪亭/艺圃/留园
+        # 全部从 alts 捞入）。剔点后的补位由 _alt_substitute 兜底（带 cap 与夜间过滤）
+        if not _slow:
+            pool_ids = {p["id"] for p in pool} | {m["id"] for m in mains}
+            for i in (alt_map or {}).get(d, []):
+                p = all_pois.get(i)
+                if (p and i not in pool_ids and i not in used_all
+                        and (not wd or wd not in p.get("closed_days", []))):
+                    pool.append(p)
+                    used_backup.add(i)
+                    n_llm_alts += 1
         # 贯穿性湖偏好（「湖边骑行/最好临湖」类 query）：池内湖线点利润加成——
         # 时间预算不足时求解器优先剔非湖点，防止湖主题在剔点环节被市区点稀释
         # （2026-09-14 案例：提案两日均贴湖，落地后湖点被 TOPTW/补位换成
@@ -497,6 +508,11 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
                  if date0 else {})
     for dr in dropped:
         d, pid = dr.get("day"), dr["id"]
+        # 慢节奏补位 cap：单天已满 4 点不再补位——老人行程宁缺勿堆
+        # （提案 5 点 + TOPTW 剔 1 补 1 会把天数维持在高站位，节奏失控）
+        if slow and len(day_map2.get(d, [])) >= 4:
+            rest.append(dr)
+            continue
         cand = [i for i in (alt_map or {}).get(d, [])
                 if i not in used and i in all_pois
                 and (not wd_by_day.get(d)
