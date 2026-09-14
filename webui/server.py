@@ -627,8 +627,10 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
                                "llm": llm_client.llm_available(),
-                               "amap_key": CFG.get("amap_js_key") or CFG.get("amap_key", ""),
-                               "staticmap_key": CFG.get("amap_key", "")})  # P2-3 静态图缩略
+                               "amap_key": CFG.get("amap_js_key") or ""})
+            # 安全：前端只拿 JSAPI key（本就设计为公开）；Web 服务 key（amap_key）
+            # 不出服务端——原 staticmap_key 字段为死代码已移除，js_key 缺失时
+            # 也不再 fallback 到 Web 服务 key。
         if u.path == "/api/route":  # P1-1：实际路网路径（骑行/步行），带磁盘缓存
             mode = q.get("mode", "walking")
             o, d = _norm_ll(q.get("o") or ""), _norm_ll(q.get("d") or "")

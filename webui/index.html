@@ -124,7 +124,6 @@ const SAMPLES=["上海2天经典深度游，喜欢历史文化、寺庙和博物
 async function boot(){
   const r=await (await fetch("/api/cities")).json();
   CITY.cities=r.cities; CITY.llm=r.llm; CITY.amap_key=r.amap_key||"";
-  CITY.staticmap_key=r.staticmap_key||""; // P2-3 静态图缩略
   chip();
   llmBadge();
   // P1-2：?share=<id> → 直接渲染已保存的行程快照
