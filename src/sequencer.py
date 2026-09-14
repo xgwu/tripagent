@@ -17,7 +17,10 @@ SLOW_MEAL_LEAD_H = 0.5    # 慢节奏：到达时刻距饭点 ≤30min 即先用
 # 慢节奏（老人/轮椅/不累/慢节奏/悠闲/宽松）：全链路宽松化口径。
 # 定义在 sequencer（最底层），m2_planner/proposal_planner 从此 re-export，
 # 避免 planner → sequencer 单向依赖被打破成环。
-SLOW_PACE_RE = re.compile(r"老人|轮椅|行动不便|腿脚不便|慢节奏|悠闲|不累|勿太累|宽松")
+# 「太累」覆盖 不要太累/别太累/勿太累/太累了 等高频变体（2026-09-14 报障 9：
+# 旧正则只有「不累/勿太累」，「不要太累」不含「不累」子串 → 全链路慢节奏旁路，
+# 提案 10+ 点/天 TOPTW 塞满到 20:30）。
+SLOW_PACE_RE = re.compile(r"老人|轮椅|行动不便|腿脚不便|慢节奏|悠闲|不累|太累|宽松")
 
 
 def is_full_day(p: dict) -> bool:
