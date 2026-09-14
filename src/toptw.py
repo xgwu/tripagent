@@ -36,7 +36,7 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
               time_limit_s: float = TIME_LIMIT_S,
               main_bonus: float = MAIN_BONUS, soft_w: float = SOFT_W,
               hotel: dict | None = None, forced: set | None = None,
-              mode: str | None = None):
+              mode: str | None = None, lock_mains: bool = False):
     """单日 TOPTW。
 
     candidates: 备选池（parsed POI，含主选与备选）
@@ -45,6 +45,9 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
     forced:     必选点集合（如住宿锚点地标）——利润放大至不可舍弃，时间可行性仍由求解器硬约束保证
     mode:       出行方式（None=车驾 | cycling/hiking）—— 通行矩阵按该方式的速度模型计算，
                 骑行主题下求解器的时间预算与选点半径与骑行者真实能力对齐
+    lock_mains: 忠实执行模式（toptw_faithful_mode）——主选视为必选（同 forced 口径的
+                极大利润），求解器只优化顺序与可行性；主选落选的唯一原因是时间预算
+                真装不下（闭馆主选已在池构造前剔除），落选后由阶段3 alt 换位兜底
     返回: (ordered_ids, dropped_ids, solved_flag)
     """
     forced = forced or set()
@@ -72,6 +75,11 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
         pr = RATING_W * p["rating"] + RANK_BONUS * rank.get(p["id"], 0)
         if p["id"] in rank:
             pr += main_bonus
+            if lock_mains:
+                # 忠实执行模式（toptw_faithful_mode）：主选视为必选（同 forced 口径的
+                # 极大利润），求解器只优化顺序与可行性；主选落选的唯一原因是时间预算
+                # 真装不下（闭馆主选已在池构造前剔除），落选后由阶段3 alt 换位兜底
+                pr += 1_000_000
         if p["id"] in forced:
             pr += 1_000_000  # 必选点（住宿锚点地标）：舍弃代价远超任何组合收益
         # 点级需求加成（如湖偏好的湖线点）：时间预算不足时优先剔非加成点。

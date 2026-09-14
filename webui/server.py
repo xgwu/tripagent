@@ -639,6 +639,11 @@ def load_config() -> dict:
     # 布尔开关：住宿锚点硬保障（注入 + TOPTW 必选点），默认关闭
     if not os.environ.get("ANCHOR_HARD_GUARANTEE") and merged.get("anchor_hard_guarantee"):
         os.environ["ANCHOR_HARD_GUARANTEE"] = "1"
+    # 布尔开关：TOPTW 忠实执行（默认开）——与锚点开关相反的注入方向：代码侧
+    # env 未设置视为 true，仅 config 显式 false 才注入 "0" 一键回退现行为
+    if (merged.get("toptw_faithful_mode") is False
+            and not os.environ.get("TOPTW_FAITHFUL_MODE")):
+        os.environ["TOPTW_FAITHFUL_MODE"] = "0"
     return cfg
 
 

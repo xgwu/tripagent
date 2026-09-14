@@ -24,6 +24,16 @@ LAKE_BONUS = 150
 from .sequencer import SLOW_PACE_RE  # noqa: E402
 
 
+# ---- 忠实执行模式（toptw_faithful_mode，默认开）----
+# 提案层 LLM 已完整理解节奏/强度意图（普通 4-6 点/慢节奏 2-3 点），TOPTW 层不再
+# 自作主张加点/换点：求解池只含主选，主选以极大利润锁定（同 forced 口径），
+# 求解器只优化顺序与可行性。点数收敛为「落地 ≤ 提案」，剔点必有 reason 可解释，
+# 补位只走阶段3 _alt_substitute（净零换位），不做邻域捞点/LLM 兜底加点。
+def faithful_mode_enabled() -> bool:
+    return os.environ.get("TOPTW_FAITHFUL_MODE", "1").strip().lower() not in (
+        "0", "false", "no", "off")
+
+
 def _build_day_pool(mains: list, cands: list, used_all: set, used_backup: set,
                     radius_km: float = 8.0, n_backups: int = 8) -> list:
     """单日候选池：LLM 主选 + 地理邻近备选（半径/数量可调，供调参复用）。"""
@@ -90,6 +100,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
     # 求解。否则池内自由换点会把 2-3 点的慢节奏天换/捞成 5-7 站大杂烩
     # （2026-09-14 case：提案 5 点落地 7 站排到 20:47）
     _slow = bool(SLOW_PACE_RE.search(query or ""))
+    _faithful = faithful_mode_enabled()  # 忠实执行：池=主选，求解器只排序不做选点
     tasks = []  # (day, pool)：建池串行（维护 used_backup），求解并行
     for d in sorted(day_map):
         if reuse and reuse.get(d):
@@ -113,24 +124,30 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
             mains = [p for p in mains if wd not in p.get("closed_days", [])]
         if not mains:
             continue
-        pool = [p for p in _build_day_pool(mains, [] if _slow else cands,
-                                           used_all, used_backup)
-                if not wd or wd not in p.get("closed_days", [])]
-        used_backup.update(p["id"] for p in pool
-                           if p["id"] not in {m["id"] for m in mains})
-        # LLM 备选并入池（低利润权重：不在 rank → 仅评分收益），供求解器换点。
-        # 慢节奏不并入：邻域池已禁，alts 再进池等于没禁——TOPTW 会从 4-8 个备选里
-        # 把 2-3 点的慢节奏天自由换/捞成 5 站（2026-09-14 实证：沧浪亭/艺圃/留园
-        # 全部从 alts 捞入）。剔点后的补位由 _alt_substitute 兜底（带 cap 与夜间过滤）
-        if not _slow:
-            pool_ids = {p["id"] for p in pool} | {m["id"] for m in mains}
-            for i in (alt_map or {}).get(d, []):
-                p = all_pois.get(i)
-                if (p and i not in pool_ids and i not in used_all
-                        and (not wd or wd not in p.get("closed_days", []))):
-                    pool.append(p)
-                    used_backup.add(i)
-                    n_llm_alts += 1
+        if _faithful:
+            # 忠实执行模式：池=主选。邻域备选/LLM alts 均不进池——提案点数即承诺，
+            # 求解器只排序；主选闭馆已在上面剔除，落选只可能是时间装不下，
+            # 补位由阶段3 _alt_substitute 兜底（净零换位）
+            pool = list(mains)
+        else:
+            pool = [p for p in _build_day_pool(mains, [] if _slow else cands,
+                                               used_all, used_backup)
+                    if not wd or wd not in p.get("closed_days", [])]
+            used_backup.update(p["id"] for p in pool
+                               if p["id"] not in {m["id"] for m in mains})
+            # LLM 备选并入池（低利润权重：不在 rank → 仅评分收益），供求解器换点。
+            # 慢节奏不并入：邻域池已禁，alts 再进池等于没禁——TOPTW 会从 4-8 个备选里
+            # 把 2-3 点的慢节奏天自由换/捞成 5 站（2026-09-14 实证：沧浪亭/艺圃/留园
+            # 全部从 alts 捞入）。剔点后的补位由 _alt_substitute 兜底（带 cap 与夜间过滤）
+            if not _slow:
+                pool_ids = {p["id"] for p in pool} | {m["id"] for m in mains}
+                for i in (alt_map or {}).get(d, []):
+                    p = all_pois.get(i)
+                    if (p and i not in pool_ids and i not in used_all
+                            and (not wd or wd not in p.get("closed_days", []))):
+                        pool.append(p)
+                        used_backup.add(i)
+                        n_llm_alts += 1
         # 贯穿性湖偏好（「湖边骑行/最好临湖」类 query）：池内湖线点利润加成——
         # 时间预算不足时求解器优先剔非湖点，防止湖主题在剔点环节被市区点稀释
         # （2026-09-14 案例：提案两日均贴湖，落地后湖点被 TOPTW/补位换成
@@ -148,7 +165,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
         return d, toptw.solve_day(pool, day_map[d], city, all_pois,
                                   time_limit_s=time_limit_s,
                                   main_bonus=main_bonus, soft_w=soft_w,
-                                  hotel=hotel, mode=m,
+                                  hotel=hotel, mode=m, lock_mains=_faithful,
                                   forced={i for i in day_map[d]
                                           if i in (forced_ids or set())})
 
@@ -163,6 +180,11 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                 for d, r in ex.map(_solve_one, tasks):
                     results[d] = r
 
+    # 剔点 reason 忠实模式下区分口径：主选已锁定（极大利润），落选=物理装不下，
+    # 不是利润权衡——闭环信号含义不同，文案必须可区分
+    _drop_reason = ("TOPTW 求解：时间预算内无法纳入（忠实执行，主选锁定仍装不下）"
+                    if _faithful else
+                    "TOPTW 求解：时间预算内无法纳入（利润权衡）")
     for d in sorted(results):
         ordered, dropped, ok = results[d]
         if ok and ordered:
@@ -174,18 +196,17 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
             for x in dropped:
                 if x in day_map[d]:  # 主选被剔（备选池被剔是正常行为，不闭环）
                     mains_dropped.append({"id": x, "name": all_pois[x]["name"],
-                                          "day": d,
-                                          "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"})
+                                          "day": d, "reason": _drop_reason})
                 solver_dropped.append({"id": x, "name": all_pois[x]["name"],
-                                       "day": d,
-                                       "reason": "TOPTW 求解：时间预算内无法纳入（利润权衡）"})
+                                       "day": d, "reason": _drop_reason})
         else:  # 求解失败 → M1 贪婪链路兜底
             final_day_map[d] = day_map[d]
             solved_days[d] = False
     return {"final_day_map": final_day_map, "solver_dropped": solver_dropped,
             "mains_dropped": mains_dropped,
             "solved_days": solved_days, "n_mains": n_mains,
-            "n_mains_kept": n_mains_kept, "n_llm_alts": n_llm_alts}
+            "n_mains_kept": n_mains_kept, "n_llm_alts": n_llm_alts,
+            "faithful_mode": _faithful}
 
 
 # ---- 阶段2.5：跨天重平衡（Google《Optimizing LLM-based trip planning》stage-2 局部搜索的轻量版）----
@@ -521,6 +542,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     mode_map = ({d: (t_mode if d == theme_day else None) for d in day_map}
                 if theme_day is not None else t_mode)
     t0 = time.time()
+    _faithful = faithful_mode_enabled()  # 忠实执行模式（toptw_faithful_mode，默认开）
 
     # ---- 阶段2：逐日 TOPTW（主选 + LLM 备选 + 地理邻近备选池）----
     _report("solving")
@@ -579,7 +601,10 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
         alt_sub_stat = {"hit": len(subs), "miss": len(rest),
                         "rate": round(len(subs) / (len(subs) + len(rest)), 2)
                         if (subs or rest) else None}
-        if rest:  # 无备选可补的剔点 → LLM 兜底（在已补位结果上继续补）
+        # 忠实执行模式跳过 LLM 兜底：兜底会向「补进点数最少的天」加点（净加点），
+        # 违背「落地 ≤ 提案」承诺；剔点留给 REVISE 闭环 + notices 披露，
+        # 补位只走上面已完成的 _alt_substitute 净零换位
+        if rest and not _faithful:  # 无备选可补的剔点 → LLM 兜底（在已补位结果上继续补）
             day_map3, subs3 = m1_planner._feedback_loop(
                 city, cands, query, days, day_map2 or final_day_map, rest, all_pois)
             if day_map3:
@@ -667,6 +692,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "violations_after_solver": n_viol_after_solver,
             "reasons_regen": reasons_regen,
             "alt_sub": alt_sub_stat,
+            "faithful_mode": _faithful,
             "notices": notices,
             "latency_s": round(time.time() - t0, 1),
             "itinerary": itin}

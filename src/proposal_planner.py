@@ -553,7 +553,9 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
         # 慢节奏（老人/轮椅/不累）下限也是 3：2248054 曾降档到 2（「宽松是需求」），
         # 用户实测反馈 2 点/天半天收工偏薄（13:00 收工）。3 点 = 上午 2 点 + 下午 1 点
         # 或匀开，仍是宽松节奏；上限仍 ≤4（提案截断+补位 cap），宁少勿多不回退
-        MIN_STOPS = 3
+        # 忠实执行模式（toptw_faithful_mode）降档为 2：提案点数即承诺，补强只防
+        # 「落地全灭剩 0-1 点」的薄天兜底，补到 3 会违背「落地 ≤ 提案」承诺
+        MIN_STOPS = 2 if m2_planner.faithful_mode_enabled() else 3
         used = {pid for ids in day_map.values() for pid in ids}
         topped = []
         for d in range(1, days + 1):
