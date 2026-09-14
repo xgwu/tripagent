@@ -418,28 +418,6 @@
    "closed_days": []
   },
   {
-   "id": "NJ018",
-   "name": "小潘记鸭血粉丝汤",
-   "category": "food",
-   "tags": [
-    "美食",
-    "小吃",
-    "经典"
-   ],
-   "lat": 32.0203,
-   "lng": 118.7877,
-   "duration_h": 1.0,
-   "open": "10:00",
-   "close": "21:00",
-   "best_time": "lunch",
-   "price": 30,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "夫子庙附近的人气鸭血粉丝",
-   "closed_days": []
-  },
-  {
    "id": "NJ019",
    "name": "大报恩寺遗址公园",
    "category": "culture",
@@ -799,28 +777,6 @@
    "closed_days": []
   },
   {
-   "id": "NJ035",
-   "name": "南京大牌档(夫子庙贡院街店)",
-   "category": "food",
-   "tags": [
-    "民国风",
-    "金陵菜",
-    "老字号"
-   ],
-   "lat": 32.020424,
-   "lng": 118.790366,
-   "duration_h": 1.5,
-   "open": "11:00",
-   "close": "22:00",
-   "best_time": "lunch",
-   "price": 70,
-   "rating": 4,
-   "area": "south",
-   "family_ok": true,
-   "note": "人均约70、紧邻夫子庙景区动线，晚市有评弹表演、建议早到避排队",
-   "closed_days": []
-  },
-  {
    "id": "NJ036",
    "name": "绿柳居(太平南路总店)",
    "category": "food",
@@ -906,6 +862,263 @@
    "area": "central",
    "family_ok": true,
    "note": "人均约20、大行宫地铁站旁，鸭血粉丝汤+汤包组合",
+   "closed_days": []
+  },
+  {
+   "id": "NJ040",
+   "name": "中国科举博物馆（江南贡院）",
+   "category": "culture",
+   "tags": [
+    "博物馆",
+    "科举",
+    "历史",
+    "室内"
+   ],
+   "lat": 32.0208,
+   "lng": 118.7907,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 45,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "地下四层下沉式博物馆，夜间开放，夫子庙核心点位",
+   "closed_days": []
+  },
+  {
+   "id": "NJ041",
+   "name": "朝天宫",
+   "category": "culture",
+   "tags": [
+    "古建筑",
+    "历史",
+    "江南",
+    "拍照"
+   ],
+   "lat": 32.0343,
+   "lng": 118.7753,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "morning",
+   "price": 23,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "江南规模最大古建筑群，红墙出片，周一闭馆",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "NJ042",
+   "name": "江宁织造博物馆",
+   "category": "culture",
+   "tags": [
+    "博物馆",
+    "红楼梦",
+    "云锦",
+    "室内"
+   ],
+   "lat": 32.0421,
+   "lng": 118.7941,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "afternoon",
+   "price": 30,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "曹雪芹故居旧址+云锦展，吴良镛设计，周一闭馆",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "NJ043",
+   "name": "雨花台风景区",
+   "category": "history",
+   "tags": [
+    "红色教育",
+    "免费",
+    "陵园",
+    "雨花石"
+   ],
+   "lat": 31.9979,
+   "lng": 118.7817,
+   "duration_h": 2.0,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "免费开放，烈士陵园+雨花石文化区，地铁直达",
+   "closed_days": []
+  },
+  {
+   "id": "NJ044",
+   "name": "渡江胜利纪念馆",
+   "category": "history",
+   "tags": [
+    "红色教育",
+    "博物馆",
+    "免费",
+    "江景"
+   ],
+   "lat": 32.0736,
+   "lng": 118.7317,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 3,
+   "area": "north",
+   "family_ok": true,
+   "note": "千帆竞渡群雕+红色主题展，周一闭馆，免费",
+   "closed_days": [
+    "周一"
+   ]
+  },
+  {
+   "id": "NJ045",
+   "name": "莫愁湖公园",
+   "category": "nature",
+   "tags": [
+    "湖泊",
+    "园林",
+    "海棠",
+    "免费"
+   ],
+   "lat": 32.0338,
+   "lng": 118.7595,
+   "duration_h": 1.5,
+   "open": "06:00",
+   "close": "21:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 3,
+   "area": "west",
+   "family_ok": true,
+   "note": "金陵第一名胜，海棠花期3-5月，免费开放",
+   "closed_days": []
+  },
+  {
+   "id": "NJ046",
+   "name": "燕子矶公园",
+   "category": "nature",
+   "tags": [
+    "江景",
+    "观景台",
+    "登高"
+   ],
+   "lat": 32.1468,
+   "lng": 118.8172,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "afternoon",
+   "price": 9,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "万里长江第一矶，三面环江观景绝佳，幕燕滨江带",
+   "closed_days": []
+  },
+  {
+   "id": "NJ047",
+   "name": "老山国家森林公园",
+   "category": "nature",
+   "tags": [
+    "森林",
+    "登山",
+    "户外"
+   ],
+   "lat": 32.1124,
+   "lng": 118.6181,
+   "duration_h": 3.0,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 30,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "江北绿肺，南京最大国家森林公园，适合徒步亲子",
+   "closed_days": []
+  },
+  {
+   "id": "NJ048",
+   "name": "南京海底世界",
+   "category": "family",
+   "tags": [
+    "海洋馆",
+    "亲子",
+    "室内",
+    "雨天"
+   ],
+   "lat": 32.0538,
+   "lng": 118.8453,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "afternoon",
+   "price": 180,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "中山陵景区内，人鲨共舞表演+海底隧道，雨天亲子首选",
+   "closed_days": []
+  },
+  {
+   "id": "NJ049",
+   "name": "银杏湖乐园",
+   "category": "family",
+   "tags": [
+    "游乐园",
+    "亲子",
+    "生态",
+    "度假"
+   ],
+   "lat": 31.8039,
+   "lng": 118.7146,
+   "duration_h": 5.0,
+   "open": "09:30",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 230,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "江宁大型生态乐园，游乐+动物园，适合亲子一日游",
+   "closed_days": []
+  },
+  {
+   "id": "NJ050",
+   "name": "百家湖1912街区",
+   "category": "nightlife",
+   "tags": [
+    "夜生活",
+    "湖景",
+    "餐饮",
+    "酒吧"
+   ],
+   "lat": 31.9308,
+   "lng": 118.8182,
+   "duration_h": 1.5,
+   "open": "10:00",
+   "close": "23:00",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 3,
+   "area": "south",
+   "family_ok": true,
+   "note": "江宁百家湖畔夜生活街区，灯光夜景+酒吧餐饮",
    "closed_days": []
   }
  ]
