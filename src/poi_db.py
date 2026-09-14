@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """POI 库加载与地理计算。"""
 import datetime
-import json, math, os
+import json, math, os, re
 
 WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
@@ -31,6 +31,17 @@ def load_city(name: str = "杭州") -> dict:
     path = os.path.join(_DATA_DIR, f"{name}_pois.json")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+# ---- 湖线点判定（贯穿性湖偏好需求专用，如「湖边骑行」「最好临湖」）----
+# 名字含湖岸词缀（湖/岛/湾/堤/码头/滨/岸/洲/渚）或 view 类目（观景台/山顶看湖）。
+# 误伤面核过苏州 75 点：命中全部为湖线点（金鸡湖东方之门/独墅湖教堂/西山岛/
+# 李公堤/月光码头/岱心湾/冲山岛…），无市区误报。
+_LAKE_NAME_RE = re.compile(r"湖|岛|湾|堤|码头|滨|岸|洲|渚")
+
+
+def is_lake_poi(p: dict) -> bool:
+    return bool(_LAKE_NAME_RE.search(p.get("name", ""))) or p.get("category") == "view"
 
 
 def haversine_km(lat1, lng1, lat2, lng2) -> float:

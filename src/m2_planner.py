@@ -6,10 +6,16 @@
 - 候选池 = LLM 主选（高利润）+ 地理邻近备选（低利润），求解器可在池内「换点」
 - 修复后由 LLM 重生成文案，对齐最终时间轴
 """
-import os, sys, time
+import os, re, sys, time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import poi_db, retrieval, sequencer, llm_client, m1_planner, toptw
 from src import hotel as hotel_mod
+
+# ---- 贯穿性湖偏好（「湖边骑行/最好临湖」类 query）----
+# 湖线点利润加成：量级取主选加成(600)的 1/4——足以扭转两个主选之间的取舍次序
+# （时间预算不足时先剔非湖点），但不干预主选 vs 备选的 600 级大格局。
+_LAKE_PREF_RE = re.compile(r"湖")
+LAKE_BONUS = 150
 
 
 def _build_day_pool(mains: list, cands: list, used_all: set, used_backup: set,
@@ -110,6 +116,13 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                 pool.append(p)
                 used_backup.add(i)
                 n_llm_alts += 1
+        # 贯穿性湖偏好（「湖边骑行/最好临湖」类 query）：池内湖线点利润加成——
+        # 时间预算不足时求解器优先剔非湖点，防止湖主题在剔点环节被市区点稀释
+        # （2026-09-14 案例：提案两日均贴湖，落地后湖点被 TOPTW/补位换成
+        # 麻雀咖啡/淮海街/平江路，用户报「和湖边没关系」）。dict 拷贝防污染 all_pois。
+        if _LAKE_PREF_RE.search(query or ""):
+            pool = [dict(p, _bonus=LAKE_BONUS) if poi_db.is_lake_poi(p) else p
+                    for p in pool]
         tasks.append((d, pool))
 
     # P0 性能：各日求解相互独立，线程并行（OR-Tools routing 求解释放 GIL，

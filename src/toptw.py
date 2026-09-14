@@ -74,7 +74,11 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
             pr += main_bonus
         if p["id"] in forced:
             pr += 1_000_000  # 必选点（住宿锚点地标）：舍弃代价远超任何组合收益
-        return pr
+        # 点级需求加成（如湖偏好的湖线点）：时间预算不足时优先剔非加成点。
+        # 由调用方在候选池上以 p["_bonus"] 塞入（dict 拷贝，不污染 all_pois）。
+        # 必须 int——RoutingModel.AddDisjunction 的罚分要求 int64。
+        pr += int(p.get("_bonus") or 0)
+        return int(pr)
 
     nodes = list(candidates)
     # M6：酒店锚点作为 depot —— 每日强制从酒店出发并返回；无酒店则沿用主选换位逻辑
