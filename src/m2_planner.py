@@ -17,6 +17,10 @@ from src import hotel as hotel_mod
 _LAKE_PREF_RE = re.compile(r"湖")
 LAKE_BONUS = 150
 
+# ---- 慢节奏档（「带老人/轮椅/行动不便/不要太累」类 query）----
+# 宽松节奏是需求不是缺陷：提案每天 2-3 点、白天为主、傍晚不硬填点、单天补强降档
+SLOW_PACE_RE = re.compile(r"老人|轮椅|行动不便|腿脚不便|慢节奏|悠闲|不累|勿太累|宽松")
+
 
 def _build_day_pool(mains: list, cands: list, used_all: set, used_backup: set,
                     radius_km: float = 8.0, n_backups: int = 8) -> list:
@@ -401,6 +405,10 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
     返回 (更新后的 day_map, {day: [补入的点名]}）。
     """
     from src.poi_db import haversine_km
+    # 慢节奏（老人/轮椅/不累）：傍晚空窗是休息时间不是缺陷，不做晚间填空——
+    # 否则 17:00 收尾后又被填进夜游点，节奏被拉回 21:00（2026-09-14 轮椅老人 case）
+    if SLOW_PACE_RE.search(query or ""):
+        return day_map, {}
     day_end = poi_db.hhmm_to_h(city["day_end"])
     used = {pid for ids in day_map.values() for pid in ids}
     pool = [p for p in cands if p["id"] not in used
@@ -473,11 +481,13 @@ def _fill_evenings(day_map: dict, city: dict, all_pois: dict, cands: list,
 
 
 def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
-                    all_pois: dict, date0: str | None):
+                    all_pois: dict, date0: str | None, slow: bool = False):
     """补点闭环去 LLM 化第一层（P0）：优先用提案 alternates 确定性补位。
 
     alternates 本就是 LLM 为当天推荐的替补——求解器剔点后，从同天未用备选中
     取第一个（当天开馆、未被其他天占用）直接补位，省掉 ~5s 的 LLM 替代推荐调用。
+    slow：慢节奏（老人/轮椅/不累）——夜间型备选（best_time=evening）不补，
+    防止 evening 软时间窗在稀疏时间轴上拉出数小时空档。
     返回 (补位后 day_map 或 None, subs 记录, 仍无备选可补的剔点清单)。
     """
     day_map2 = {k: list(v) for k, v in day_map.items()}
@@ -490,7 +500,8 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
         cand = [i for i in (alt_map or {}).get(d, [])
                 if i not in used and i in all_pois
                 and (not wd_by_day.get(d)
-                     or wd_by_day[d] not in all_pois[i].get("closed_days", []))]
+                     or wd_by_day[d] not in all_pois[i].get("closed_days", []))
+                and not (slow and all_pois[i].get("best_time") == "evening")]
         # 主题保真（P0）：优先选与被剔点标签相同的备选（如动物换动物、博物馆换博物馆），
         # 防止补位点类型漂移导致用户需求主题在行程中消失
         dtags = set(all_pois[pid].get("tags", [])) if pid in all_pois else set()
@@ -628,7 +639,8 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     alt_sub_stat = {"hit": 0, "miss": 0, "rate": None}  # 补位命中率（P2 观测）
     if solver_dropped:
         day_map2, subs, rest = _alt_substitute(final_day_map, solver_dropped,
-                                               alt_map, all_pois, date0)
+                                               alt_map, all_pois, date0,
+                                               slow=bool(SLOW_PACE_RE.search(query or "")))
         # 补位命中率统计（P2 观测）：命中=备选确定性补位，miss=需 LLM 兜底
         alt_sub_stat = {"hit": len(subs), "miss": len(rest),
                         "rate": round(len(subs) / (len(subs) + len(rest)), 2)
