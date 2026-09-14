@@ -414,17 +414,95 @@ def llm_clarify(query: str) -> dict | None:
     return pre.get("clarify") or {"need": False}
 
 
+_hotel_probe_cache: dict = {}   # (city, text) → bool；只缓存 status=1 的确定性结果
+_amap_last_ts = [0.0]           # 高德 QPS 节流：个人 Key 连发会被限流（status=0）
+
+
+def _hotel_name_match(q: str, name: str) -> bool:
+    """名称相似判定：结果名对查询名的 bigram 覆盖率 ≥0.6 视为同一地点。
+
+    防模糊匹配误归属（报障 13 实测）：高德 city=苏州 搜「西湖国宾馆」会返回
+    「昆山西湖宾馆」（cityname=苏州市，行政区划校验挡不住）——bigram 覆盖
+    「西湖/宾馆」2/4=0.5 < 0.6 拒绝；「杭州西湖国宾馆」4/4=1.0 通过。
+    """
+    q2 = re.sub(r"附近|旁边|边上|周边", "", (q or "")).strip()
+    if not q2:
+        return False
+    if q2 in name:
+        return True
+    grams = [q2[i:i + 2] for i in range(len(q2) - 1)] or [q2]
+    hit = sum(1 for g in grams if g in name)
+    return hit / len(grams) >= 0.6
+
+
+def _hotel_city_probe(cname: str, text: str) -> bool:
+    """探测住宿文本归属哪座城市（报障 13 改进 B 的前置）。
+
+    L0：库内地标匹配（「迪士尼附近」类）；L1：高德 city 限定地点搜索，
+    并校验返回 POI 的行政区划 = 目标城市 **且** 名称相似（_hotel_name_match，
+    防「昆山西湖宾馆」类同城模糊匹配误归属）。
+    两级都不命中返回 False——resolve_hotel 自带市中心兜底（恒非 None），
+    不能用它做归属判定。
+    """
+    from src import hotel as _hotel_mod
+    ck = (cname, text)
+    if ck in _hotel_probe_cache:
+        return _hotel_probe_cache[ck]
+    city = poi_db.load_city(cname)
+    if _hotel_mod.match_landmark_poi(city, text):
+        _hotel_probe_cache[ck] = True
+        return True
+    result = False
+    key = os.environ.get("AMAP_KEY", "")
+    if key:
+        gap = time.time() - _amap_last_ts[0]
+        if gap < 0.35:
+            time.sleep(0.35 - gap)
+        try:
+            _amap_last_ts[0] = time.time()
+            url = _hotel_mod.AMAP_PLACE.format(kw=urllib.parse.quote(text),
+                                               city=urllib.parse.quote(cname), key=key)
+            with _NO_PROXY_OPENER.open(url, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            if data.get("status") == "1":
+                for p in (data.get("pois") or [])[:5]:
+                    adm = (p.get("cityname") or p.get("pname") or "")
+                    if (cname in adm) and _hotel_name_match(text, p.get("name") or ""):
+                        result = True
+                        break
+        except Exception:  # noqa：Key 失效/网络问题按未命中处理
+            pass
+    if result:  # 只缓存确定性命中；限流/异常的未命中不缓存（下次重试）
+        _hotel_probe_cache[ck] = True
+    return result
+
+
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
-               use_llm: bool, planner) -> dict:
+               use_llm: bool, planner, hotel_text: str | None = None) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
 
-    planner 为单城规划模块（m7/m1）。酒店锚点是城市专属概念，跨城模式忽略。
+    planner 为单城规划模块（m7/m1）。住宿锚点是城市专属概念（2026-09-15 报障 13
+    改进 B：此前跨城直接忽略 hotel_text）——用 _hotel_city_probe 探测归属城市，
+    命中段传 hotel_text、其余段不传。改进 C：住宿城市天数 +1（从天数最多的其他
+    城扣 1，每城至少保留 1 天），使「住西湖国宾馆附近」的杭州段多分到时间。
     """
-    from datetime import date as _date
     n = min(len(cities), max(days, 1))
     use = cities[:n]
     base, rem = divmod(days, n)
     alloc = [base + (1 if i < rem else 0) for i in range(n)]
+
+    hotel_city = None
+    if hotel_text:
+        for i, cname in enumerate(use):
+            if _hotel_city_probe(cname, hotel_text):
+                hotel_city = i
+                break
+    if hotel_city is not None and n > 1:
+        donors = [i for i in range(n) if i != hotel_city and alloc[i] > 1]
+        if donors:
+            donor = max(donors, key=lambda i: alloc[i])
+            alloc[donor] -= 1
+            alloc[hotel_city] += 1
 
     merged_days, merged_pois, merged_gaps = [], {}, []
     tot = {"violations": 0, "km": 0.0, "dup": 0, "cands": 0, "lat": 0.0,
@@ -437,7 +515,9 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             continue
         city = poi_db.load_city(cname)
         d0 = seg_date0.isoformat() if seg_date0 else None
-        r = planner.plan(city, query, di, use_llm=use_llm, date0=d0)
+        seg_hotel = hotel_text if (hotel_text and hotel_city == i) else None
+        r = planner.plan(city, query, di, use_llm=use_llm, date0=d0,
+                         hotel_text=seg_hotel)
         it = r["itinerary"]
         for d in it["days"]:
             day_no += 1
@@ -755,8 +835,13 @@ class Handler(BaseHTTPRequestHandler):
                     stats_bump("plan_total")
                     try:
                         m_date0 = q.get("date") or extract_date(query) or (nl or {}).get("date0")
+                        # 住宿文本：与单城段同款解析（参数 > 正则 > NL 抽取），传给 plan_multi
+                        m_hotel_text = q.get("hotel") or extract_hotel(query)
+                        if not m_hotel_text and re.search(r"住|酒店|民宿|宾馆|客栈", query):
+                            m_hotel_text = (nl or {}).get("hotel")
                         r = plan_multi(multi, query, days, m_date0,
-                                       use_llm=use_llm_m, planner=planner_m)
+                                       use_llm=use_llm_m, planner=planner_m,
+                                       hotel_text=m_hotel_text)
                         merged_meta = {"name": "+".join(multi), "n_pois": 0, "n_closed": 0,
                                        "pois": {}}
                         for c in multi:
