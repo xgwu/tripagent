@@ -500,8 +500,9 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
 
     alternates 本就是 LLM 为当天推荐的替补——求解器剔点后，从同天未用备选中
     取第一个（当天开馆、未被其他天占用）直接补位，省掉 ~5s 的 LLM 替代推荐调用。
-    slow：慢节奏（老人/轮椅/不累）——夜间型备选（best_time=evening）不补，
-    防止 evening 软时间窗在稀疏时间轴上拉出数小时空档。
+    slow：慢节奏（老人/轮椅/不累）——真夜间备选（nightlife/晚开门，
+    poi_db.is_night_only）不补，防止 evening 软时间窗在稀疏时间轴上拉出
+    数小时空档；best_time=evening 全天开放点（外滩类）不算真夜间点。
     返回 (补位后 day_map 或 None, subs 记录, 仍无备选可补的剔点清单)。
     """
     day_map2 = {k: list(v) for k, v in day_map.items()}
@@ -520,7 +521,7 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
                 if i not in used and i in all_pois
                 and (not wd_by_day.get(d)
                      or wd_by_day[d] not in all_pois[i].get("closed_days", []))
-                and not (slow and all_pois[i].get("best_time") == "evening")]
+                and not (slow and poi_db.is_night_only(all_pois[i]))]
         # 主题保真（P0）：优先选与被剔点标签相同的备选（如动物换动物、博物馆换博物馆），
         # 防止补位点类型漂移导致用户需求主题在行程中消失
         dtags = set(all_pois[pid].get("tags", [])) if pid in all_pois else set()

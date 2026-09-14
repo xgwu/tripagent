@@ -44,6 +44,22 @@ def is_lake_poi(p: dict) -> bool:
     return bool(_LAKE_NAME_RE.search(p.get("name", ""))) or p.get("category") == "view"
 
 
+NIGHT_OPEN_H = 16.5  # 开门晚于该时刻=「只有夜间才可入」的点（与 m2_planner.LATE_OPEN_H 同值同义）
+
+
+def is_night_only(p: dict) -> bool:
+    """真夜间点：只有晚上才能/才适合去的点（酒吧夜市/夜间演出/17 点后才开门的场馆）。
+
+    best_time=evening 但全天开放的点（外滩 0:00-23:59 / 南京路步行街 / 滨江步道类）
+    不算——它们排白天毫无障碍（sequencer 排时只看 open/close，evening 只影响
+    美食选窗与 food 排序权重）。慢节奏档过滤若按 best_time 一刀切会把这类点
+    误杀导致天薄（2026-09-14 报障 11：上海亲子慢节奏 Day2/Day3 被 15:21/14:45 收工）。
+    """
+    if p.get("category") == "nightlife":
+        return True
+    return (p.get("open_h") or 0) >= NIGHT_OPEN_H
+
+
 def haversine_km(lat1, lng1, lat2, lng2) -> float:
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
