@@ -1,6 +1,9 @@
 # 密钥文件（真实 Key，勿提交）；业务配置 config.json 进 git
 secrets.json
 
+# WorkBuddy 本地数据（记忆/日志/临时产物）
+.workbuddy/
+
 # Python
 __pycache__/
 *.pyc
