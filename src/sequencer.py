@@ -12,7 +12,10 @@ DAY_END_SLOT = "21:30"
 MAX_MEAL_WAIT_H = 1.5     # 美食 POI 早到餐窗的最多等待时长，超过则判违规交修复链剔除
 FOOD_PREF_WIN = {"lunch": "lunch", "dinner": "dinner", "evening": "dinner"}  # best_time → 首选餐窗
 FULL_DAY_H = 8.0          # 时长 ≥8h 视为「全天大点」（迪士尼/海昌类）：须独占一天，豁免里程预算剔除
-SLOW_MEAL_LEAD_H = 0.5    # 慢节奏：到达时刻距饭点 ≤30min 即先用餐再游览
+MEAL_LEAD_H = 0.5         # 通用（不限慢节奏）：到达距饭点 ≤30min 先用餐再游览——
+                          # 堵「到达差几分钟不插、游完过窗尾不补」的窗口缝隙
+                          # （2026-09-14 报障 10：报障 7 只给慢节奏加了 LEAD，
+                          # 普通亲子档 11:45 到 2h 游览点 + 20min 车程 → 13:05 过窗尾，午餐消失）
 
 # 慢节奏（老人/轮椅/不累/慢节奏/悠闲/宽松）：全链路宽松化口径。
 # 定义在 sequencer（最底层），m2_planner/proposal_planner 从此 re-export，
@@ -151,16 +154,16 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
     used_meals = set()
 
     def _insert_generic_meals(cur_t):
-        """普通餐块：到达时刻已跨过饭点且该餐未被占用（含美食 POI 占用）→ 插入。
+        """普通餐块：到达时刻已跨过饭点（含 ≤30min 提前量）且该餐未被占用 → 插入。
 
-        慢节奏（slow）：到达时刻距饭点 ≤30min 也先吃再逛——普通口径下 11:45 到达
-        下一个 2h 游览点会「先逛（横跨 12:00-13:00 餐窗）→ 13:45 出来已过窗尾」，
-        全天无餐块（2026-09-14 老人 case：苏博吞掉午餐的第二种形态——不是覆盖
-        标记，而是到达差 15 分钟不插、出来过窗尾不补的窗口缝隙）。
+        LEAD 通用化（2026-09-14 报障 10）：到达时刻距饭点 ≤30min 也先吃再逛，
+        不再区分慢节奏——普通口径下 11:45 到达下一个 2h 游览点会「先逛（横跨
+        12:00-13:00 餐窗）→ 出来+车程 13:05 已过窗尾」，全天无午餐。慢节奏 0.5h
+        先行验证过效果，普通档同样受此缝隙影响（报障 7 修复只覆盖了慢节奏）。
         已过餐窗尾（we）→ 视为该餐已在途中/游览中解决，标记占用不再重试。
         """
         nonlocal t
-        lead = SLOW_MEAL_LEAD_H if slow else 0.0
+        lead = MEAL_LEAD_H
         for key, mstart in meal_keys.items():
             if key not in used_meals and cur_t >= mstart - lead:
                 # 迟到午餐守门：距晚餐窗开始不足 1.5h 不再补午餐（背靠背两餐不合常理），
@@ -268,6 +271,10 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                 if key not in used_meals and t <= ws + 1e-9 and v_end >= we - 1e-9:
                     used_meals.add(key)
         t = v_end
+        # 游完就地补餐（报障 10）：游完恰在窗内就先吃饭再走——否则去下一景点的
+        # 车程会把时刻推过窗尾（12:45 出来 + 20min 车程 = 13:05 > 13:00 窗尾），
+        # 午餐被「途中解决」吞掉。≥4h 长游的覆盖标记在上方已处理，此处不会重复。
+        _insert_generic_meals(t)
         prev = p
     # 收尾补餐：末点游览结束后已到饭点且餐窗未占用 → 补餐块再返程
     # （松鹤楼类餐点被求解器剔除后，之前全天可能一块餐窗都没有——2026-09-14 老人 case）
