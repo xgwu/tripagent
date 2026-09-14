@@ -44,7 +44,7 @@ def is_lake_poi(p: dict) -> bool:
     return bool(_LAKE_NAME_RE.search(p.get("name", ""))) or p.get("category") == "view"
 
 
-NIGHT_OPEN_H = 16.5  # 开门晚于该时刻=「只有夜间才可入」的点（与 m2_planner.LATE_OPEN_H 同值同义）
+NIGHT_OPEN_H = 16.5  # 开门晚于该时刻=「只有夜间才可入」的点（原 m2_planner.LATE_OPEN_H 同值，2026-09-15 判定职责统一收编到 poi_db）
 
 
 def is_night_only(p: dict) -> bool:

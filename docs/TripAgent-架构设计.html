@@ -257,7 +257,7 @@ li{margin:5px 0}
 <h3>4.1 src/ 核心库（≈3,300 行，14 模块）</h3>
 <table>
 <tr><th>模块</th><th>行数</th><th>职责</th><th>关键接口</th></tr>
-<tr><td><code>m2_planner.py</code></td><td>826</td><td>求解编排：逐日 TOPTW（并行/复用）、跨天重平衡、修复链调度、备选补位、需求通知、文案重生成（M2/M7 共用）</td><td><code>plan()</code> <code>compose()</code> <code>_solve_all_days()</code> <code>_crossday_rebalance()</code> <code>_alt_substitute()</code> <code>_demand_notices()</code> <code>_fill_evenings()</code> <code>_fix_gap_reorder()</code> <code>_regen_reasons()</code></td></tr>
+<tr><td><code>m2_planner.py</code></td><td>826</td><td>求解编排：逐日 TOPTW（并行/复用）、跨天重平衡、修复链调度、备选补位、需求通知、文案重生成（M2/M7 共用）</td><td><code>plan()</code> <code>compose()</code> <code>_solve_all_days()</code> <code>_crossday_rebalance()</code> <code>_alt_substitute()</code> <code>_demand_notices()</code> <code>_fix_gap_reorder()</code> <code>_regen_reasons()</code></td></tr>
 <tr><td><code>proposal_planner.py</code></td><td>694</td><td>M7 主链路：世界知识提案（缓存）、四级落地、守门 <code>_far_big_point_regroup</code>、闭环 REVISE、M7 编排</td><td><code>plan()</code> <code>_ground()</code> <code>_post_ground_fixups()</code> <code>_far_big_point_regroup()</code> <code>_revise_proposal()</code> <code>_compose_m7()</code> <code>_pcache_get/put()</code></td></tr>
 <tr><td><code>sequencer.py</code></td><td>490</td><td>时间轴构建与确定性修复：用餐窗、闭馆等待、逐日排序、阶段化修复链（3.4 美食绕行 / 3.45 断档重排 / 3.5 日内填空）</td><td><code>build_itinerary()</code> <code>order_day()</code> <code>is_full_day()</code> <code>is_cafe()</code> <code>detect_theme()</code></td></tr>
 <tr><td><code>toptw.py</code></td><td>187</td><td>OR-Tools CP-SAT 单日 Team Orienteering：利润函数 + 软时间窗封顶 + forced 必选 + at-solution 提前停止</td><td><code>solve_day(candidates, day_ids, …, forced=…)</code></td></tr>
@@ -364,7 +364,7 @@ li{margin:5px 0}
 <tr><td>0-3</td><td>排序（餐窗感知）→ 时间轴构建 → 硬违规修复 → 里程收敛</td><td>亲子里程硬上限已移除（M9）——几何职责移交守门层；骑行 15km/徒步 8km 画像保留</td></tr>
 <tr><td>3.4</td><td><code>_fix_food_detours</code> 美食绕行守门</td><td>detour = t(a,f)+t(f,b)−t(a,b) &gt;25min → 顺路同类店替换或剔除</td></tr>
 <tr><td>3.45</td><td><code>_fix_gap_reorder</code> 断档重排 <span class="badge b-blue">M8.5</span></td><td>早到空跳 &gt;2h 的点（压轴晚开点如知音号 19:00 开导致）移末尾压轴；0 违规 + 断档改善才接受</td></tr>
-<tr><td>3.5</td><td><code>_fill_evenings</code> 日内填空（三重增强）</td><td>finish 空窗 &gt;2h 补晚间可行点；排除全天大点日；补点插晚开点前；候选开门晚于到达 1h 跳过</td></tr>
+<tr><td>3.5</td><td><em>（已移除）</em>日内填空 <code>_fill_evenings</code></td><td>2026-09-15 用户指令移除：傍晚空窗不再自动补点，行程到收尾时刻自然结束</td></tr>
 <tr><td>4</td><td>文案 REGEN（按天并行 + 复用）</td><td>只能基于最终时间轴；闭馆日事实注入防 tips 幻觉；<code>reuse_days</code> 天点位未变则复用既有文案</td></tr>
 </table>
 
@@ -461,7 +461,7 @@ li{margin:5px 0}
 <tr><td>交通模型 mode 化</td><td><code>poi_db.travel_hours(mode)</code></td><td>cycling（&lt;1.2km 步行 / 1.2~6km 骑行 12km/h / &gt;6km 车程）与 hiking（&lt;3km 步行）差异化速度；query→<code>travel_mode()</code> 自动推导，穿透 sequencer/TOPTW/重平衡/metrics；无新缓存</td></tr>
 <tr><td>修复链顺序重构</td><td><code>sequencer.build_itinerary</code></td><td>硬约束修复先行 → 预算收敛在后；修复旧序「预算修复成果被违规修复链全量重建冲掉」</td></tr>
 <tr><td>跨天片区分散守门</td><td><code>proposal_planner._crossday_area_overlap</code></td><td>相邻两天 &lt;1.2km 点位对 → 晚一天记「片区重复」接入闭环 REVISE；采纳条件=剔除+重复总数下降防震荡</td></tr>
-<tr><td>日内填空 stage 3.5</td><td><code>m2_planner._fill_evenings</code></td><td>finish 距 day_end 空窗 &gt;2h → 从未用召回池补晚间可行点，逐点试加走全量校验；单日 ≤4 点；M8.5 三重增强（大点日豁免/晚开点前插入/开门时间过滤）</td></tr>
+<tr><td>日内填空 stage 3.5</td><td><em>（已移除）</em></td><td>2026-09-15 用户指令移除：傍晚空窗不再自动补点；真夜间点判定由 poi_db.is_night_only 承担</td></tr>
 <tr><td>断档重排 stage 3.45</td><td><code>m2_planner._fix_gap_reorder</code> <span class="badge b-blue">M8.5</span></td><td>压轴晚开点（知音号 19:00 开）使早到点空跳 &gt;2h → 移末尾压轴，0 违规 + 断档改善才接受</td></tr>
 <tr><td>美食绕行守门 stage 3.4</td><td><code>m2_planner._fix_food_detours</code></td><td>food 点 detour=t(a,f)+t(f,b)−t(a,b) &gt;25min → 顺路同类店替换（替代池含带咖啡 tag 场馆保意图）或剔除</td></tr>
 <tr><td>咖啡馆非正餐分流</td><td><code>sequencer.is_cafe</code></td><td>咖啡/茶饮不参与餐窗竞争、不占修剪名额、不顶替正餐餐块——午餐时段物理保证有正餐</td></tr>
