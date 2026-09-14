@@ -522,8 +522,10 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
             grounding["far_big_solo"] = solo_suggest
     # 单天补强：缺口剔除导致某天只剩 1-2 个点 → 从未用候选离线补足（P0-3 缺口二次提案）
     if day_map:
-        # 慢节奏（老人/轮椅/不累）：宽松节奏是需求不是缺陷，每天 2 点即达标不补强
-        MIN_STOPS = 2 if m2_planner.SLOW_PACE_RE.search(query or "") else 3
+        # 慢节奏（老人/轮椅/不累）下限也是 3：2248054 曾降档到 2（「宽松是需求」），
+        # 用户实测反馈 2 点/天半天收工偏薄（13:00 收工）。3 点 = 上午 2 点 + 下午 1 点
+        # 或匀开，仍是宽松节奏；上限仍 ≤4（提案截断+补位 cap），宁少勿多不回退
+        MIN_STOPS = 3
         used = {pid for ids in day_map.values() for pid in ids}
         topped = []
         for d in range(1, days + 1):
@@ -538,10 +540,16 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
             while len(day_map.get(d, [])) < MIN_STOPS:
                 rest = [p for i, p in all_pois.items() if i not in used]
                 if m2_planner.SLOW_PACE_RE.search(query or ""):
-                    # 慢节奏补强池过滤夜间型点：补进 evening/nightlife 点会在稀疏
-                    # 时间轴上等待开场拉出数小时空档（2026-09-14 报障 6 圆融天幕街）
-                    rest = [p for p in rest if p.get("best_time") != "evening"
-                            and p.get("category") != "nightlife"]
+                    # 慢节奏补强池过滤：① 夜间型点（evening/nightlife 会在稀疏时间轴
+                    # 上等待开场拉出数小时空档，2026-09-14 报障 6 圆融天幕街）；
+                    # ② 徒步/登山类高体力点（PROPOSE_PROMPT 有「平缓无障碍」规则，
+                    # 但离线补强器不识 query 体力画像，需确定性兜底）；
+                    # ③ 远郊点（往返车程 1h+，对老人不友好，且市区近点足够填薄天）
+                    rest = [p for p in rest
+                            if p.get("best_time") != "evening"
+                            and p.get("category") != "nightlife"
+                            and not ({"徒步", "登山"} & set(p.get("tags") or []))
+                            and float(p.get("dist_center_km") or 0) <= 15.0]
                 if not rest:
                     break
                 # 当天已有点的 10km 邻域优先——防止补点再造跨片区混排

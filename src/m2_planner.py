@@ -210,6 +210,9 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
     if len(days) < 2:
         return day_map, 0
     forced = forced_ids or set()
+    # 慢节奏（老人/轮椅/不累）：供出后天至少保留 3 站——补强凑起来的天被重平衡
+    # 挪薄会退回「半天收工」（2026-09-14 偏薄反馈：Day3 补强 3 点被挪走 1 → 2 站）
+    min_keep = 3 if SLOW_PACE_RE.search(query or "") else 1
 
     def metric(dm):
         itin = sequencer.build_itinerary(dm, city, all_pois, date0=date0, hotel=hotel,
@@ -227,7 +230,7 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
             movable = [pid for pid in donor
                        if pid not in forced and pid in all_pois
                        and not sequencer.is_full_day(all_pois[pid])]
-            if len(donor) < 2 or not movable:
+            if len(donor) < min_keep + 1 or not movable:
                 continue
             for pid in movable:
                 for j in days:
