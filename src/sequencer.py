@@ -266,7 +266,7 @@ def _fmt(h: float) -> str:
 
 def _hop_label(km: float, th: float, mode: str | None = None) -> str:
     """通行段标签（随出行方式切换）：
-    默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / 1.2~6km 骑行 / >6km 车程；
+    默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / 1.2~8km 骑行 / >8km 车程；
     徒步：<3km 步行，否则车程。"""
     if mode == "cycling":
         mode_s = "步行" if km < poi_db.HOP_WALK_KM else \

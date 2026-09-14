@@ -21,7 +21,8 @@ MIN_TRAVEL_H = 0.25
 CYCLE_KMH = 12.0          # 骑行有效速度（含等灯/避让）
 WALK_KMH = 4.5            # 步行有效速度
 HOP_WALK_KM = 1.2         # 通行段 <1.2km 视为步行（各模式共用阈值）
-CYCLE_MAX_KM = 6.0        # 骑行模式下超过 6km 的腿改按车程（共享单车跨区不现实）
+CYCLE_MAX_KM = 8.0        # 骑行模式下超过 8km 的腿改按车程（8km 内约 55min 可骑；
+                          # 6km 会在古城尺度误伤——虎丘→双塔 6.2km 被标车程而文案说骑行）
 WALK_MODE_MAX_KM = 3.0    # 徒步模式下步行上限（超过仍按车驾）
 MIN_SLOW_TRAVEL_H = 5/60  # 步行/骑行的单程下限：不被 15min 车程下限吞掉短腿差异
 
@@ -58,8 +59,8 @@ def travel_hours(p1: dict, p2: dict, mode: str | None = None) -> float:
     """两 POI 间通行时间（小时）。L1 缓存优先（OSRM 路网），L3 直线兜底。
 
     mode：出行方式（None=车驾混合 | "cycling"=骑行 | "hiking"=徒步）。
-    骑行：<1.2km 按步行，1.2~6km 按骑行速度（路网距离 = 直线×绕路系数），
-    >6km 骑不现实 → 回退车驾口径；徒步：<3km 按步行，超过仍按车驾。
+    骑行：<1.2km 按步行，1.2~8km 按骑行速度（路网距离 = 直线×绕路系数），
+    >8km 骑不现实 → 回退车驾口径；徒步：<3km 按步行，超过仍按车驾。
     距离口径与既有 L3 模型一致，不引入新缓存。
     """
     km = haversine_km(p1["lat"], p1["lng"], p2["lat"], p2["lng"])
