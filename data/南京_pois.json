@@ -1120,6 +1120,29 @@
    "family_ok": true,
    "note": "江宁百家湖畔夜生活街区，灯光夜景+酒吧餐饮",
    "closed_days": []
+  },
+  {
+   "id": "NJ051",
+   "name": "钟山体育运动公园",
+   "category": "relax",
+   "tags": [
+    "草坪",
+    "露营",
+    "亲子",
+    "民国建筑"
+   ],
+   "lat": 32.0465,
+   "lng": 118.872,
+   "duration_h": 2.0,
+   "open": "06:00",
+   "close": "22:00",
+   "best_time": "afternoon",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "千亩大草坪+1931中央体育场旧址(全国文保)，野餐露营放风筝，紧邻灵谷寺",
+   "closed_days": []
   }
  ]
 }

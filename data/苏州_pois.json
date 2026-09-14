@@ -1113,6 +1113,75 @@
       "family_ok": true,
       "note": "苏州网红面馆，三虾面与蟹粉面出圈，山塘街上",
       "closed_days": []
+    },
+    {
+      "id": "SZ049",
+      "name": "琵琶语评弹茶馆（平江路北馆）",
+      "category": "nightlife",
+      "tags": [
+        "评弹",
+        "茶馆",
+        "非遗",
+        "演出"
+      ],
+      "lat": 31.3207,
+      "lng": 120.6319,
+      "duration_h": 1.0,
+      "open": "13:30",
+      "close": "22:00",
+      "best_time": "evening",
+      "price": 58,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "平江路评弹名馆，《声声慢》驻唱地，38-78元含茶整点场次，热门需提前预约",
+      "closed_days": []
+    },
+    {
+      "id": "SZ050",
+      "name": "比斯特苏州购物村（奕欧来）",
+      "category": "shopping",
+      "tags": [
+        "奥特莱斯",
+        "大牌",
+        "欧式建筑",
+        "拍照"
+      ],
+      "lat": 31.3792,
+      "lng": 120.7612,
+      "duration_h": 3.0,
+      "open": "10:00",
+      "close": "21:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "原奕欧来，2026年三期扩建后全球最大比斯特村，250+品牌低至2折，紧邻阳澄半岛乐园可串线",
+      "closed_days": []
+    },
+    {
+      "id": "SZ051",
+      "name": "龙湖狮山天街",
+      "category": "shopping",
+      "tags": [
+        "商场",
+        "购物",
+        "亲子",
+        "美食"
+      ],
+      "lat": 31.2944,
+      "lng": 120.5561,
+      "duration_h": 2.0,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "afternoon",
+      "price": 0,
+      "rating": 4,
+      "area": "west",
+      "family_ok": true,
+      "note": "狮山商圈一站式购物中心，地铁3号线狮山站直达，近淮海街与苏博西馆",
+      "closed_days": []
     }
   ]
 }
