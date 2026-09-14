@@ -280,20 +280,22 @@
       "category": "history",
       "tags": [
         "历史",
-        "小众",
-        "水陆城门"
+        "水陆城门",
+        "运河",
+        "夜游",
+        "骑行"
       ],
       "lat": 31.288,
       "lng": 120.608,
       "duration_h": 1.5,
-      "open": "07:30",
-      "close": "17:30",
-      "best_time": "afternoon",
-      "price": 40,
-      "rating": 3,
+      "open": "08:30",
+      "close": "21:00",
+      "best_time": "any",
+      "price": 36,
+      "rating": 5,
       "area": "south",
       "family_ok": true,
-      "note": "唯一水陆并联城门，瑞光塔",
+      "note": "盘门三景：中国现存唯一水陆并联城门+吴门桥+瑞光塔，京杭大运河遗产点；环古城河骑行线核心节点，有夜游灯光（原票价40已按现价36刷新）",
       "closed_days": []
     },
     {
@@ -392,8 +394,10 @@
       "category": "history",
       "tags": [
         "水乡",
-        "小众",
-        "历史"
+        "历史",
+        "园林",
+        "乾隆",
+        "骑行"
       ],
       "lat": 31.262,
       "lng": 120.519,
@@ -402,10 +406,10 @@
       "close": "17:00",
       "best_time": "morning",
       "price": 0,
-      "rating": 3,
+      "rating": 4,
       "area": "suburb",
       "family_ok": true,
-      "note": "严家花园+虹饮山房，吴中区山塘街",
+      "note": "乾隆六下江南必到，严家花园+虹饮山房；灵岩山麓太湖门户，古镇街区免费，宅园联票另购；古城-太湖骑行线必经",
       "closed_days": []
     },
     {
@@ -1273,6 +1277,125 @@
       "area": "northwest",
       "family_ok": true,
       "note": "精品咖啡连锁（CAPRA IBEX）万象天地店，贴阊门-山塘-留园动线；营业时间以商场公示为准",
+      "closed_days": []
+    },
+    {
+      "id": "SZ056",
+      "name": "重元寺",
+      "category": "religion",
+      "tags": [
+        "寺庙",
+        "观音",
+        "湖景",
+        "骑行",
+        "阳澄湖"
+      ],
+      "lat": 31.4063,
+      "lng": 120.7813,
+      "duration_h": 1.5,
+      "open": "07:30",
+      "close": "16:30",
+      "best_time": "morning",
+      "price": 16,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "阳澄湖畔千年古刹，33米水上观音阁；阳澄湖半岛骑行线文化核心，距比斯特购物村约6km",
+      "closed_days": []
+    },
+    {
+      "id": "SZ057",
+      "name": "李公堤",
+      "category": "food",
+      "tags": [
+        "湖畔",
+        "餐饮",
+        "夜景",
+        "骑行",
+        "水街"
+      ],
+      "lat": 31.3,
+      "lng": 120.697,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 4,
+      "area": "east",
+      "family_ok": true,
+      "note": "金鸡湖湖中长堤，国际风情商业水街，苏帮菜/酒吧/咖啡聚集；环金鸡湖骑行线中段休整点",
+      "closed_days": []
+    },
+    {
+      "id": "SZ058",
+      "name": "渔洋山景区",
+      "category": "view",
+      "tags": [
+        "太湖",
+        "观景台",
+        "骑行",
+        "缆车",
+        "日落"
+      ],
+      "lat": 31.2229,
+      "lng": 120.3777,
+      "duration_h": 2.5,
+      "open": "08:30",
+      "close": "17:00",
+      "best_time": "afternoon",
+      "price": 54,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "三面临湖形如鳌首，「太湖第一美景观景台」俯瞰太湖全景；太湖蓝骑行道起点，缆车直下太湖大桥",
+      "closed_days": []
+    },
+    {
+      "id": "SZ059",
+      "name": "苏州之眼摩天轮",
+      "category": "photo",
+      "tags": [
+        "摩天轮",
+        "夜景",
+        "日落",
+        "亲子",
+        "地标"
+      ],
+      "lat": 31.3144,
+      "lng": 120.7128,
+      "duration_h": 1.0,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "evening",
+      "price": 110,
+      "rating": 5,
+      "area": "east",
+      "family_ok": true,
+      "note": "亚洲最大水上摩天轮（128米28个全景太空舱），金鸡湖右岸；周一13:00起开放（月检顺延除外），日落时段最抢手",
+      "closed_days": []
+    },
+    {
+      "id": "SZ060",
+      "name": "陆巷古村",
+      "category": "culture",
+      "tags": [
+        "古村",
+        "明清建筑",
+        "太湖",
+        "枇杷"
+      ],
+      "lat": 31.0746,
+      "lng": 120.3634,
+      "duration_h": 2.0,
+      "open": "08:30",
+      "close": "17:00",
+      "best_time": "afternoon",
+      "price": 58,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "太湖第一古村落，明代牌坊与紫石街格局完整；东山环岛骑行线核心节点，5-6月枇杷杨梅季最美",
       "closed_days": []
     }
   ]
