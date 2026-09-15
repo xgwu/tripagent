@@ -76,7 +76,7 @@ python main.py "带5岁孩子去杭州玩2天，不要太累，最好有动物�
 ## 工程化命令
 
 ```bash
-python scripts/run_tests.py                      # 全部单测：13 个 Python 单测 + 1 个前端守卫，一次跑完（推荐）
+python scripts/run_tests.py                      # 全部单测：14 个 Python 单测 + 1 个前端守卫，一次跑完（推荐）
 python scripts/run_tests.py gap named            # 只跑文件名含关键词的
 python scripts/eval_regression.py [--llm]        # 回归评测：14 固化用例 / 8 城，离线 CI / --llm 真实全链路
 python scripts/probe_perf.py                     # 性能探针：LLM/TOPTW 各环节耗时插桩
@@ -88,6 +88,7 @@ python scripts/test_city_registry.py             # 城市注册表守卫（8 城
 python scripts/test_cross_midnight_close.py      # 跨零点闭店归一化（含死点复现对照）
 python scripts/test_gap_manage.py                # 日内空档治理（含关掉新参数复现旧缺陷的对照）
 python scripts/test_named_inject.py              # 点名召回与必选对账（含目的地型餐饮豁免对照）
+python scripts/test_multi_hotel.py               # 多城联游住宿锚点字段契约（时间轴 hotel 行 / plan_multi 透出 / notice Day 重映射）
 python scripts/test_faithful_mode.py             # 忠实执行模式
 node scripts/test_webui_food_mark.js             # 前端用餐图标（18 项）
 
@@ -113,18 +114,18 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 | `/api/share` | POST / GET | 行程快照保存 / 读取（`GET /api/share/<id>`） |
 | `/api/stats` | GET | 调用量/延迟/补位命中率统计 |
 
-> ⚠️ 行程响应中 `result.itinerary.days[].timeline[]` 的元素字段为 `type`（`poi`/`hop`/`meal`）/ `id` / `name` / `start` / `end`，**不是** `kind` / `poi_id`；`city_meta` 不下发 open/close/rating。
+> ⚠️ 行程响应中 `result.itinerary.days[].timeline[]` 的元素字段为 `type`（`poi`/`hop`/`meal`/`hotel`）/ `id` / `name` / `start` / `end`，**不是** `kind` / `poi_id`；`city_meta` 不下发 open/close/rating。多城联游时 `hotel` 只在住宿城那几天出现（出发/返回行），路线绘制以「该天时间轴是否含 `hotel` 行」为判据。
 
 ## 架构
 
 ```
-webui/        单页前端（零框架，719 行）+ 纯 stdlib HTTP 服务（1,088 行，QuickBindServer）
-src/          17 文件 4,166 行
+webui/        单页前端（零框架，729 行）+ 纯 stdlib HTTP 服务（1,131 行，QuickBindServer）
+src/          17 文件 4,174 行
               proposal_planner(M7 提案+落地+守门+餐窗对账) / m2_planner(TOPTW 求解编排) / m1_planner(贪婪)
               sequencer(时间轴+硬约束+修复链+餐窗分配+慢节奏档) / toptw(OR-Tools 建模+忠实模式)
               weather(天气感知) / gap_log(POI 缺口台账) / hotel(住宿锚点) / query_days(天数解析) / offline_planner(离线兜底)
 data/         *_pois.json ×8 城 / travel_cache.json(37,315 对) / route_cache.json / photo_cache.json / shares/
-scripts/      41 个运维与测试脚本 5,085 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
+scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
 .github/      ci.yml + gate.yml —— push/PR 自动执行发布门禁
 ```
 
@@ -156,7 +157,7 @@ scripts/      41 个运维与测试脚本 5,085 行（扩城/扩库/校验/门�
 - **M12** 体验保真四条线：慢节奏档（含「不要太累」正则旁路修复）/ 餐窗优先权与对账 / 贯穿性偏好 / 跨城住宿锚点与天数倾斜
 - **M13** 城库扩容与开城广州：苏州 30→75、南京 33→49、广州 0→79，8 城 528 点、交通 37,315 对、图片 100%
 - **M14** 正确性审计与守卫：跨零点闭店归一化（救活两个「死点」）、KTV 新子类（4 家广州 KTV）、城市注册表守卫、缓存改动纯度校验；depot 换位与亲子 gate 下沉主链路
-- **M15** 空档治理与点名召回：日内空档 357→60min（餐窗提前容差 + 等待段补餐 + 空档分类披露）、点名/远郊召回三层修复、19:00 后开门点 horizon 放宽、统一测试 runner 与纯 Python 发布门禁
+- **M15** 空档治理与点名召回：日内空档 357→60min（餐窗提前容差 + 等待段补餐 + 空档分类披露）、点名/远郊召回三层修复、19:00 后开门点 horizon 放宽、统一测试 runner 与纯 Python 发布门禁、多城联游住宿锚点可见性（`plan_multi` 字段透出 + 时间轴 hotel 行 + 分段 notice Day 重映射）
 
 ## Roadmap
 
@@ -173,11 +174,13 @@ scripts/      41 个运维与测试脚本 5,085 行（扩城/扩库/校验/门�
 - ✅ 日内空档（M15 / `d25119e`）——≥45min 空档逐条核对后**全部出现在正餐点之前**（餐厅被钉在 12:00/18:00 整点）；`MEAL_EARLY_TOL_H=1.0` + 等待段补餐 + `scan_gaps` 分类披露，同扫描 357min → 60min（守卫 `test_gap_manage.py`）
 - ✅ 点名／远郊点「能排但不被提案」（M15 / `d25119e`）——三层修复：确定性注入 → 必选与对账口径（`named_pois`）→ 目的地型餐饮豁免（守卫 `test_named_inject.py`）
 - ✅ 19:00 后开门的点结构性不可排（M15 / `d25119e`）——`LATE_POINT_MARGIN_MIN=60` 按池内最晚需求放宽求解预算（上限真实日窗）
+- ✅ 聚合层丢字段：多城联游时住宿锚点在前端完全不可见（M15 / `007a1e8`，报障 18）——`plan_multi` 自建结果字典漏透出单城 `plan()` 的 `hotel`/`notices`，叠加「时间轴不显示酒店名」与「恢复字段后 `drawRealRoutes` 又给非住宿城补酒店腿」；修＝透出 `hotel` + 时间轴插 `type=hotel` 出发/返回行 + 路线判据改「该天是否含 hotel 行」+ `_lift_seg_notices` 按偏移重写分段 Day 号（守卫 `test_multi_hotel.py`）
 
 **遗留（主动不修）**
 
 - 亲子约束只到「点级」——能拦掉不适宜点位，但没有时段级节奏保障（如「上午户外、下午室内」的带娃节律）
 - TOPTW 不惩罚行程内部空档——动 solver 风险大；M15 已消除最大成因并改为**披露**（`_gap_notices` 逐日告知空档时长与成因），不再静默
+- 多城联游只有**单城**住宿锚点——`_hotel_city_probe` 只解析酒店归属的那一座城（住宿城天数 +1），非住宿城那几天没有落脚锚点（如苏杭联游的苏州天）；要支持「每城一个锚点」需扩展为多城解析
 
 ## 免责
 

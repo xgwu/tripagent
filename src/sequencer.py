@@ -395,7 +395,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         if t > day_end + 1e-9:
             violations.append({"poi": "返程", "day": day_no,
                                "reason": f'返回酒店时刻{_fmt(t)}超出当日活动时间上限 {city["day_end"]}'})
-        # 出发行（2026-09-15 报障 14）：此前「从酒店出发」只体现为时间轴首行的一个
+        # 出发行（2026-09-15 报障 18）：此前「从酒店出发」只体现为时间轴首行的一个
         # 无源 hop（↳ 驾车 15 分钟），酒店名全程不出现——多城联游时前端更是完全看不到
         # 酒店（plan_multi 不返回 hotel 键，徽标/地图标记一起丢）。显式插入起点行，
         # 前端按 type=hotel 渲染 🏨，用户一眼看到今天从哪出发、回哪住。

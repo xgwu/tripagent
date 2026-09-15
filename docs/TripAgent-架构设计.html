@@ -115,9 +115,9 @@ li{margin:5px 0}
 <!-- L1 接入层 -->
 <text x="16" y="30" class="svg-acctext">接入层</text>
 <rect x="16" y="42" width="888" height="66" rx="10" class="svg-box"/>
-<text x="34" y="68" class="svg-text">webui/server.py（1,088 行，stdlib HTTP，单端口 QuickBindServer）</text>
+<text x="34" y="68" class="svg-text">webui/server.py（1,131 行，stdlib HTTP，单端口 QuickBindServer）</text>
 <text x="34" y="92" class="svg-small">/api/cities · /api/clarify · /api/plan · /api/progress · /api/route · /api/photo · /api/share(GET/POST) · /api/replace · /api/stats　｜　限流 8次/300s/IP · llm_cache(7d) · nl_cache</text>
-<text x="700" y="68" class="svg-small">webui/index.html（719 行 SPA）</text>
+<text x="700" y="68" class="svg-small">webui/index.html（729 行 SPA）</text>
 <line x1="460" y1="108" x2="460" y2="136" class="svg-flow"/>
 
 <!-- L2 NLU -->
@@ -266,12 +266,12 @@ li{margin:5px 0}
 
 <h2>4 · 模块清单与职责</h2>
 
-<h3>4.1 src/ 核心库（4,166 行，16 模块 + <code>__init__.py</code>）</h3>
+<h3>4.1 src/ 核心库（4,174 行，16 模块 + <code>__init__.py</code>）</h3>
 <table>
 <tr><th>模块</th><th>行数</th><th>职责</th><th>关键接口</th></tr>
 <tr><td><code>m2_planner.py</code></td><td>960</td><td>求解编排：逐日 TOPTW（并行/复用）、忠实模式开关、跨天重平衡（含容量预检）、修复链调度、备选补位、需求通知、文案重生成（M2/M7 共用）</td><td><code>compose()</code> <code>_solve_all_days()</code> <code>faithful_mode_enabled()</code> <code>_day_horizon()</code> <code>_day_load()</code> <code>_crossday_rebalance()</code> <code>_alt_substitute()</code> <code>_fix_gap_reorder()</code> <code>_demand_notices()</code></td></tr>
 <tr><td><code>proposal_planner.py</code></td><td>1,004</td><td>M7 主链路：世界知识提案（prompt v9 + 缓存）、四级落地、守门 <code>_far_big_point_regroup</code>、跨天片区重叠、餐窗对账、<b>点名召回与必选对账</b>、闭环 REVISE、M7 编排</td><td><code>plan()</code> <code>_ground()</code> <code>_post_ground_fixups()</code> <code>_far_big_point_regroup()</code> <code>_crossday_area_overlap()</code> <code>_reconcile_food_windows()</code> <code>_revise_proposal()</code> <code>_inject_named_pois()</code> <code>forced_ids_for()</code></td></tr>
-<tr><td><code>sequencer.py</code></td><td>822</td><td>时间轴构建与确定性修复：餐窗统一分配（含<b>提前容差</b>）、闭馆等待与<b>等待段补餐</b>、逐日排序、<b>空档扫描分类</b>、阶段化修复链（3.4 美食绕行 / 3.45 断档重排）、慢节奏判据与主题画像</td><td><code>build_itinerary()</code> <code>order_day()</code> <code>_assign_food_windows()</code> <code>food_window_plan()</code> <code>scan_gaps()</code> <code>_fill_wait_with_meal()</code> <code>is_cafe()</code> <code>is_full_day()</code> <code>SLOW_PACE_RE</code> <code>travel_mode()</code></td></tr>
+<tr><td><code>sequencer.py</code></td><td>830</td><td>时间轴构建与确定性修复：餐窗统一分配（含<b>提前容差</b>）、闭馆等待与<b>等待段补餐</b>、逐日排序、<b>空档扫描分类</b>、<b>住宿出发/返回行</b>、阶段化修复链（3.4 美食绕行 / 3.45 断档重排）、慢节奏判据与主题画像</td><td><code>build_itinerary()</code> <code>order_day()</code> <code>_assign_food_windows()</code> <code>food_window_plan()</code> <code>scan_gaps()</code> <code>_fill_wait_with_meal()</code> <code>is_cafe()</code> <code>is_full_day()</code> <code>SLOW_PACE_RE</code> <code>travel_mode()</code></td></tr>
 <tr><td><code>toptw.py</code></td><td>221</td><td>OR-Tools RoutingModel 单日 TOPTW：利润函数（含 <code>_bonus</code> 点级加成）+ 软时间窗封顶 + forced/忠实模式锁定 + at-solution 提前停止</td><td><code>solve_day(cands, day_ids, …, forced, mode, lock_mains)</code></td></tr>
 <tr><td><code>m1_planner.py</code></td><td>214</td><td>M1 库内选点链路（保留作 A/B 对照 + 离线降级），违规预计数供闭环复用</td><td><code>plan()</code> <code>_count_violations_before_repair()</code> <code>_feedback_loop()</code></td></tr>
 <tr><td><code>poi_db.py</code></td><td>186</td><td>城市加载、POI 解析（<b>跨零点闭店归一化</b>）、L1/L2/L3 三级路网耗时、mode 化速度模型、真夜间点判定、湖线点判定、<b>点名识别与名称归一化</b>、星期推断</td><td><code>load_city()</code> <code>parse_poi()</code> <code>travel_hours(a,b,mode)</code> <code>is_night_only()</code> <code>is_lake_poi()</code> <code>names_mentioned_in()</code> <code>norm_name()</code> <code>core_name()</code> <code>trip_weekday()</code></td></tr>
@@ -290,11 +290,11 @@ li{margin:5px 0}
 <h3>4.2 webui/ 服务与前端</h3>
 <table>
 <tr><th>文件</th><th>行数</th><th>职责</th></tr>
-<tr><td><code>webui/server.py</code></td><td>1,088</td><td>stdlib HTTP 单端口服务（QuickBindServer）。9 类 API 端点；NLU（llm_extract+llm_clarify 合并单次调用 / 规则解析）；<b>城市注册表三表</b>（<code>CITIES</code>/<code>_ID_PREFIX_CITY</code>/<code>_CITYCODE</code>，<code>/api/photo</code> 依赖前缀表）；多层缓存（llm_cache 7天、nl_cache、route_cache、photo_cache、proposal_cache）；限流 8 次/300s/IP；多城联游 <code>plan_multi</code>；alt_sub 命中率累计</td></tr>
-<tr><td><code>webui/index.html</code></td><td>719</td><td>零依赖 SPA：纯自然语言输入 → 澄清追问卡片 → 五段式分阶段进度条（600ms 轮询，闭环轮次徽标）→ Day 卡渲染（时间轴/hop 通行段/每日 reason/Tips/折叠剔除原因/<b>🍽 用餐图标</b>）→ 换点反馈 → 分享 HTML / PNG 长图 / ICS 导出；移动端单列适配</td></tr>
+<tr><td><code>webui/server.py</code></td><td>1,131</td><td>stdlib HTTP 单端口服务（QuickBindServer）。9 类 API 端点；NLU（llm_extract+llm_clarify 合并单次调用 / 规则解析）；<b>城市注册表三表</b>（<code>CITIES</code>/<code>_ID_PREFIX_CITY</code>/<code>_CITYCODE</code>，<code>/api/photo</code> 依赖前缀表）；多层缓存（llm_cache 7天、nl_cache、route_cache、photo_cache、proposal_cache）；限流 8 次/300s/IP；多城联游 <code>plan_multi</code>（<b>必须逐字段对账单城 <code>plan()</code> 契约</b>——<code>hotel</code>/<code>notices</code> 都要透出，分段 notice 的 Day 号须按 <code>_lift_seg_notices</code> 偏移重写）；alt_sub 命中率累计</td></tr>
+<tr><td><code>webui/index.html</code></td><td>729</td><td>零依赖 SPA：纯自然语言输入 → 澄清追问卡片 → 五段式分阶段进度条（600ms 轮询，闭环轮次徽标）→ Day 卡渲染（时间轴/hop 通行段/🏨 住宿出发·返回行/每日 reason/Tips/折叠剔除原因/<b>🍽 用餐图标</b>）→ 换点反馈 → 分享 HTML / PNG 长图 / ICS 导出（0 时长行只显示单时刻、ICS 跳过零长事件）；移动端单列适配</td></tr>
 </table>
 
-<h3>4.3 评测与脚本基建（41 个脚本，5,085 行）</h3>
+<h3>4.3 评测与脚本基建（40 个脚本，5,231 行）</h3>
 <table>
 <tr><th>脚本</th><th>用途</th></tr>
 <tr><td><code>eval_regression.py</code>（<b>14 用例 / 8 城</b>）</td><td>回归主闸门：必含 POI 断言（上海亲子→SH006 迪士尼）、天数与 0 违规断言；<code>--llm</code> 走真实全链路，默认离线 mock</td></tr>
@@ -302,12 +302,13 @@ li{margin:5px 0}
 <tr><td><code>test_cross_midnight_close.py</code> <span class="badge b-warn">M14</span></td><td>跨零点闭店归一化 8 组断言：解析层/排序层/求解层 + <b>还原 close_h 的死点复现对照</b></td></tr>
 <tr><td><code>test_gap_manage.py</code> <span class="badge b-warn">M15</span></td><td>日内空档治理 14 例：餐窗提前容差 / 等待段补餐 / <code>scan_gaps</code> 分类 + <b>关掉 <code>MEAL_EARLY_TOL_H</code> 复现旧空档</b>的对照</td></tr>
 <tr><td><code>test_named_inject.py</code> <span class="badge b-warn">M15</span></td><td>点名召回 26 例：确定性注入 / 必选口径（<code>named_pois</code> vs <code>named_injected</code>）/ <b>目的地型餐饮豁免</b>（对照可精确复现「莲花岛被剔除」）/ 源码守卫</td></tr>
+<tr><td><code>test_multi_hotel.py</code> <span class="badge b-warn">M15</span></td><td>多城联游字段契约 26 例：时间轴住宿出发/返回行（0 时长、括注剥离）/ <code>plan_multi</code> 透出 <code>hotel</code> + 无住宿文本对照 / <code>_lift_seg_notices</code> 偏移重写（<b>段内 Day1→多城 Day3</b>，桩 planner）/ 前端源码守卫（单时刻显示、<code>hasHotel</code> 判据、ICS 跳过）</td></tr>
 <tr><td><code>test_food_window_priority.py</code> <span class="badge b-warn">M12</span></td><td>餐窗优先权 11 例：正餐 POI 优先占窗 / <code>is_cafe</code> 语义（早茶≠咖啡）/「时间轴不得出现无 meal 标记正餐」不变量</td></tr>
 <tr><td><code>test_faithful_mode.py</code> <span class="badge b-warn">M11</span></td><td>忠实执行模式 4 例：池=主选 / 主选锁定 / 净零换位</td></tr>
 <tr><td><code>test_capacity_guard.py</code> <span class="badge b-warn">M12</span></td><td>挪点容量预检 4 例：<code>_day_horizon</code>/<code>_day_load</code> 与求解器同口径</td></tr>
 <tr><td><code>test_webui_food_mark.js</code> <span class="badge b-warn">M12</span></td><td>前端用餐图标 18 项（node）：判据取 timeline <code>meal</code> 字段 + category 兜底</td></tr>
 <tr><td><code>test_far_big_regroup.py</code> / <code>test_crossday_rebalance.py</code> / <code>test_theme_day_scope.py</code> / <code>test_gap_log.py</code></td><td>远郊守门 7 例 / 跨天重平衡 3 例 / 单日主题口径 / 缺口台账</td></tr>
-<tr><td><code>scripts/run_tests.py</code> <span class="badge b-warn">M15</span></td><td><b>统一测试 runner</b>：一次跑完 13 个 Python 单测 + 1 个前端守卫（含 node 自动定位、关键词过滤、失败尾因输出）——解决「门禁通配只匹配 .py、漏前端测试」与「手工逐个跑必漏」</td></tr>
+<tr><td><code>scripts/run_tests.py</code> <span class="badge b-warn">M15</span></td><td><b>统一测试 runner</b>：一次跑完 14 个 Python 单测 + 1 个前端守卫（含 node 自动定位、关键词过滤、失败尾因输出）——解决「门禁通配只匹配 .py、漏前端测试」与「手工逐个跑必漏」</td></tr>
 <tr><td><code>scripts/release_gate.py</code> + <code>.github/workflows/</code></td><td>发布门禁四步（编译→单测→回归→8 城库校验），<b>纯 Python 实现</b>（原 shell 版依赖 dirname/grep/mktemp，本机 Git Bash shim 下不可执行）；本地手动 + GitHub Actions push/PR 自动执行</td></tr>
 <tr><td><code>scripts/validate_city.py</code></td><td>城市库校验器：schema 必填字段/坐标范围/开闭门时段（支持跨零点营业）/类目白名单，8 城通过</td></tr>
 <tr><td><code>scripts/probe_perf.py</code> / <code>tune_params.py</code> / <code>stability_signature_rule.py</code></td><td>性能探针 / 参数扫描 / 招牌规则稳定性矩阵（多种子×多主题）</td></tr>
@@ -593,13 +594,14 @@ li{margin:5px 0}
 <tr><td>挪点容量预检 <span class="badge b-warn">M12</span></td><td><code>_day_horizon</code> / <code>_day_load</code></td><td>与 TOPTW 同口径（日长−餐块预扣）；预检不过不挪，防「预检放行、求解仍剔」</td></tr>
 <tr><td>住宿锚点防线 <span class="badge b-warn">M12</span></td><td><code>server.py</code> 确定性拦截</td><td>query 无「住/酒店/民宿/宾馆/客栈」则不采纳 LLM 抽取的 hotel；prompt 收紧为辅</td></tr>
 <tr><td>跨城联游增强 <span class="badge b-warn">M12</span></td><td><code>_dedupe_food_windows</code> / <code>_hotel_city_probe</code></td><td>跨城美食窗去重 + 住宿城市归属探测（bigram≥0.6，恒非 None 不能做归属判定）+ 天数住宿倾斜</td></tr>
+<tr><td>多城联游字段契约 <span class="badge b-warn">M15</span></td><td><code>server.plan_multi</code> / <code>_lift_seg_notices</code> / <code>sequencer._build_timeline</code></td><td>聚合层须逐字段对账单城 <code>plan()</code> 契约：透出 <code>hotel</code>、上浮 <code>notices</code> 并按天数偏移重写 <code>day</code>/<code>days</code>（含文案 <code>Day\d+</code>）与 <code>gaps[].day</code>；时间轴插 <code>type=hotel</code> 出发/返回行；前端路线判据用「<b>该天是否含 hotel 行</b>」而非「全局有 hotel」（否则非住宿城被画假长途）</td></tr>
 <tr><td>跨零点闭店归一化 <span class="badge b-warn">M14</span></td><td><code>poi_db.parse_poi</code></td><td><code>close_h ≤ open_h</code> → +24；上游一处归一，全库 2 点触发</td></tr>
 <tr><td>城市注册表守卫 <span class="badge b-warn">M14</span></td><td><code>scripts/test_city_registry.py</code></td><td>8 城 × 4 张映射表 + 前缀识别硬断言；开城/加城必跑</td></tr>
 <tr><td>空档扫描与披露 <span class="badge b-warn">M15</span></td><td><code>sequencer.scan_gaps</code> / <code>m2_planner._gap_notices</code></td><td>相邻活动间扣除通行后 ≥60min 的空白按 <code>wait_open</code>/<code>wait_meal</code>/<code>free</code> 分类并逐日披露；求解器不惩罚空档 → 至少不静默</td></tr>
 <tr><td>餐窗提前容差 <span class="badge b-warn">M15</span></td><td><code>sequencer.MEAL_EARLY_TOL_H=1.0</code></td><td>餐厅不必等到 12:00/18:00 整点才开吃（10:45 到 11:00 就座）；空档唯一成因，改用 <code>_fmt</code>→<code>_min_fmt</code> 防「960:00」单位错</td></tr>
 <tr><td>点名召回三层 <span class="badge b-warn">M15</span></td><td><code>names_mentioned_in</code> → <code>_inject_named_pois</code> → <code>forced_ids_for</code> / <code>named_lost</code></td><td>召回（确定性注入）→ 必选与对账（口径 <code>named_pois</code>）→ 下游豁免（<code>_is_destination_food</code>）；缺任一层则「点能排却从不出现」</td></tr>
 <tr><td>夜间点 horizon 放宽 <span class="badge b-warn">M15</span></td><td><code>toptw.LATE_POINT_MARGIN_MIN=60</code></td><td>按池内最晚需求放宽求解预算（上限真实日窗），修「18:00 后开门的点恒不可排」</td></tr>
-<tr><td>统一测试 runner <span class="badge b-warn">M15</span></td><td><code>scripts/run_tests.py</code> / <code>release_gate.py</code></td><td>13 py + 1 js 一次跑完；门禁纯 Python 实现，本机与 CI 同一条命令</td></tr>
+<tr><td>统一测试 runner <span class="badge b-warn">M15</span></td><td><code>scripts/run_tests.py</code> / <code>release_gate.py</code></td><td>14 py + 1 js 一次跑完；门禁纯 Python 实现，本机与 CI 同一条命令</td></tr>
 <tr><td>缺口台账 <span class="badge b-blue">M10.5</span></td><td><code>src/gap_log.py</code> + <code>scripts/gap_report.py</code></td><td>线上真实使用缺口持久化，汇总为扩库采购清单</td></tr>
 <tr><td>前端用餐图标 <span class="badge b-warn">M12</span></td><td><code>webui/index.html</code> <code>isFoodStop()</code>/<code>foodMark()</code></td><td>判据以 timeline stop 的 <code>meal</code> 字段为首选（对旧分享快照也有效），category 兜底；图标放名称<b>之前</b></td></tr>
 </table>
@@ -610,6 +612,8 @@ li{margin:5px 0}
 <li><s>召回层补强</s> <b>✅ M15 已修复</b>：GZ069 宝业路宵夜街、SZ062 莲花岛这类点「库与管线都正确、卡在提案层不提案」——三层修复后实测宝业路落地 18:00-19:30、莲花岛落地 11:26-13:26（详见 5G）</li>
 <li><s><code>toptw.py</code> depot 换位失效</s> <b>✅ M14 已修复</b>（0457603）：换位提前到 <code>RoutingIndexManager</code> 构造之前 + 基于 id 的下标；守卫 <code>test_depot_anchor.py</code></li>
 <li><s><code>family_ok=false</code> 仅离线链路生效</s> <b>✅ M14 已修复</b>（0457603）：判据下沉 <code>sequencer.is_family_query</code> + <code>poi_db.is_family_ok</code>，gate 挂六个入口；守卫 <code>test_family_gate.py</code></li>
+<li><s>多城联游住宿锚点在前端完全不可见</s> <b>✅ M15 已修复</b>（007a1e8，报障 18）：<code>plan_multi</code> 漏透出 <code>hotel</code>/<code>notices</code>（聚合层丢字段）＋ 时间轴不显示酒店名 ＋ 路线层误给非住宿城补酒店腿；守卫 <code>test_multi_hotel.py</code></li>
+<li><b>多城联游只有「单城」住宿锚点</b>（遗留）：<code>_hotel_city_probe</code> 只解析酒店归属的那一座城（并给住宿城天数 +1），<b>非住宿城那几天没有落脚锚点</b>（如苏杭联游的苏州天）；要支持「每城一个锚点」需把归属探测扩展为多城解析</li>
 <li><b>亲子约束只到「点级」</b>（遗留）：gate 能拦掉不适宜点位，但没有时段级节奏保障（如「上午户外、下午室内」的带娃节律）</li>
 <li><b>TOPTW 不惩罚行程内部空档</b>（遗留 / 已缓解）：evening 软窗 + 点少的天会拉出数小时空档；动 solver 风险大，M15 改为<b>披露</b>（<code>_gap_notices</code>）而非静默补点</li>
 <li><b>POI 库扩容</b>：校验器 + 注册表守卫 + SOP + 发布门禁已形成标准流水线；<b>下一城已选定西安（第 9 城）</b>，其余候选深圳/厦门/青岛/长沙</li>
@@ -618,7 +622,7 @@ li{margin:5px 0}
 </ul>
 
 <div class="panel" style="margin-top:40px">
-<span class="kv">本文档基于 main 真实代码结构编写（2026-09-15 更新至 M15，含忠实执行/慢节奏档/餐窗优先权/贯穿偏好/跨零点归一化/注册表守卫/空档治理与点名召回）· 配套文档：<code>docs/README-milestones.md</code>（里程碑与评测）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）· <code>docs/TripAgent-TOPTW算法报告.html</code>（求解器原理与应用）· 评测报告 <code>output/m7_report.html</code></span>
+<span class="kv">本文档基于 main 真实代码结构编写（2026-09-15 更新至 M15，含忠实执行/慢节奏档/餐窗优先权/贯穿偏好/跨零点归一化/注册表守卫/空档治理与点名召回/多城联游字段契约）· 配套文档：<code>docs/README-milestones.md</code>（里程碑与评测）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）· <code>docs/TripAgent-TOPTW算法报告.html</code>（求解器原理与应用）· 评测报告 <code>output/m7_report.html</code></span>
 </div>
 
 </div>

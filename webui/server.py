@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 # 控制台 UTF-8（Windows 默认 GBK 会让中文 print 直接 UnicodeEncodeError）。
 # 用 reconfigure（原地改编码）而非新建 TextIOWrapper——后者在同一进程里被包装两次时，
 # 前一个 wrapper 失去引用即 __del__ 关闭底层 buffer，后续 print 报
-# 「I/O operation on closed file」（2026-09-15 报障 14 写 plan_multi 单测时实测：
+# 「I/O operation on closed file」（2026-09-15 报障 18 写 plan_multi 单测时实测：
 # 测试脚本先包装、再 `from webui import server` 二次包装 → 第一行 print 即崩）。
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -486,7 +486,7 @@ def _hotel_city_probe(cname: str, text: str) -> bool:
 
 
 def _lift_seg_notices(cname: str, off: int, notices: list) -> list:
-    """把单城分段的 notices 上浮到多城结果（报障 14 同族缺陷）。
+    """把单城分段的 notices 上浮到多城结果（报障 18 同族缺陷）。
 
     单城 `plan()` 会返回 notices（点名点未排入 / 日内空档披露 / 需求未满足），
     多城此前**整块丢弃** → 用户看不到任何解释。且 notice 里的 Day 号是**段内局部号**
@@ -540,7 +540,7 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
            "proposed": 0, "unmatched": 0, "rate_w": 0.0}
     seg_date0 = _date.fromisoformat(date0) if date0 else None
     day_no = 0
-    hotel_out = None  # 住宿锚点（报障 14）：单城 plan() 会透出 hotel，多城此前整个丢掉
+    hotel_out = None  # 住宿锚点（报障 18）：单城 plan() 会透出 hotel，多城此前整个丢掉
     for i, cname in enumerate(use):
         di = alloc[i]
         if di < 1:

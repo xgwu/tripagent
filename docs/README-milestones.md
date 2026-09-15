@@ -1,8 +1,8 @@
 # TripAgent 里程碑档案（M1–M7 详录 · M8 起见下节与项目报告）
 
-> 📌 本文是**里程碑历史档案**，M1–M7 部分保留原始记录。M8 及之后的完整演进（含 M8.5 性能工程、M9 主题保真、M10 工程化、M11 忠实执行、M12 体验保真、M13 开城广州、M14 正确性审计、M15 空档治理与点名召回）请以 **[项目报告 v3](TripAgent-项目报告.html)** 为准；架构级说明见 **[架构设计文档](TripAgent-架构设计.html)**（已更新至 M15），求解器原理见 **[TOPTW 算法报告](TripAgent-TOPTW算法报告.html)**。
+> 📌 本文是**里程碑历史档案**，M1–M7 部分保留原始记录。M8 及之后的完整演进（含 M8.5 性能工程、M9 主题保真、M10 工程化、M11 忠实执行、M12 体验保真、M13 开城广州、M14 正确性审计、M15 空档治理与点名召回 + 多城联游住宿锚点）请以 **[项目报告 v3](TripAgent-项目报告.html)** 为准；架构级说明见 **[架构设计文档](TripAgent-架构设计.html)**（已更新至 M15），求解器原理见 **[TOPTW 算法报告](TripAgent-TOPTW算法报告.html)**。
 >
-> 当前基线：**8 城 528 POI · 37,315 对交通缓存 · 回归 14/14（8 城全覆盖）· 143 commits**。
+> 当前基线：**8 城 528 POI · 37,315 对交通缓存 · 回归 14/14（8 城全覆盖）· 146 commits**。
 
 对应《TOPTW+LLM 混合方案可行性分析》：
 - **M1**（已完成 ✅）：验证核心假设「LLM 库内组线显著优于标签过滤」——幻觉结构性归零、优化层修复价值被量化。
@@ -191,12 +191,13 @@ Windows 注意：`PYTHONIOENCODING=utf-8` 已在脚本内处理 stdout；JSON �
 - **缓存改动纯度校验手法**：改大缓存 JSON 前后用 `git show HEAD:<file>` 拉旧版逐键比对，断言「既有键改动 0 / 删除 0，仅新增 N」。
 - **顺带修复**：`is_cafe` 判据过宽（裸「茶」子串误杀广州 4 家粤菜老字号「早茶」→ 一天两顿午饭）；`/api/cities` 不再回传 Web 服务 Key（安全加固 ea5d12e）。
 
-### M15 空档治理与点名召回（d25119e · 一次迭代修三个缺陷）
+### M15 空档治理与点名召回（d25119e · 一次迭代修三个缺陷）+ 多城联游住宿锚点（007a1e8 · 报障 18）
 
 - **空档治理**：全量扫描 13 用例 × 全部天数，≥45min 空档共 **357min**，且逐条核对后**全部出现在正餐点之前**——旧 `start = max(t2, ws, p["open_h"])` 把餐厅钉在 12:00/18:00 整点，10:45 到场也要干等 75min（南京科举博物馆→绿柳居、北京故宫→四季民福、苏州琵琶语→朱鸿兴、武汉长江大桥→户部巷 同族）。修＝`MEAL_EARLY_TOL_H=1.0` 提前容差 + `_fill_wait_with_meal`（等待开门段先吃饭）+ `scan_gaps`/`_gap_notices`（空档分类 `wait_open`/`wait_meal`/`free` 并逐日披露）。同扫描 **357 → 60min**。单测 `scripts/test_gap_manage.py`（14 例，含关掉 `MEAL_EARLY_TOL_H` 复现旧空档的对照）。
 - **点名／远郊召回三层（缺一层就白干）**：① **召回**——`poi_db.names_mentioned_in`（长度 ≥3 子串）+ `_inject_named_pois` **确定性注入**（几何最近天，不依赖 LLM 是否采纳），菜单郊区点标「（郊区）」+ PROPOSE_PROMPT **v9** 远郊规则；② **必选与对账**——`forced_ids_for` 的口径是「需求点名的**全量**库内点」（`named_pois`）而非「本次注入了什么」（`named_injected`）——LLM 恰好自己提案了点名点时后者为空，会让该点既不被列必选、被剔后也不披露；丢失必发 `named_lost`；③ **下游守门**——`_fix_food_detours`（设计前提是「咖啡是配套不是目标」）把 `category=food` 的**目的地型餐饮**当绕路配套换掉（莲花岛＝阳澄湖农家乐集群、`suburb`、dur 2h，对照实测理由原文「莲花岛（绕行 110 分钟且无顺路替代，剔除）」）→ `_is_destination_food`（郊区／停留 ≥2h／农家乐类名）+ `protect`（点名点豁免）。单测 `scripts/test_named_inject.py`（26 例，含对照）。实测宝业路落地 18:00-19:30、莲花岛落地 11:26-13:26。
 - **夜间点 horizon 放宽**：`MEAL_BUFFER_MIN=120` 把求解预算压到 630min（09:00→19:30），18:00 后开门的点（GZ066 珠江夜游 19:00 / GZ069 宝业路 18:00）**结构性不可行**，且**不出现在 `dropped` 里**（排查时极易误判为「提案层没提」）。新增 `LATE_POINT_MARGIN_MIN=60`，按池内最晚需求放宽、上限锁真实日窗；池中无晚间点时不触发。单测用「把常量置负无穷」做对照。
-- **工程化收尾**：新增统一测试 runner `scripts/run_tests.py`（13 个 Python 单测 + 1 个前端守卫一次跑完，含 node 自动定位与关键词过滤）；发布门禁改**纯 Python 实现** `scripts/release_gate.py`——原 `release_gate.sh` 依赖 `dirname`/`grep`/`mktemp`，在本机 Git Bash shim 故障下根本执行不了，门禁形同虚设；`.sh` 保留为薄兼容入口，`.github/workflows/gate.yml` 改调 `.py`。
+- **工程化收尾**：新增统一测试 runner `scripts/run_tests.py`（14 个 Python 单测 + 1 个前端守卫一次跑完，含 node 自动定位与关键词过滤）；发布门禁改**纯 Python 实现** `scripts/release_gate.py`——原 `release_gate.sh` 依赖 `dirname`/`grep`/`mktemp`，在本机 Git Bash shim 故障下根本执行不了，门禁形同虚设；`.sh` 保留为薄兼容入口，`.github/workflows/gate.yml` 改调 `.py`。
+- **多城联游住宿锚点可见性（报障 18 · 007a1e8）**：query「苏杭3天联游…住西湖国宾馆附近」——杭州段明明以酒店为起点（首行无源 hop、末尾「返回酒店」），前端却看不到任何酒店。一条报障挖出**四个叠加缺陷**，前三个同源（`plan_multi` 自建结果字典丢字段）：① **`plan_multi` 不返回 `hotel`**（根因，单城 `plan()` 有此键）→ 顶部 🏨 徽标、高德/SVG 地图标记、导出文档与 ICS 的「住宿：…」全部丢失；② `_build_timeline` 只在末尾补通用名「返回酒店」、出发只体现为一个无源 hop → 修＝首部插 `type=hotel` 出发行（0 时长）+ 返回行带酒店名（剥掉 `resolve_hotel` 附加的「（住宿锚点）」括注）；③ 恢复 `r.hotel` 后 `drawRealRoutes` 会给**所有天**补酒店腿 → 苏州天被画「苏州→杭州西湖→苏州」假长途，判据改用「**该天时间轴是否含 `type=hotel` 行**」（单一事实来源）；④ **分段 `notices` 整块丢弃**且 notice 的 Day 是**段内局部号**（杭州第 1 天在多城里是 Day 2），直接合并会指错天 → 新增 `_lift_seg_notices(cname, off, notices)` 按偏移重写 `day`/`days` 与文案里的 `Day\d+` 并打城市标签，`grounding.gaps[].day` 同步重映射。前端 0 时长行只显示单时刻、ICS 跳过 0 时长行（防 `DTSTART==DTEND` 零长事件）。顺带把 `webui/server.py` 的 stdout 包装改为幂等 `reconfigure`（原 `TextIOWrapper` 写法在同进程被包装两次时，前一个 wrapper 被 GC 会关闭底层 buffer → 第一行 print 就 `I/O operation on closed file`）。守卫 `scripts/test_multi_hotel.py`（26 例，含 plan_multi 桩对照与前端源码守卫）；线上 fresh=1 验收：`hotel=杭州西湖国宾馆`(30.235,120.134)、杭州两天各含出发+返回行、苏州段不注入、Day3 空档以**正确全局 Day 号**披露（此前完全静默）、violations=0。**教训：凡「重新组装结果」的聚合层必须逐字段对账单城契约，漏一个字段就是静默数据丢失。**
 - **教训**：① 「LLM 听话」和「用户要求被满足」是两件事——必须**独立对账**，不能拿流水线内部记录当口径；② 判断某类目点是「配套」之前，先问**它会不会本身就是用户目标**（`category` 是粗标签，`food` 里既有咖啡馆也有农家乐目的地）；③ 探针要带**调用行号**（`traceback.extract_stack`），否则「哪一层改的」只能靠猜——本次一步定位到 `m2_planner.py:721 → 408`；④ 属性方差大的指标（LLM 逐次提案不同）不能作为唯一验证依据，最终要落到确定性单测。
 
 ## 评测指标
