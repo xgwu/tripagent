@@ -20,7 +20,7 @@ from build_travel_cache import (  # noqa: E402
     AMAP_DIRECTION, CITY_FACTOR, MIN_MIN, _cache_path, load_cache, save_cache)
 
 DATA = os.path.join(ROOT, "data")
-CITIES = ["上海", "南京", "杭州", "武汉", "苏州", "成都", "北京"]
+CITIES = ["上海", "南京", "杭州", "武汉", "苏州", "成都", "北京", "广州"]
 NEW_IDS = {
     "上海": ["SH045", "SH046", "SH047", "SH048", "SH049", "SH050", "SH051", "SH052", "SH053", "SH054", "SH055", "SH056", "SH057", "SH058", "SH059", "SH060", "SH061", "SH062", "SH063", "SH064", "SH065", "SH066", "SH067", "SH068"],
     "南京": ["NJ029", "NJ030", "NJ031", "NJ032", "NJ033"],
@@ -31,6 +31,7 @@ NEW_IDS = {
     "苏州": ["SZ029", "SZ030"],
     "成都": ["CD081", "CD082", "CD083", "CD085", "CD086", "CD087", "CD088", "CD089"],
     "北京": [],   # 北京全库由 add_city.py 建缓存；--auto 模式自动检测缺失对
+    "广州": [],   # 广州全库由 build_travel_cache.py 建缓存；--auto 模式自动检测缺失对
 }
 OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving/{coords}?annotations=duration"
 QPS = 0.15
