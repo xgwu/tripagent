@@ -409,18 +409,25 @@ def food_window_plan(ids: list, all_pois: dict, city: dict,
         if f["id"] not in assign:
             infeasible.append(f["id"])
             reason[f["id"]] = "营业时间与当天剩余餐窗不匹配"
-    if any(assign.get(f["id"]) == "dinner" for f in foods):
+    dinner_food = [f for f in foods if assign.get(f["id"]) == "dinner"]
+    if dinner_food:
         dinner_start = poi_db.hhmm_to_h(city["meal_slots"]["dinner"][0])
         day_start = poi_db.hhmm_to_h(city["day_start"])
-        budget = sum(float(p.get("dur") or 0) * 60 for p in pts)
-        budget += sum(poi_db.travel_hours(a, b, mode) * 60 for a, b in zip(pts, pts[1:]))
-        reach = day_start * 60 + budget + 60.0  # +1h 午餐块：跨过午饭后才谈晚餐
-        if reach < dinner_start * 60 - MAX_MEAL_WAIT_H * 60:
-            for f in foods:
-                if assign.get(f["id"]) == "dinner":
-                    infeasible.append(f["id"])
-                    reason[f["id"]] = (f"当天行程结束过早，晚餐到达将等待超"
-                                       f"{MAX_MEAL_WAIT_H:.1f}h 上限")
+        dinner_ids = {f["id"] for f in dinner_food}
+        # 晚餐餐厅由 _insert_foods 放在序列末尾（最贴近晚餐窗）→ 到达时刻 ≈ 其余各点
+        # 跑完的时刻。此处取「最早到达」下界（忽略等待与餐块）：连最早到达都已超过
+        # 等待上限 ⇒ 必然被剔。反之（够晚）则留给 sequencer 精确时间轴判定。
+        rest_pts = [all_pois[i] for i in ids if i in all_pois and i not in dinner_ids]
+        arrive = day_start * 60 + sum(float(p.get("dur") or 0) * 60 for p in rest_pts)
+        arrive += sum(poi_db.travel_hours(a, b, mode) * 60
+                      for a, b in zip(rest_pts, rest_pts[1:]))
+        if not any(assign.get(f["id"]) == "lunch" for f in foods):
+            arrive += 60.0  # 当天无午餐餐厅 → 午间还有通用餐块占 1h
+        if dinner_start * 60 - arrive > MAX_MEAL_WAIT_H * 60:
+            for f in dinner_food:
+                infeasible.append(f["id"])
+                reason[f["id"]] = (f"当天行程结束过早，晚餐到达将等待超"
+                                   f"{MAX_MEAL_WAIT_H:.1f}h 上限")
     return {"assign": assign, "infeasible": infeasible, "reason": reason}
 
 

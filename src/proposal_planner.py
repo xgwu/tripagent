@@ -816,6 +816,10 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                 alt_map2 = g2.pop("alt_map", {})
                 dm2, th2, g2 = _post_ground_fixups(
                     dm2, th2, g2, city, all_pois, days, query, anchor_poi)
+                # 餐窗对账要同样作用于修正案：首轮对账只覆盖首轮 day_map，漏掉这里
+                # 会让 revise 后新提案里「当天排不进」的餐厅重新被剔并弹提示
+                if dm2:
+                    dm2 = _reconcile_food_windows(dm2, all_pois, city, query, g2)
                 if dm2:
                     # P1 增量重算：修正前后点位集合一致的天复用上次最终解与文案，
                     # 只对变化的天重解+重写文案（全变则等价全量，行为不劣化）
