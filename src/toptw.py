@@ -89,11 +89,21 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
         return int(pr)
 
     nodes = list(candidates)
-    # M6：酒店锚点作为 depot —— 每日强制从酒店出发并返回；无酒店则沿用主选换位逻辑
+    # M6：酒店锚点作为 depot —— 每日强制从酒店出发并返回；无酒店则取主选第一点作 depot
     if hotel is not None:
         h = dict(hotel)
         h["open_h"], h["close_h"], h["dur"] = 0.0, 24.0, 0.0  # 虚拟节点：全天开放、不占游玩时长
         nodes = [h] + nodes
+    elif day_ids:
+        # 无酒店：depot 取主选第一点（以首点为出发/收尾锚点，减少首跳空驶）。
+        # ⚠️ 换位必须发生在 RoutingIndexManager 构造之前——索引映射、时间窗、
+        # disjunction 罚分全部按 nodes 的**位置**建立；挪到其后会导致
+        # 「位置 idx 的 POI 被换掉了，但该位置的窗口与罚分仍按旧点算」的静默错位。
+        # 定位用「基于 id 的下标」而非 list.index(obj)：POI 为 dict，相等性判断
+        # 可能让 index() 返回非目标位置（旧实现即栽在这里）。
+        k = next((i for i, p in enumerate(nodes) if p["id"] == day_ids[0]), 0)
+        if k != 0:
+            nodes[0], nodes[k] = nodes[k], nodes[0]  # 显式下标交换，RHS 先求值后落位
     n = len(nodes)
 
     # 注意：本 ortools 构建的绑定参数顺序为 (num_nodes, num_vehicles, starts, ends)
@@ -153,10 +163,9 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
     for idx in range(1, n):
         node = manager.IndexToNode(idx)
         routing.AddDisjunction([idx], profit(nodes[node]))
-    # 无酒店时：depot（nodes[0]）强制访问一个主选点；有酒店时 depot 即酒店，不换位
-    if not hotel and day_ids:
-        first = next((p for p in nodes if p["id"] == day_ids[0]), nodes[0])
-        nodes[0], nodes[nodes.index(first)] = nodes[nodes.index(first)], nodes[0]
+    # depot（nodes[0]）已在上方 RoutingIndexManager 构造前定好：
+    # 有酒店 = 酒店虚拟节点，无酒店 = 主选第一点。disjunction 从 idx=1 开始添加，
+    # depot（idx=0）天然不在其中 → 必被访问（这正是「强制从锚点出发」的实现方式）。
 
     p = pywrapcp.DefaultRoutingSearchParameters()
     p.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC

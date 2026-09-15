@@ -32,6 +32,19 @@ MEAL_END_LEAD_H = 1.5     # 收尾场景（末点游完）晚餐提前量：17:1
 # 提案 10+ 点/天 TOPTW 塞满到 20:30）。
 SLOW_PACE_RE = re.compile(r"老人|轮椅|行动不便|腿脚不便|慢节奏|悠闲|不累|太累|宽松")
 
+# 亲子出行：全链路「不适合儿童的点」过滤口径。同样定义在最底层 sequencer，
+# 由 m2_planner re-export（proposal_planner 亦经其引用），避免依赖成环。
+# 词表与 retrieval.py / baseline.py 的 family 映射对齐（亲子/孩子/娃/儿童/小朋友/5岁）。
+# 注意「小朋友」：检索层认它、但原 proposal_planner 的正则漏了——判据与词表不一致
+# 会导致「检索按亲子召回、选点层却不当亲子过滤」。这里按语义直接列词（「娃」「孩子」
+# 这类词在中文行程语料里几乎只指小孩），不再依赖「带 X」句式。
+FAMILY_RE = re.compile(r"亲子|遛娃|娃|孩子|小孩|儿童|小朋友|宝宝|幼儿")
+
+
+def is_family_query(query: str | None) -> bool:
+    """亲子出行判定（亲子/遛娃/带娃/带孩子/带小孩/儿童/小朋友/宝宝/幼儿）。"""
+    return bool(query and FAMILY_RE.search(query))
+
 
 def is_full_day(p: dict) -> bool:
     """全天大点判定：duration_h ≥ 8（远郊主题乐园等，单程即接近/突破每日里程预算）。"""

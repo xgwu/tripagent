@@ -16,7 +16,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from src import poi_db, m1_planner, proposal_planner  # noqa: E402
+from src import poi_db, m1_planner, proposal_planner, config, llm_client  # noqa: E402
 
 # (城市, 查询, 期望天数, 期望落地率下限[仅 --llm 生效], 必含 POI id[可选])
 CASES = [
@@ -39,6 +39,17 @@ CASES = [
 
 def main():
     use_llm = "--llm" in sys.argv
+    # --llm 前置门禁：缺 key 时 plan 会静默降级到离线链路——「跑得飞快、结果看着还行」，
+    # 但测的根本不是 LLM 路径（2026-09-15 踩坑：全程 0.0s，实为降级）。宁可明确失败。
+    if use_llm:
+        injected = config.apply_env()
+        if not llm_client.llm_available():
+            print("❌ --llm 需要 API key：secrets.json 缺 deepseek_api_key，"
+                  "或显式 export DEEPSEEK_API_KEY。")
+            print("   （缺 key 时 plan 不会报错，而是静默降级到离线链路——"
+                  "那样跑出来的 14/14 不能代表 LLM 全链路）")
+            sys.exit(2)
+        print(f"LLM 就绪（本次注入：{injected or '无（环境变量已存在）'}）\n")
     # 锚点用例专测硬保障机制本身，eval 内显式开启（线上默认关）
     os.environ.setdefault("ANCHOR_HARD_GUARANTEE", "1")
     n_fail = 0

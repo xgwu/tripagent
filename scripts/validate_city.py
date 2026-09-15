@@ -27,7 +27,7 @@ REQUIRED = ["id", "name", "category", "tags", "lat", "lng", "duration_h",
             "note", "closed_days"]
 CATEGORIES = {"culture", "history", "art", "nature", "view", "family", "religion",
               "shopping", "food", "show", "sport", "park", "museum",
-              "photo", "nightlife", "outdoor", "indoor"}
+              "photo", "nightlife", "outdoor", "indoor", "relax"}
 WEEKDAYS = {"周一", "周二", "周三", "周四", "周五", "周六", "周日"}
 
 

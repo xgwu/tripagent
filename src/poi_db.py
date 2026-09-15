@@ -60,6 +60,16 @@ def is_night_only(p: dict) -> bool:
     return (p.get("open_h") or 0) >= NIGHT_OPEN_H
 
 
+def is_family_ok(p: dict) -> bool:
+    """亲子适配判定：字段显式为 false 才算「不适合带小孩去」。
+
+    全库仅 7 个点标了 false（KTV/酒吧街区/大屠杀纪念馆/高强度徒步），
+    字段缺省一律视为适合。选点链（主选/备选池/补位/补强）在亲子 query 下
+    统一用本判据过滤——此前该字段只有 offline_planner 读，主链路无人拦。
+    """
+    return p.get("family_ok", True) is not False
+
+
 def haversine_km(lat1, lng1, lat2, lng2) -> float:
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)

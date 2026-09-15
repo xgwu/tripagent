@@ -21,7 +21,7 @@ LAKE_BONUS = 150
 # 宽松节奏是需求不是缺陷：提案每天 2-3 点、白天为主、傍晚不硬填点、单天补强降档。
 # 正则定义在 sequencer（2026-09-14 迁移）：慢节奏餐窗提前量在排时层生效，
 # planner 层 re-export 保持既有引用（proposal_planner 的 m2_planner.SLOW_PACE_RE）不破
-from .sequencer import SLOW_PACE_RE  # noqa: E402
+from .sequencer import SLOW_PACE_RE, FAMILY_RE, is_family_query  # noqa: E402
 
 
 # ---- 忠实执行模式（toptw_faithful_mode，默认开）----
@@ -35,14 +35,21 @@ def faithful_mode_enabled() -> bool:
 
 
 def _build_day_pool(mains: list, cands: list, used_all: set, used_backup: set,
-                    radius_km: float = 8.0, n_backups: int = 8) -> list:
-    """单日候选池：LLM 主选 + 地理邻近备选（半径/数量可调，供调参复用）。"""
+                    radius_km: float = 8.0, n_backups: int = 8,
+                    family: bool = False) -> list:
+    """单日候选池：LLM 主选 + 地理邻近备选（半径/数量可调，供调参复用）。
+
+    family：亲子出行——备选池剔除 family_ok=false 的点（KTV/酒吧街区类）。
+    主选不在这里过滤（调用方在进池前已剔除并记录 reason）。
+    """
     from src.poi_db import haversine_km
     cx = sum(p["lat"] for p in mains) / len(mains)
     cy = sum(p["lng"] for p in mains) / len(mains)
     backups = []
     for p in cands:
         if p["id"] in used_all or p["id"] in used_backup:
+            continue
+        if family and not poi_db.is_family_ok(p):
             continue
         if haversine_km(p["lat"], p["lng"], cx, cy) <= radius_km:
             backups.append(p)
@@ -100,6 +107,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
     # 求解。否则池内自由换点会把 2-3 点的慢节奏天换/捞成 5-7 站大杂烩
     # （2026-09-14 case：提案 5 点落地 7 站排到 20:47）
     _slow = bool(SLOW_PACE_RE.search(query or ""))
+    _family = is_family_query(query)  # 亲子：全链剔除 family_ok=false 的点
     _faithful = faithful_mode_enabled()  # 忠实执行：池=主选，求解器只排序不做选点
     tasks = []  # (day, pool)：建池串行（维护 used_backup），求解并行
     for d in sorted(day_map):
@@ -124,6 +132,20 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
             mains = [p for p in mains if wd not in p.get("closed_days", [])]
         if not mains:
             continue
+        # 亲子出行：主选里 family_ok=false 的点（KTV/酒吧街区/高强度徒步/沉重题材
+        # 纪念馆）确定性剔出，并记 reason 供前端解释。挂在这一层而非只挂提案层，
+        # 是因为 M2 直连不经过 proposal_planner——选点层必须自带兜底
+        # （教训：确定性 gate 必须挂在每个入口，漏一个就等于没挂）。
+        if _family:
+            blocked = [p for p in mains if not poi_db.is_family_ok(p)]
+            if blocked:
+                solver_dropped.extend(
+                    {"id": p["id"], "name": p["name"], "day": d,
+                     "reason": "亲子出行：不适合带儿童前往，已从当日主选剔除"}
+                    for p in blocked)
+            mains = [p for p in mains if poi_db.is_family_ok(p)]
+            if not mains:
+                continue
         if _faithful:
             # 忠实执行模式：池=主选。邻域备选/LLM alts 均不进池——提案点数即承诺，
             # 求解器只排序；主选闭馆已在上面剔除，落选只可能是时间装不下，
@@ -131,7 +153,8 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
             pool = list(mains)
         else:
             pool = [p for p in _build_day_pool(mains, [] if _slow else cands,
-                                               used_all, used_backup)
+                                               used_all, used_backup,
+                                               family=_family)
                     if not wd or wd not in p.get("closed_days", [])]
             used_backup.update(p["id"] for p in pool
                                if p["id"] not in {m["id"] for m in mains})
@@ -144,6 +167,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                 for i in (alt_map or {}).get(d, []):
                     p = all_pois.get(i)
                     if (p and i not in pool_ids and i not in used_all
+                            and (not _family or poi_db.is_family_ok(p))
                             and (not wd or wd not in p.get("closed_days", []))):
                         pool.append(p)
                         used_backup.add(i)
@@ -461,7 +485,8 @@ def _fix_gap_reorder(day_map: dict, city: dict, all_pois: dict,
 
 
 def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
-                    all_pois: dict, date0: str | None, slow: bool = False):
+                    all_pois: dict, date0: str | None, slow: bool = False,
+                    family: bool = False):
     """补点闭环去 LLM 化第一层（P0）：优先用提案 alternates 确定性补位。
 
     alternates 本就是 LLM 为当天推荐的替补——求解器剔点后，从同天未用备选中
@@ -469,6 +494,8 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
     slow：慢节奏（老人/轮椅/不累）——真夜间备选（nightlife/晚开门，
     poi_db.is_night_only）不补，防止 evening 软时间窗在稀疏时间轴上拉出
     数小时空档；best_time=evening 全天开放点（外滩类）不算真夜间点。
+    family：亲子——family_ok=false 的备选不补（KTV/酒吧街区类），
+    否则「主选剔掉又被补位捞回来」等于没拦。
     返回 (补位后 day_map 或 None, subs 记录, 仍无备选可补的剔点清单)。
     """
     day_map2 = {k: list(v) for k, v in day_map.items()}
@@ -487,7 +514,8 @@ def _alt_substitute(day_map: dict, dropped: list, alt_map: dict | None,
                 if i not in used and i in all_pois
                 and (not wd_by_day.get(d)
                      or wd_by_day[d] not in all_pois[i].get("closed_days", []))
-                and not (slow and poi_db.is_night_only(all_pois[i]))]
+                and not (slow and poi_db.is_night_only(all_pois[i]))
+                and (not family or poi_db.is_family_ok(all_pois[i]))]
         # 主题保真（P0）：优先选与被剔点标签相同的备选（如动物换动物、博物馆换博物馆），
         # 防止补位点类型漂移导致用户需求主题在行程中消失
         dtags = set(all_pois[pid].get("tags", [])) if pid in all_pois else set()
@@ -636,7 +664,8 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     if solver_dropped:
         day_map2, subs, rest = _alt_substitute(final_day_map, solver_dropped,
                                                alt_map, all_pois, date0,
-                                               slow=bool(SLOW_PACE_RE.search(query or "")))
+                                               slow=bool(SLOW_PACE_RE.search(query or "")),
+                                               family=is_family_query(query))
         # 补位命中率统计（P2 观测）：命中=备选确定性补位，miss=需 LLM 兜底
         alt_sub_stat = {"hit": len(subs), "miss": len(rest),
                         "rate": round(len(subs) / (len(subs) + len(rest)), 2)
