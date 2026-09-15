@@ -93,6 +93,51 @@ case("5b 该天仍有餐食安排（餐块或美食落位）",
      bool(_meals(tl5)) or bool(_food_in_tl(tl5, "松鹤楼（观前店）")),
      f"meals={list(_meals(tl5))} 松鹤楼={bool(_food_in_tl(tl5, '松鹤楼（观前店）'))}")
 
+print("\n== 用例 6：_assign_food_windows 可用性判据（只做午市的小店不得被派晚餐窗）")
+city_sz = poi_db.load_city("苏州")
+_mid_shop = {"id": "T1", "name": "午市面馆", "best_time": "lunch", "rating": 4.9,
+             "open_h": 7.0, "close_h": 14.0}   # 只做午市（14:00 打烊）
+_big_hall = {"id": "T2", "name": "大酒楼", "best_time": "lunch", "rating": 4.0,
+             "open_h": 11.0, "close_h": 20.5}  # 午晚两窗都可用
+a1 = sequencer._assign_food_windows([_mid_shop, _big_hall], city_sz)
+print("  午市店 rating 高（先排）:", a1)
+case("6a 午市店占午餐窗、大店顺延晚餐窗",
+     a1.get("T1") == "lunch" and a1.get("T2") == "dinner", str(a1))
+a2 = sequencer._assign_food_windows([dict(_big_hall, rating=4.9), _mid_shop], city_sz)
+print("  大店 rating 高（先排）:", a2)
+case("6b 大店先占午餐窗后，午市店不占晚餐窗（不分配）",
+     a2.get("T2") == "lunch" and "T1" not in a2, str(a2))
+
+print("\n== 用例 7：food_window_plan 晚餐窗可达性（稀疏天排晚餐餐厅 → 判不可行）")
+allp = {p["id"]: p for p in (poi_db.parse_poi(p, city_sz) for p in city_sz["pois"])}
+sparse = ["SZ005", "SZ022", "SZ021"]   # 山塘街 + 得月楼 + 松鹤楼（当天景点少）
+plan7 = sequencer.food_window_plan(sparse, allp, city_sz, None)
+print("  assign:", plan7["assign"], "| infeasible:", plan7["infeasible"],
+      "| reason:", [plan7["reason"].get(i, "")[:26] for i in plan7["infeasible"]])
+case("7a 稀疏天第二家餐厅被判不可行", bool(plan7["infeasible"]), f"infeasible={plan7['infeasible']}")
+case("7b 不可行原因是晚餐窗等待超限",
+     any("晚餐" in plan7["reason"].get(i, "") for i in plan7["infeasible"]),
+     str(plan7["reason"]))
+
+print("\n== 用例 8：_reconcile_food_windows 主选层降级（不可行餐厅提前降级且不回填 alt）")
+from src import proposal_planner as pp  # noqa: E402
+g8 = {}
+dm8 = pp._reconcile_food_windows({1: list(sparse)}, allp, city_sz, "苏州2天", g8)
+kept_food = [pid for pid in dm8[1]
+             if allp[pid].get("category") == "food" and not sequencer.is_cafe(allp[pid])]
+print("  当天保留:", [allp[p]["name"] for p in dm8[1]], "| food_demoted:", g8.get("food_demoted"))
+case("8a 稀疏天只保留 ≤1 家正餐", len(kept_food) <= 1, f"kept={kept_food}")
+case("8b 降级写入 grounding 记录", bool(g8.get("food_demoted")), str(g8.get("food_demoted")))
+
+print("\n== 用例 9（对照）：景点充裕的天 → 午晚各一家均保留、不降级")
+rich = ["SZ001", "SZ002", "SZ003", "SZ004", "SZ005", "SZ022", "SZ021"]
+g9 = {}
+dm9 = pp._reconcile_food_windows({1: list(rich)}, allp, city_sz, "苏州2天", g9)
+kept9 = [pid for pid in dm9[1]
+         if allp[pid].get("category") == "food" and not sequencer.is_cafe(allp[pid])]
+case("9 充裕天两家正餐均保留", len(kept9) == 2, f"kept={[allp[p]['name'] for p in kept9]}")
+case("9b 充裕天无降级记录", not g9.get("food_demoted"), str(g9.get("food_demoted")))
+
 print("\n== 不变量：以上各天都不得出现「既无餐块也无美食落位」的裸天")
 for label, tl in [("用例1 苏州Day1", tl), ("用例2 上海Day2", tl2), ("用例3 苏州对照", tl3),
                   ("用例4 苏州", tl4), ("用例5 苏州", tl5)]:

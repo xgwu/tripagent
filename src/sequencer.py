@@ -374,11 +374,54 @@ def _assign_food_windows(foods: list, city: dict) -> dict:
             win_mid.get(FOOD_PREF_WIN.get(p.get("best_time"), "lunch"), 12.5), -p["rating"])):
         pref = FOOD_PREF_WIN.get(f.get("best_time"), "lunch")
         cands = ([pref] if pref in wins_left else []) + [k for k in wins_left if k != pref]
-        pick = next((k for k in cands if f.get("open_h", 0) < win_end[k] - 1e-9), None)
+        open_h = float(f.get("open_h", 0) or 0)
+        close_h = float(f.get("close_h", 24) or 24)
+        # 可用 = 开门早于窗尾 **且** 关门晚于窗中点（后者保证真有重叠时段可坐下吃饭：
+        # 只做午市的小店 07:00-14:00 若只看开门时刻会被派到 18:30 的晚餐窗，到场必然
+        # 超 MAX_MEAL_WAIT_H 被剔 —— 2026-09-15 报障 15 残余构型）
+        pick = next((k for k in cands
+                     if open_h < win_end[k] - 1e-9 and close_h > win_mid[k] + 1e-9), None)
         if pick:
             wins_left.remove(pick)
             assigned[f["id"]] = pick
     return assigned
+
+
+def food_window_plan(ids: list, all_pois: dict, city: dict,
+                     mode: str | None = None) -> dict:
+    """当天正餐点 → 餐窗可行性计划（主选对账 / 补位过滤共用）。
+
+    返回 {"assign": {pid: "lunch"|"dinner"}, "infeasible": [pid], "reason": {pid: str}}。
+    两类不可行：
+      ① 营业时间与剩余餐窗不匹配（只做午市的小店被挤到晚餐窗）；
+      ② 被派到晚餐窗，但当天行程撑不到晚餐时段——到得太早只能干等，超
+         MAX_MEAL_WAIT_H 必被剔（典型：景点少、15:15 就收工的天还排晚餐餐厅）。
+    判据刻意保守（预算 = Σdur + Σ腿时 + 1h 午餐块），宁可在主选层提前降级，
+    也不让用户看到「美食 POI 未能安排进用餐时段」的提示（报障 15 残余）。
+    """
+    pts = [all_pois[i] for i in ids if i in all_pois]
+    foods = [p for p in pts if p.get("category") == "food" and not is_cafe(p)]
+    if not foods:
+        return {"assign": {}, "infeasible": [], "reason": {}}
+    assign = _assign_food_windows(foods, city)
+    infeasible, reason = [], {}
+    for f in foods:
+        if f["id"] not in assign:
+            infeasible.append(f["id"])
+            reason[f["id"]] = "营业时间与当天剩余餐窗不匹配"
+    if any(assign.get(f["id"]) == "dinner" for f in foods):
+        dinner_start = poi_db.hhmm_to_h(city["meal_slots"]["dinner"][0])
+        day_start = poi_db.hhmm_to_h(city["day_start"])
+        budget = sum(float(p.get("dur") or 0) * 60 for p in pts)
+        budget += sum(poi_db.travel_hours(a, b, mode) * 60 for a, b in zip(pts, pts[1:]))
+        reach = day_start * 60 + budget + 60.0  # +1h 午餐块：跨过午饭后才谈晚餐
+        if reach < dinner_start * 60 - MAX_MEAL_WAIT_H * 60:
+            for f in foods:
+                if assign.get(f["id"]) == "dinner":
+                    infeasible.append(f["id"])
+                    reason[f["id"]] = (f"当天行程结束过早，晚餐到达将等待超"
+                                       f"{MAX_MEAL_WAIT_H:.1f}h 上限")
+    return {"assign": assign, "infeasible": infeasible, "reason": reason}
 
 
 def _insert_foods(seq_rest: list, foods: list, hotel, city: dict,

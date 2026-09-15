@@ -15,7 +15,7 @@ from src import hotel as hotel_mod
 # 提案调用 temperature=0.2/seed=42 本身近似确定性，缓存纯省时无行为差异。
 # key 含库内 POI 数量：扩城/补库后自动失效；PROPOSE_PROMPT_VER：prompt 文案变更时递增令旧缓存失效；
 # TTL 7 天与 nl_cache 对齐。
-PROPOSE_PROMPT_VER = "v6"
+PROPOSE_PROMPT_VER = "v7"
 PROPOSAL_CACHE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "proposal_cache.json")
 PROPOSAL_CACHE_TTL_S = 7 * 86400
@@ -75,7 +75,7 @@ PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 自由发挥设计一条你认为体验最好的路线，包含每天的主题与停留点（每点一句话说明为什么值得去），每天 4-6 个停留点。
 停留点必须是游客可游览的真实地点（景点/场馆/历史街区/公园/餐厅/市场等），不要把酒店、商铺门店当作停留点（住宿由系统另行安排）。
 路线设计常识：同一天的停留点尽量集中在相邻片区、顺路串联，避免一天内东西横跨全城；优先选择知名度高、位置明确易确认的地点。全天大点规则：时长约 8 小时以上的大型景点（如迪士尼、海昌海洋公园这类主题乐园）须独占一整天，当天不要再排其他停留点。远郊大点片区规则：距市中心 12 公里以外的半日型大点（4 小时以上的海洋馆/动物园/乐园等，如萧山的海洋公园）当天只能与同一片区的点位组合、或独占一天，绝不要把它与 10 公里外的其他片区（如运河、西湖东岸）混排在同一天——车程往返加游玩必超亲子一日预算；远郊大点想搭配市区点时，只搭它返回途中顺路的点。
-跨天片区分散规则：不同天安排不同片区——同一条马路/街区（如武康路、田子坊、外滩）及其 1 公里范围内的点位只能出现在其中一天，相邻两天绝不能去同一片区（用户要求贯穿性体验时除外，见贯穿偏好规则）；贯穿偏好规则：当用户表达的体验偏好按语义应贯穿全部天数（如「最好临湖」「湖边骑行」「每天都要湖景」「环湖骑行」），就每天围绕该偏好选不同的岸段/子片区（例：第一天太湖西山岛一线、第二天光福—湖东岸一线；或第一天金鸡湖环湖、第二天独墅湖/阳澄湖），同一天内仍集中相邻岸段顺路串联——此时跨天片区分散规则为用户偏好让位：不同天不得重复同一条道路/同一批点位，但允许同属一个大湖/大景区的不同岸段。若某天确实无法延续该偏好，必须在 reason 里写明原因。贯穿偏好下 alternates 也必须同主题：替补点同样来自该湖/景区的岸段，绝不要用市区咖啡/商场/街区替补湖线点。咖啡店等口碑配套每天最多 1 家，跟着当天主片区选，不要两天都往同一片区跑。配套顺路规则：咖啡店/餐厅等配套必须顺路——选位于当天相邻主选之间、或紧邻某个主选（步行可达，约 1.5 公里内）的店，绝不要为了某家网红店跨区绕路（例如上午在世博、下午去陆家嘴，就选两家之间沿线的店，不要折道武康路）。正餐规则：午餐/晚餐时段安排正经吃饭的地方（餐厅/名小吃/美食街），咖啡馆不能当正餐——咖啡只作为逛点之间的休憩加项，用户喜欢咖啡时另选顺路咖啡店，不要用它顶替午餐。每餐窗最多 1 家餐厅：同一天午餐、晚餐各最多安排 1 家正餐，绝不要排两家都吃午餐（或两家都吃晚餐）的餐厅——同窗超额的餐厅会被系统剔除且不回补，导致当天无餐厅可吃；想吃多家名店时，分到不同天或分到午/晚两个餐窗。
+跨天片区分散规则：不同天安排不同片区——同一条马路/街区（如武康路、田子坊、外滩）及其 1 公里范围内的点位只能出现在其中一天，相邻两天绝不能去同一片区（用户要求贯穿性体验时除外，见贯穿偏好规则）；贯穿偏好规则：当用户表达的体验偏好按语义应贯穿全部天数（如「最好临湖」「湖边骑行」「每天都要湖景」「环湖骑行」），就每天围绕该偏好选不同的岸段/子片区（例：第一天太湖西山岛一线、第二天光福—湖东岸一线；或第一天金鸡湖环湖、第二天独墅湖/阳澄湖），同一天内仍集中相邻岸段顺路串联——此时跨天片区分散规则为用户偏好让位：不同天不得重复同一条道路/同一批点位，但允许同属一个大湖/大景区的不同岸段。若某天确实无法延续该偏好，必须在 reason 里写明原因。贯穿偏好下 alternates 也必须同主题：替补点同样来自该湖/景区的岸段，绝不要用市区咖啡/商场/街区替补湖线点。咖啡店等口碑配套每天最多 1 家，跟着当天主片区选，不要两天都往同一片区跑。配套顺路规则：咖啡店/餐厅等配套必须顺路——选位于当天相邻主选之间、或紧邻某个主选（步行可达，约 1.5 公里内）的店，绝不要为了某家网红店跨区绕路（例如上午在世博、下午去陆家嘴，就选两家之间沿线的店，不要折道武康路）。正餐规则：午餐/晚餐时段安排正经吃饭的地方（餐厅/名小吃/美食街），咖啡馆不能当正餐——咖啡只作为逛点之间的休憩加项，用户喜欢咖啡时另选顺路咖啡店，不要用它顶替午餐。每天正餐最多 2 家且必须午、晚各一家，默认只安排 1 家（你最想推荐的那一餐）——同一天绝不要排两家都吃午餐（或两家都吃晚餐）的餐厅；生煎/面馆/小吃这类只做午市（午后打烊）的店一天最多 1 家，系统只会把它们排在午餐。要排第 2 家正餐时，它必须是晚市营业的餐厅（营业到 19 点以后），并且当天要有晚间安排（17:30 之后仍有停留点）把行程延续到晚餐时段；当天停留点少、下午早早结束的行程不要排晚餐餐厅——到得太早只能干等，系统会把它剔除。想吃多家名店时，分到不同天。
 招牌体验规则：先用世界知识判断用户需求的核心期待——每个城市都有公认必去的招牌景点（如上海的迪士尼度假区、北京环球影城、广州长隆），亲子/带娃类需求通常正期待这类招牌。若需求主题与某招牌景点高度匹配，必须把它作为主选排进某一天（独占一天，勿放 alternates）；只有当你有明确理由认为用户不会感兴趣（如需求明确排斥主题乐园）时才可不放。住宿锚点规则：用户指定住宿位置（如「住迪士尼附近」）时，行程必须包含该位置对应的标志性景点（住迪士尼附近则必含迪士尼），且该景点独占一天、优先安排在第一天，其余天数再安排其他区域。傍晚密度规则：博物馆/美术馆/展馆类场馆普遍 17 点前后闭馆，每天要为傍晚（17 点后）搭配至少 1 个晚间型停留点——夜展/灯光夜景/历史街区夜游/滨江步道/咖啡街区/书院茶馆等，避免傍晚大片空白；每天 4-6 个停留点中应含 1-2 个晚间型。慢节奏规则（针对老人/轮椅/行动不便/不要太累/慢节奏类需求，此规则下傍晚密度规则豁免）：每天 2-3 个停留点、绝不超过 4 个，以白天为主、尽量 17:30 前收尾，不安排只有夜间才开放或运营的点（酒吧/夜市/夜间演出/17 点后才开门的场馆——外滩、滨江步道、商业街、全天开放的经典景点不算夜间型点，白天照常安排）（除非用户明确提到夜景/夜市/夜游）；优先选择地势平缓、有无障碍条件、步行距离短的点位（平地园林主园区/滨湖步道/商业综合体/游船），避免登山型（虎丘山顶/山峰类）、石板路长距离古巷、需要大量站立排队的点位；同一天点位间车程尽量短，午后可安排 1 个茶馆/咖啡类慢休点，整体以从容、留有休息余量为准。
 备选规则：每天可附 0-2 个 alternates——你认为时间充裕时值得加上的点、或主选可能闭馆/排队过久时的同区域替补；备选不必与主选相邻，系统会按约束自动取舍。替补必须与当天主题同质（湖线日的替补也是湖线点、园林日的替补也是园林类），不要拿不同主题的点替补。
 参考清单——以下{city}地点带完整数据（坐标/开放时间/适玩时长），排入即可直接落地；若与你更想推荐的地点重合，以你的专业判断为准：
@@ -454,32 +454,53 @@ def _far_big_point_regroup(day_map: dict, all_pois: dict, family: bool = False,
     return moves
 
 
-def _dedupe_food_windows(day_map: dict, all_pois: dict, alt_map: dict):
-    """同一天同一餐窗只保留 1 家正餐（2026-09-15 报障 13 改进 A）。
+def _reconcile_food_windows(day_map: dict, all_pois: dict, city: dict,
+                            query: str, grounding: dict) -> dict:
+    """主选层餐窗对账（报障 13 改进 A + 报障 15 残余补强）。
 
-    提案常在同一天排多家同窗餐厅（得月楼+裕面堂都是午餐窗），TOPTW 全保留后
-    sequencer「每窗最多 1 家」守门把超额者剔掉且修复链不回补餐厅 → 当天 0 家
-    餐厅，美食诉求归零（苏杭 D2 实测）。在主选层面提前去重：保留提案顺序靠前
-    （rank 第一）的一家，其余降级进 alt_map 供求解器换点权衡；咖啡馆不算正餐。
-    在 _post_ground_fixups 之后调用——补强注入的餐厅同样参与去重。
+    两件事都在主选层提前处理，避免 sequencer 剔点后前端出现
+    「美食 POI 未能安排进用餐时段」：
+      ① 同一天同一餐窗只保留 1 家正餐（按提案顺序，推荐度靠前者保留）；
+      ② `sequencer.food_window_plan` 判定不可行的正餐直接降级——营业时间与
+         剩余餐窗不匹配（只做午市的小店被挤到晚餐窗），或当天行程撑不到晚餐
+         时段（早收工的天排晚餐餐厅必然干等超 MAX_MEAL_WAIT_H）。
+    降级点**不回填 alt_map**（旧行为是回填）：它已被确定性判定当天排不进，
+    留在补位池只会被 _alt_substitute 换回来、重新触发剔除提示。降级记录写入
+    grounding["food_demoted"] 供前端披露。在 _post_ground_fixups 之后调用
+    （补强注入的餐厅同样参与对账）。
     """
+    mode = sequencer.travel_mode(query or "")
+    demoted_all = []
     for d, ids in list(day_map.items()):
+        plan = sequencer.food_window_plan(ids, all_pois, city, mode)
+        bad = set(plan["infeasible"])
         seen_win: dict = {}
-        keep: list = []
-        demoted: list = []
         for pid in ids:
             p = all_pois.get(pid)
-            if p and p.get("category") == "food" and not sequencer.is_cafe(p):
-                win = sequencer.FOOD_PREF_WIN.get(p.get("best_time"), "lunch")
+            if not p or pid in bad:
+                continue
+            if p.get("category") == "food" and not sequencer.is_cafe(p):
+                win = plan["assign"].get(pid) or sequencer.FOOD_PREF_WIN.get(
+                    p.get("best_time"), "lunch")
                 if win in seen_win:
-                    demoted.append(pid)
-                    continue
-                seen_win[win] = pid
-            keep.append(pid)
-        if demoted:
-            day_map[d] = keep
-            alt_map[d] = list(alt_map.get(d) or []) + demoted
-    return day_map, alt_map
+                    bad.add(pid)
+                else:
+                    seen_win[win] = pid
+        if not bad:
+            continue
+        keep = [pid for pid in ids if pid not in bad]
+        if not keep:  # 降级会清空当天 → 至少留一家，交给 sequencer 走既有剔除路径
+            keep, bad = ids[:1], set(ids[1:])
+        day_map[d] = keep
+        for pid in bad:
+            p = all_pois.get(pid) or {}
+            demoted_all.append({
+                "name": p.get("name", ""), "day": d,
+                "reason": plan["reason"].get(pid)
+                          or "同一餐窗超出 1 家正餐，保留推荐度更高者"})
+    if demoted_all:
+        grounding["food_demoted"] = demoted_all
+    return day_map
 
 
 def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict,
@@ -754,9 +775,9 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     anchor_poi = hotel_mod.match_landmark_poi(city, hotel_text)
     day_map, themes, grounding = _post_ground_fixups(
         day_map, themes, grounding, city, all_pois, days, query, anchor_poi)
-    # 美食保障（报障 13 改进 A）：同窗餐厅主选去重，超额降级 alt——
-    # 防「提案排 2 家午餐餐厅 → sequencer 容量守门剔到 0 家且不回补」
-    day_map, alt_map = _dedupe_food_windows(day_map, all_pois, alt_map)
+    # 美食保障（报障 13 改进 A + 报障 15 残余）：主选层餐窗对账——同窗超额与
+    # 「当天排不进」的餐厅提前降级，防 sequencer 剔点后前端提示美食未进餐窗
+    day_map = _reconcile_food_windows(day_map, all_pois, city, query, grounding)
     if not day_map:  # 全部落地失败 → M2 兜底
         r = m2_planner.plan(city, query, days, use_llm=True, date0=date0,
                             hotel_text=hotel_text, time_limit_s=time_limit_s,
