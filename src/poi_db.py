@@ -112,10 +112,24 @@ def hhmm_to_h(s: str) -> float:
 
 
 def parse_poi(p: dict, city: dict) -> dict:
-    """给 POI 补充数值化字段。"""
+    """给 POI 补充数值化字段。
+
+    跨零点营业归一化：闭店时刻「不晚于」开门时刻（18:00-02:00 宵夜街、10:00-06:00
+    KTV、00:00-00:00 全天点）在时钟上是跨过午夜的次日时刻，+24 归一到绝对小时。
+    不做这一步则 close_h 小于 open_h，点位会被三重判死：
+      1. toptw 预剔除 to_min(close)-dur < 0（-420-90 < 0）；
+      2. toptw 时间窗 lo = to_min(open) > hi = to_min(close)-dur（540 > -510）；
+      3. sequencer 任一到达时刻都满足 t + dur > close_h → 恒报「超出营业时间」。
+    即该 POI 永远排不进任何行程（2026-09-15 实测 GZ069 宝业路宵夜街 / NJ021 1912
+    街区两个 nightlife 点自入库起从未落地过）。归一化后 02:00 → 26.0，与 day_end
+    上限共同决定它只能排在当天收尾时段，符合真实语义。
+    """
     q = dict(p)
     q["open_h"] = hhmm_to_h(p["open"])
-    q["close_h"] = hhmm_to_h(p["close"])
+    close_h = hhmm_to_h(p["close"])
+    if close_h <= q["open_h"]:
+        close_h += 24.0
+    q["close_h"] = close_h
     q["dur"] = float(p["duration_h"])
     q["dist_center_km"] = haversine_km(p["lat"], p["lng"], city["center"]["lat"], city["center"]["lng"])
     return q

@@ -1762,6 +1762,98 @@
    "family_ok": true,
    "note": "珠江新城艺术购物中心，艺术装置与餐饮；近花城广场、广州图书馆",
    "closed_days": []
+  },
+  {
+   "id": "GZ076",
+   "name": "纯K（岗顶店）",
+   "category": "nightlife",
+   "tags": [
+    "KTV",
+    "量贩式",
+    "天河路商圈",
+    "夜唱"
+   ],
+   "lat": 23.133457,
+   "lng": 113.337063,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "06:00",
+   "best_time": "evening",
+   "price": 64,
+   "rating": 5,
+   "area": "east",
+   "family_ok": false,
+   "note": "天河路 518 号地中海壹荟 3 楼（岗顶地铁站），全国连锁量贩式 KTV，人均约 64 元；09:00 至次日 06:00 通宵营业，紧邻太古汇（0.5km）、正佳广场（1.0km），逛街后可续摊；房间建议提前预订",
+   "closed_days": []
+  },
+  {
+   "id": "GZ077",
+   "name": "堂会（缤缤店）",
+   "category": "nightlife",
+   "tags": [
+    "KTV",
+    "粤式",
+    "北京路",
+    "夜生活"
+   ],
+   "lat": 23.115473,
+   "lng": 113.26488,
+   "duration_h": 2.0,
+   "open": "11:00",
+   "close": "03:00",
+   "best_time": "evening",
+   "price": 83,
+   "rating": 4,
+   "area": "central",
+   "family_ok": false,
+   "note": "北京路商圈海印缤缤广场 9-11 层，广州本土高端 KTV 品牌，人均约 83 元；距天字码头 0.65km（珠江夜游下船后可步行续摊）、北京路步行街 0.67km；营业至次日 03:00",
+   "closed_days": []
+  },
+  {
+   "id": "GZ078",
+   "name": "魅KTV·AI辅唱（花城汇店）",
+   "category": "nightlife",
+   "tags": [
+    "KTV",
+    "AI辅唱",
+    "珠江新城",
+    "连锁"
+   ],
+   "lat": 23.12639,
+   "lng": 113.3257,
+   "duration_h": 2.0,
+   "open": "12:00",
+   "close": "06:00",
+   "best_time": "evening",
+   "price": 50,
+   "rating": 4,
+   "area": "east",
+   "family_ok": false,
+   "note": "花城汇北区东翼负一层（冼村街道黄埔大道西 74 号），主打 AI 辅唱的连锁 KTV，人均约 50 元；距花城广场 0.66km、正佳广场 0.65km、广州塔 2.2km，看完珠江夜景可步行前往；12:00 至次日 06:00 营业",
+   "closed_days": []
+  },
+  {
+   "id": "GZ079",
+   "name": "CxPARTY KTV（太古仓店）",
+   "category": "nightlife",
+   "tags": [
+    "KTV",
+    "太古仓",
+    "派对",
+    "夜生活"
+   ],
+   "lat": 23.09113,
+   "lng": 113.257172,
+   "duration_h": 2.0,
+   "open": "10:00",
+   "close": "06:00",
+   "best_time": "evening",
+   "price": 56,
+   "rating": 4,
+   "area": "south",
+   "family_ok": false,
+   "note": "海珠工业大道北富力家信商业中心三层，与太古仓码头（0.56km）同一夜生活片区，人均约 56 元；傍晚在太古仓看日落、喝精酿后可步行续摊；10:00 至次日 06:00 营业",
+   "closed_days": []
   }
  ]
 }
