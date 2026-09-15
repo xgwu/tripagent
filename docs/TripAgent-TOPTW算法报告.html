@@ -52,7 +52,7 @@ pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;pa
 
 <header>
   <h1>TOPTW 算法原理与 TripAgent 应用报告</h1>
-  <div class="sub">覆盖 src/toptw.py 全部实现 · 对应代码 main@7222dc3 · 2026-09-15（M14）</div>
+  <div class="sub">覆盖 src/toptw.py 全部实现 · 对应代码 main@d25119e · 2026-09-15（M15）</div>
 </header>
 
 <div class="kpis">
@@ -125,7 +125,7 @@ s.t. 路径连通、连续；
 <table>
 <tr><th>机制</th><th>API</th><th>在本项目中的用法</th></tr>
 <tr><td><b>可选访问</b></td><td><code>AddDisjunction([idx], penalty)</code></td><td>每个候选点挂一个 disjunction；<b>penalty = 该点利润</b>——求解器访问它就赚利润、跳过它就损失利润，penalty 与绕路成本自动权衡。这是「选点」能力的来源；<b>忠实模式下主选利润含 10⁶，等价于把主选变成必选</b></td></tr>
-<tr><td><b>时间维度</b></td><td><code>AddDimension(transit_cb, 0, horizon, fix_start=False, "time")</code></td><td>transit 回调 = <code>上游游玩时长 + 通行分钟</code>；节点 CumulVar 设硬范围 <code>[开门, 闭店−游玩时长]</code>（到达截止语义与 sequencer 对齐）；<b>horizon = 当日跨度 − 120min 餐块缓冲</b>（保底 240）</td></tr>
+<tr><td><b>时间维度</b></td><td><code>AddDimension(transit_cb, 0, horizon, fix_start=False, "time")</code></td><td>transit 回调 = <code>上游游玩时长 + 通行分钟</code>；节点 CumulVar 设硬范围 <code>[开门, 闭店−游玩时长]</code>（到达截止语义与 sequencer 对齐）；<b>horizon = 当日跨度 − 120min 餐块缓冲</b>（保底 240）；<b>M15 夜间点放宽</b>：池内最晚需求超出 horizon 时放宽至 <code>min(当日域, 最晚需求+60)</code></td></tr>
 <tr><td><b>软时间窗</b></td><td><code>SetCumulVarSoftLowerBound / SoftUpperBound</code></td><td>best_time 建议时段（morning/afternoon/evening/lunch）映射为软窗，偏差每分钟罚 5 分，并有 60 分钟封顶（见第 5 章）</td></tr>
 </table>
 <div class="note">实现细节：自环（未被访问的可选节点）transit 必须返回 0，否则时间维度不可行——这是 OR-Tools 建模的经典坑；另 <code>RoutingIndexManager</code> 的绑定参数顺序为 <code>(num_nodes, num_vehicles, starts, ends)</code>，传错会静默得到错误规模（本项目实证：传 <code>(1, n, 0)</code> 会得到 n 辆车、1 个节点）。</div>
@@ -160,7 +160,8 @@ s.t. 路径连通、连续；
 <tr><td>② 营业硬窗</td><td><code>CumulVar.SetRange(开门, 闭店−时长)</code></td><td>到达 + 游玩 ≤ 闭店；窗口为空的点（闭店前玩不完）在建模前<b>预剔除</b>，防 CP Solver 直接 fail</td></tr>
 <tr><td>③ 建议软窗</td><td><code>SoftLowerBound / SoftUpperBound</code>，5 分/分钟</td><td>morning→12 点前、afternoon→13 点后、evening→17 点后、lunch→11~13:30（<code>SLOT_WINDOWS</code>）</td></tr>
 <tr><td>④ 软窗封顶</td><td>偏差 &gt;60min 收紧硬域（<code>SOFT_CAP_MIN</code>）</td><td>M3-2 关键修正：旧逻辑线性罚分无上限（晚到 5h 罚 1500 分），求解器「宁可晚到硬扛罚分」也不弃点——morning 点被拖到傍晚、时段空间白扔；封顶后<b>要么贴时段排、要么干脆不排（弃利润）</b></td></tr>
-<tr><td>⑤ 跨零点归一</td><td><code>parse_poi</code>：<code>close_h ≤ open_h</code> → <code>+24</code></td><td><b>M14 新增</b>：闭店时刻不晚于开门时刻即视为跨过午夜的次日时刻（18:00-02:00 → close_h 26.0）。不做这一步则点位被三重判死，详见下节</td></tr>
+<tr><td>⑤ 跨零点归一</td><td><code>parse_poi</code>：<code>close_h ≤ open_h</code> → <code>+24</code></td><td><b>M14 新增</b>：闭店时刻不晚于开门时刻即视为跨过午夜的次日时刻（18:00-02:00 → close_h 26.0）。不做这一步则点位被三重判死，详见 5.1</td></tr>
+<tr><td>⑥ 夜间点放宽 <span class="badge b-warn">M15</span></td><td><code>latest_end + LATE_POINT_MARGIN_MIN &gt; horizon</code> → <code>horizon = max(horizon, min(当日域, latest_end+60))</code></td><td><b>M15 新增</b>：<code>MEAL_BUFFER_MIN=120</code> 把预算压到 630min（09:00→19:30），18:00 后开门的点（珠江夜游 19:00、宝业路宵夜街 18:00）<b>结构性不可行</b> → 按池内最晚需求放宽，上限锁真实日窗；池中无晚间点时不触发，行为与旧版逐位一致。详见 5.2</td></tr>
 </table>
 <div class="note">冲突仲裁：软窗封顶与营业窗冲突时<b>营业窗优先</b>（能开就行）——约束的优先级是 硬可行性 &gt; 时段偏好 &gt; 利润。</div>
 
@@ -182,6 +183,16 @@ s.t. 路径连通、连续；
 <b>「死点」的判定特征（已固化为单测断言）</b>：把 <code>close_h</code> 还原成 2.0（不归一）后，该点在求解结果里<b>既不入选、也不出现在 dropped 列表</b>——它从模型中<b>完全消失</b>。这与「利润权衡剔除」（进池、被弃、进 dropped）是两种截然不同的失败形态。<code>scripts/test_cross_midnight_close.py</code> 用 8 组断言把这两者区分固化下来。
 </div>
 <p class="note">注意：归一化解除的是「绝对不可排」，<b>不等于「必然入选」</b>。新入库的 KTV（闭店 06:00 → close_h 30.0）依赖归一化才排得进；同理宝业路宵夜街归一化后仍未落地，是因为提案层不提案它（召回层问题），与这里无关。</p>
+
+<h3>5.2 夜间点 horizon 放宽：预算预扣把「夜生活」判了死刑（M15）</h3>
+<p><b>故障现象</b>：广州珠江夜游（19:00 开门）、宝业路宵夜街（18:00 开门）这类点位，即使跨零点归一化已修好、点位自身完全可行，也<b>从不入选</b>——且它不出现在 <code>dropped</code> 里，排查时极易误判为「提案层没提」。</p>
+<p><b>根因</b>：<code>horizon = max(240, 当日跨度 − MEAL_BUFFER_MIN)</code>，<code>MEAL_BUFFER_MIN=120</code> → 当日跨度 750min（09:00→21:30）时 <code>horizon = 630min</code>（09:00→<b>19:30</b>）。19:00 开门的点 + 90min 时长 = 20:30 结束 &gt; 19:30 → <b>结构性不可行</b>。餐块预扣（M6）本意是防止过度打包后整体后移溢出，但它是<b>全天一刀切</b>的，没区分「这个点本来就在晚间」。</p>
+<p><b>修法</b>：新增 <code>LATE_POINT_MARGIN_MIN = 60</code>，建池后按<b>池内最晚需求</b>放宽：</p>
+<pre>latest_end = max( to_min(open_h) + dur*60  for p in candidates )
+if latest_end + LATE_POINT_MARGIN_MIN &gt; horizon:
+    horizon = max(horizon, min(day_window, latest_end + LATE_POINT_MARGIN_MIN))</pre>
+<p>上限锁在<b>真实日窗</b>（<code>day_window</code>）之内，不会让预算越过营业日边界。<b>对照实验（已固化为单测）</b>：把 <code>LATE_POINT_MARGIN_MIN</code> 置负无穷即关闭放宽，同一构型下珠江夜游/宝业路「既不入选也不出现在 dropped」；修复后正常入选。</p>
+<p class="kv"><b>与编排层口径的差异（有意为之）</b>：<code>m2_planner._day_horizon</code>（挪点容量预检）仍按 <code>− MEAL_BUFFER_MIN</code> 计算，<b>不</b>随夜间点放宽。这意味着「预检放行」比「求解能排」更严，属安全方向——不会出现「预检过了求解仍剔」的错配（报障 14 的口径纪律）。</p>
 
 <h2>6 · 求解器配置与提前停止</h2>
 <pre>p.first_solution_strategy   = PATH_CHEAPEST_ARC      // 构造：最便宜弧优先
@@ -237,9 +248,9 @@ profit(p):
 <tr><td><b>线程并行</b></td><td>建池串行（维护去重状态）→ 线程池并行求解（≤4 并发）→ 串行合并</td><td>OR-Tools 求解释放 GIL，多天耗时 ≈ 最慢单天</td></tr>
 <tr><td><b>天复用（reuse）</b></td><td>C 闭环/重平衡未触及的天直接复用上次有序解，不重解</td><td>跨天调整只动少数天，全量重解是纯浪费</td></tr>
 <tr><td><b>闭馆预剔除</b></td><td>日期感知：当日闭馆的主选进池前剔除并记「求解器强制换点」</td><td>主选闭馆信号进闭环 REVISE，而非求解器内部静默换点</td></tr>
-<tr><td><b>酒店 depot</b></td><td>hotel 作为虚拟节点（全天开放、0 时长）置于 <code>nodes[0]</code>，每日强制出发返回</td><td>首尾交通真实；无酒店时本应「首主选换位到 depot」（该逻辑当前失效，见第 11 章）</td></tr>
+<tr><td><b>酒店 depot</b></td><td>hotel 作为虚拟节点（全天开放、0 时长）置于 <code>nodes[0]</code>，每日强制出发返回</td><td>首尾交通真实；无酒店时 depot 取主选第一点（<b>M14 已修复</b>：换位提前到 <code>RoutingIndexManager</code> 构造<b>之前</b>，见第 11 章）</td></tr>
 </table>
-<p><b>容量预检与求解器同口径（M12 新增）</b>：跨天重平衡在挪点前调用 <code>_day_horizon(city)</code>（= <code>max(240, 日长分钟 − MEAL_BUFFER_MIN)</code>）与 <code>_day_load(ids, all_pois, mode)</code>（dur 合计 + 按序列相邻腿时间累加，偏保守）。<b>两者必须与 <code>toptw.solve_day</code> 的 horizon 口径完全一致</b>，否则会出现「预检放行、TOPTW 仍剔」的错配（报障 14 根因）。</p>
+<p><b>容量预检与求解器同口径（M12 新增）</b>：跨天重平衡在挪点前调用 <code>_day_horizon(city)</code>（= <code>max(240, 日长分钟 − MEAL_BUFFER_MIN)</code>）与 <code>_day_load(ids, all_pois, mode)</code>（dur 合计 + 按序列相邻腿时间累加，偏保守）。<b>两者必须与 <code>toptw.solve_day</code> 的 horizon 口径完全一致</b>，否则会出现「预检放行、TOPTW 仍剔」的错配（报障 14 根因）。<b>M15 起有一处有意的不对称</b>：夜间点放宽只作用于求解层 <code>horizon</code>，预检仍按 −120min 算，方向上更保守。</p>
 <p>求解输出两样东西：<b>有序访问序列</b>（交给 sequencer 做时间轴与修复链）和<b>被弃点列表</b>（进入「为什么没去这些点」的用户可见解释 + 闭环信号）。被剔主选会触发两级补救：提案备选净零换位（同主题优先）→ LLM 兜底补点；需求主题彻底丢失时向用户出 ⚠️ 通知。</p>
 
 <h2>9 · 参数调优历程与实测效果</h2>
@@ -253,6 +264,7 @@ profit(p):
 <tr><td><b>M11</b></td><td><b>忠实执行模式（lock_mains，默认开）</b></td><td>池=主选、落地 ≤ 提案、剔除原因单一；节奏类需求不再被利润函数抹平</td></tr>
 <tr><td><b>M12</b></td><td><b><code>_bonus</code> 点级加成（湖偏好）+ 容量预检同口径</b></td><td>贯穿偏好可穿透求解层；挪点不再「预检放行、求解仍剔」</td></tr>
 <tr><td><b>M14</b></td><td><b>跨零点闭店归一化（上游 parse_poi）</b></td><td>救活 GZ069/NJ021 两个死点；KTV（06:00 闭店）等凌晨点位可排</td></tr>
+<tr><td><b>M15</b></td><td><b>夜间点 horizon 放宽</b>（<code>LATE_POINT_MARGIN_MIN=60</code>）</td><td>修「18:00 后开门的点结构性不可排」——珠江夜游 19:00-20:30、宝业路宵夜街 18:00-19:30 实测入选</td></tr>
 </table>
 
 <div class="chartbox"><h4>端到端规划耗时演进（杭州 2 日样例，秒）</h4>
@@ -276,9 +288,10 @@ profit(p):
 <tr><td><code>RoutingIndexManager</code> 参数顺序</td><td>绑定顺序为 <code>(num_nodes, num_vehicles, starts, ends)</code>；本项目实证传 <code>(1, n, 0)</code> 会得到 n 辆车、1 个节点</td><td>已规避（显式 <code>(n, 1, [0], [0])</code>）</td></tr>
 <tr><td><code>AddDisjunction</code> 罚分需 int64</td><td>利润里混入 float（如 <code>_bonus</code> 未强转）会 TypeError</td><td>已处理（<code>int()</code> 强转）</td></tr>
 <tr><td>静态方法绑定</td><td><code>routing.AddAtSolutionCallback</code> 传实例方法会报 unbound；须用闭包/模块级函数</td><td>已处理</td></tr>
-<tr><td><b>depot 换位失效</b></td><td><code>nodes[0], nodes[nodes.index(first)] = nodes[nodes.index(first)], nodes[0]</code> 是 Python 元组赋值陷阱——LHS 第二次赋值时<b>重算 <code>nodes.index(first)</code></b>（此时 first 已在 <code>nodes[0]</code>，返回 0）→ 交换被整体撤销。后果：「无酒店时 depot 取主选第一点」<b>从未生效</b>，depot 恒为 <code>candidates[0]</code>。当前影响≈0（池构造 mains 在前），但序列化条件下会取错点</td><td><b>未修</b>（登记）。修它必须<b>同时</b>把换位移到 <code>RoutingIndexManager</code> 构造之前——现在 <code>SetRange</code> 在交换前执行，换成功反而会造成窗口与节点错位</td></tr>
-<tr><td>跨零点闭店</td><td>close_h &lt; open_h 的点被三重判死，从模型完全消失</td><td>已修（M14，见 5.1）</td></tr>
-<tr><td>不惩罚行程内部空档</td><td>evening 软窗 + 点少的天会把时间轴拉出数小时空档；慢节奏靠移除真夜间点规避，通用场景未治（动 solver 风险大）</td><td><b>已知遗留</b></td></tr>
+<tr><td><b>depot 换位失效</b></td><td><code>nodes[0], nodes[nodes.index(first)] = nodes[nodes.index(first)], nodes[0]</code> 是 Python 元组赋值陷阱——LHS 第二次赋值时<b>重算 <code>nodes.index(first)</code></b>（此时 first 已在 <code>nodes[0]</code>，返回 0）→ 交换被整体撤销。后果：「无酒店时 depot 取主选第一点」<b>从未生效</b>，depot 恒为 <code>candidates[0]</code>。当前影响≈0（池构造 mains 在前），但序列化条件下会取错点</td><td><b>✅ 已修（M14 / 0457603）</b>：换位提前到 <code>RoutingIndexManager</code> 构造<b>之前</b>（原实现 <code>SetRange</code> 在交换前执行，直接换反而会造成窗口与节点错位）+ 改用基于 id 的下标（<code>list.index(obj)</code> 遇 dict 相等性会命中错位）。守卫 <code>test_depot_anchor.py</code></td></tr>
+<tr><td>跨零点闭店</td><td>close_h &lt; open_h 的点被三重判死，从模型完全消失</td><td>✅ 已修（M14，见 5.1）</td></tr>
+<tr><td>夜间点被预算判死</td><td>池内 18:00 后开门的点在 <code>horizon = 当日跨度 − 120min</code> 下结构性不可行，<b>且不出现在 dropped 里</b>（排查时易误判为「提案层没提」）</td><td>✅ 已修（M15，见 5.2）</td></tr>
+<tr><td>不惩罚行程内部空档</td><td>evening 软窗 + 点少的天会把时间轴拉出数小时空档；慢节奏靠移除真夜间点规避。<b>M15 已把空档成因（餐厅钉整点）修掉并改为逐日披露</b>（<code>_gap_notices</code>），但目标函数本身仍不含空档惩罚项</td><td><b>已知遗留（已缓解）</b>——动 solver 风险大</td></tr>
 </table>
 
 <h2>12 · 边界与演进方向</h2>
@@ -287,11 +300,11 @@ profit(p):
 <li><b>利润静态性</b>：利润不随拥挤度/天气变化——拥堵与天气感知排入待办后，可作为时段相关的利润调整项注入。</li>
 <li><b>预算感知</b>：门票价格（<code>price</code> 字段已回填）未进目标函数，可加预算约束维度（预算内利润最大化）。</li>
 <li><b>提前停止阈值</b>：0.5% / 连续两次为经验值，可在更多城市样本上校准（当前单日 0.2~1.1s 已接近建池固定开销）。</li>
-<li><b>空档惩罚项</b>：在目标中加入「行程内部大空档惩罚」以治理通用场景的时间轴空窗——需谨慎评估对求解时间与稳定性的影响。</li>
-<li><b>召回层补强（让「能排但没被提案」的点可落地）</b>：忠实模式下求解器不再换点，提案层的召回质量权重进一步上升——需强化「片区日」提案引导与检索召回。</li>
+<li><b>空档惩罚项</b>：在目标中加入「行程内部大空档惩罚」以治理通用场景的时间轴空窗——需谨慎评估对求解时间与稳定性的影响。<b>M15 已先做两步缓解</b>：① 消除最大成因（餐厅被钉在餐窗整点，见编排层 <code>MEAL_EARLY_TOL_H</code>）；② 求解层不惩罚但<b>如实披露</b>（<code>scan_gaps</code> → <code>_gap_notices</code>）。</li>
+<li><s>召回层补强（让「能排但没被提案」的点可落地）</s> <b>✅ M15 已修复</b>：三层修复（确定性注入 → 必选与对账口径 → 目的地型餐饮豁免）后，宝业路宵夜街落地 18:00-19:30、莲花岛落地 11:26-13:26。忠实模式下求解器不再换点，提案层召回质量权重进一步上升，因此这条修在<b>提案层与守门层</b>而非求解器。</li>
 </ul>
 
-<div class="note" style="margin-top:28px">本文档基于 src/toptw.py（199 行）与 src/m2_planner.py 编排层真实代码编写（2026-09-15，M14）· 配套文档：<code>docs/TripAgent-架构设计.html</code>（系统全景与 M7 管线）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）</div>
+<div class="note" style="margin-top:28px">本文档基于 src/toptw.py（221 行）与 src/m2_planner.py 编排层真实代码编写（2026-09-15，M15）· 配套文档：<code>docs/TripAgent-架构设计.html</code>（系统全景与 M7 管线）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）</div>
 
 </div>
 <script>

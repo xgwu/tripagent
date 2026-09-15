@@ -16,4 +16,4 @@ jobs:
         run: |
           pip install -r requirements.txt 2>/dev/null || pip install ortools
       - name: Release gate (unit tests + regression + city db validation)
-        run: bash scripts/release_gate.sh
+        run: python scripts/release_gate.py

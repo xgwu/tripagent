@@ -1,8 +1,8 @@
 # TripAgent 里程碑档案（M1–M7 详录 · M8 起见下节与项目报告）
 
-> 📌 本文是**里程碑历史档案**，M1–M7 部分保留原始记录。M8 及之后的完整演进（含 M8.5 性能工程、M9 主题保真、M10 工程化、M11 忠实执行、M12 体验保真、M13 开城广州、M14 正确性审计）请以 **[项目报告 v3](TripAgent-项目报告.html)** 为准；架构级说明见 **[架构设计文档](TripAgent-架构设计.html)**（已更新至 M14），求解器原理见 **[TOPTW 算法报告](TripAgent-TOPTW算法报告.html)**。
+> 📌 本文是**里程碑历史档案**，M1–M7 部分保留原始记录。M8 及之后的完整演进（含 M8.5 性能工程、M9 主题保真、M10 工程化、M11 忠实执行、M12 体验保真、M13 开城广州、M14 正确性审计、M15 空档治理与点名召回）请以 **[项目报告 v3](TripAgent-项目报告.html)** 为准；架构级说明见 **[架构设计文档](TripAgent-架构设计.html)**（已更新至 M15），求解器原理见 **[TOPTW 算法报告](TripAgent-TOPTW算法报告.html)**。
 >
-> 当前基线：**8 城 528 POI · 37,315 对交通缓存 · 回归 14/14（8 城全覆盖）· 140 commits**。
+> 当前基线：**8 城 528 POI · 37,315 对交通缓存 · 回归 14/14（8 城全覆盖）· 143 commits**。
 
 对应《TOPTW+LLM 混合方案可行性分析》：
 - **M1**（已完成 ✅）：验证核心假设「LLM 库内组线显著优于标签过滤」——幻觉结构性归零、优化层修复价值被量化。
@@ -158,7 +158,7 @@ python main.py "苏州2天园林深度游" --city 苏州 --date 2026-09-14 --m2 
 python main.py "杭州2天亲子游" --hotel 西湖国宾馆 --m2                  # 酒店锚点（AMAP_KEY 自动定位）
 python main.py "上海3日亲子游" --city 上海 --days 3 --proposal          # M7 经验提案（世界知识主导）
 
-# 回归评测（12 固化用例；--llm 走真实全链路，默认离线确定性）
+# 回归评测（14 固化用例；--llm 走真实全链路，默认离线确定性）
 python scripts/eval_regression.py
 
 # 无 Key 时自动降级离线兜底（管线冒烟用，不代表 M1 真实体验）
@@ -169,7 +169,7 @@ python eval_ab.py --no-llm
 
 Windows 注意：`PYTHONIOENCODING=utf-8` 已在脚本内处理 stdout；JSON 落盘均为 UTF-8。
 
-## M11–M14 新增（2026-09-13/15 · 线上反馈驱动迭代）
+## M11–M15 新增（2026-09-13/15 · 线上反馈驱动迭代）
 
 ### M11 忠实执行模式：选点权收归提案层（adb3fa7，默认开）
 求解器按「时间预算内利润最大化」填满时间的目标，与用户的节奏意图（慢节奏/带老人/不要太累）**直接打架且优化器总会赢**。修复是把选点权整体交还提案层：`toptw.solve_day(lock_mains=True)` 时池 = 主选、主选叠 10⁶ 利润锁定、**落地 ≤ 提案**、剔除原因收敛为单一口径（「时间预算内无法纳入（主选锁定仍装不下）」）；补位只走阶段 3 `_alt_substitute`（**净零换位**，不增站点数），跳过 `_feedback_loop` 加点。env `TOPTW_FAITHFUL_MODE=0` / config `toptw_faithful_mode:false` 可回退。单测 `scripts/test_faithful_mode.py`（4 例）。
@@ -190,6 +190,14 @@ Windows 注意：`PYTHONIOENCODING=utf-8` 已在脚本内处理 stdout；JSON �
 - **城市注册表守卫**：广州开城只改了 `fetch_poi_photos.py` 的 `CITYCODE`，漏改 `webui/server.py` 的 `_ID_PREFIX_CITY`/`_CITYCODE` → `/api/photo` 对 GZ 全 400（报障 17「全城不出图」）。新增 `scripts/test_city_registry.py`（8 城 × 4 张映射表 + 前缀识别硬断言），开城/加城必跑。
 - **缓存改动纯度校验手法**：改大缓存 JSON 前后用 `git show HEAD:<file>` 拉旧版逐键比对，断言「既有键改动 0 / 删除 0，仅新增 N」。
 - **顺带修复**：`is_cafe` 判据过宽（裸「茶」子串误杀广州 4 家粤菜老字号「早茶」→ 一天两顿午饭）；`/api/cities` 不再回传 Web 服务 Key（安全加固 ea5d12e）。
+
+### M15 空档治理与点名召回（d25119e · 一次迭代修三个缺陷）
+
+- **空档治理**：全量扫描 13 用例 × 全部天数，≥45min 空档共 **357min**，且逐条核对后**全部出现在正餐点之前**——旧 `start = max(t2, ws, p["open_h"])` 把餐厅钉在 12:00/18:00 整点，10:45 到场也要干等 75min（南京科举博物馆→绿柳居、北京故宫→四季民福、苏州琵琶语→朱鸿兴、武汉长江大桥→户部巷 同族）。修＝`MEAL_EARLY_TOL_H=1.0` 提前容差 + `_fill_wait_with_meal`（等待开门段先吃饭）+ `scan_gaps`/`_gap_notices`（空档分类 `wait_open`/`wait_meal`/`free` 并逐日披露）。同扫描 **357 → 60min**。单测 `scripts/test_gap_manage.py`（14 例，含关掉 `MEAL_EARLY_TOL_H` 复现旧空档的对照）。
+- **点名／远郊召回三层（缺一层就白干）**：① **召回**——`poi_db.names_mentioned_in`（长度 ≥3 子串）+ `_inject_named_pois` **确定性注入**（几何最近天，不依赖 LLM 是否采纳），菜单郊区点标「（郊区）」+ PROPOSE_PROMPT **v9** 远郊规则；② **必选与对账**——`forced_ids_for` 的口径是「需求点名的**全量**库内点」（`named_pois`）而非「本次注入了什么」（`named_injected`）——LLM 恰好自己提案了点名点时后者为空，会让该点既不被列必选、被剔后也不披露；丢失必发 `named_lost`；③ **下游守门**——`_fix_food_detours`（设计前提是「咖啡是配套不是目标」）把 `category=food` 的**目的地型餐饮**当绕路配套换掉（莲花岛＝阳澄湖农家乐集群、`suburb`、dur 2h，对照实测理由原文「莲花岛（绕行 110 分钟且无顺路替代，剔除）」）→ `_is_destination_food`（郊区／停留 ≥2h／农家乐类名）+ `protect`（点名点豁免）。单测 `scripts/test_named_inject.py`（26 例，含对照）。实测宝业路落地 18:00-19:30、莲花岛落地 11:26-13:26。
+- **夜间点 horizon 放宽**：`MEAL_BUFFER_MIN=120` 把求解预算压到 630min（09:00→19:30），18:00 后开门的点（GZ066 珠江夜游 19:00 / GZ069 宝业路 18:00）**结构性不可行**，且**不出现在 `dropped` 里**（排查时极易误判为「提案层没提」）。新增 `LATE_POINT_MARGIN_MIN=60`，按池内最晚需求放宽、上限锁真实日窗；池中无晚间点时不触发。单测用「把常量置负无穷」做对照。
+- **工程化收尾**：新增统一测试 runner `scripts/run_tests.py`（13 个 Python 单测 + 1 个前端守卫一次跑完，含 node 自动定位与关键词过滤）；发布门禁改**纯 Python 实现** `scripts/release_gate.py`——原 `release_gate.sh` 依赖 `dirname`/`grep`/`mktemp`，在本机 Git Bash shim 故障下根本执行不了，门禁形同虚设；`.sh` 保留为薄兼容入口，`.github/workflows/gate.yml` 改调 `.py`。
+- **教训**：① 「LLM 听话」和「用户要求被满足」是两件事——必须**独立对账**，不能拿流水线内部记录当口径；② 判断某类目点是「配套」之前，先问**它会不会本身就是用户目标**（`category` 是粗标签，`food` 里既有咖啡馆也有农家乐目的地）；③ 探针要带**调用行号**（`traceback.extract_stack`），否则「哪一层改的」只能靠猜——本次一步定位到 `m2_planner.py:721 → 408`；④ 属性方差大的指标（LLM 逐次提案不同）不能作为唯一验证依据，最终要落到确定性单测。
 
 ## 评测指标
 
@@ -225,7 +233,7 @@ src/baseline.py       旧方案基线：关键词→标签硬过滤 + 评分贪�
 src/metrics.py        评测指标（违规/路网均程/标签覆盖/时段合规/主选保留）
 eval_ab.py            三方 A/B harness（基线/M1/M2）→ HTML 报告
 eval_m7.py            M2 vs M7 五城对比评测
-scripts/eval_regression.py  12 用例固化回归（离线 CI + --llm 全链路）
+scripts/eval_regression.py  14 用例固化回归（离线 CI + --llm 全链路）
 webui/                常驻 WebUI（server.py + index.html，单端口）
 ```
 
