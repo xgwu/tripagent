@@ -60,16 +60,37 @@ def _https(u: str) -> str:
     return u if u.startswith("https://") else ""
 
 
-def probe(url: str) -> bool:
-    """实测 URL 是否真为图片（Content-Type image/* 或 magic bytes 命中）。"""
+def probe(url: str) -> int:
+    """实测 URL 图片可用度。
+
+    2 = Content-Type `image/*`（首选，最干净）
+    1 = Content-Type 非 image 但 magic bytes 命中图片格式（浏览器仍可渲染，作备选）
+    0 = 不可用
+    """
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with OPENER.open(req, timeout=12) as r:
             ct = (r.headers.get("Content-Type") or "").lower()
             head = r.read(16)
-        return ct.startswith("image") or any(head.startswith(m) for m in MAGIC)
+        if ct.startswith("image"):
+            return 2
+        if any(head.startswith(m) for m in MAGIC):
+            return 1
     except Exception:
-        return False
+        pass
+    return 0
+
+
+def pick(cands: list) -> str:
+    """从候选里挑最优：优先 Content-Type image/*，退而取 magic-only。"""
+    fallback = ""
+    for u in cands[:6]:
+        tier = probe(u)
+        if tier == 2:
+            return u
+        if tier == 1 and not fallback:
+            fallback = u
+    return fallback
 
 
 def fetch(key: str, kw: str, city: str, around: str | None = None) -> list:
@@ -115,18 +136,12 @@ def backfill(city: str, key: str, pc: dict) -> tuple:
         kws = VARIANTS.get(pid) or ([name, name.split("（")[0]] if "（" in name else [name])
         got = ""
         for kw in kws:                       # 1) 文本搜索（全名 → 去括号 → 人工变体）
-            for u in fetch(key, kw, city)[:5]:
-                if probe(u):
-                    got = u
-                    break
+            got = pick(fetch(key, kw, city))
             if got:
                 break
             time.sleep(0.1)
         if not got:                          # 2) 坐标周边搜索兜底
-            for u in fetch(key, kws[-1][:6], city, around=f"{p['lng']},{p['lat']}")[:5]:
-                if probe(u):
-                    got = u
-                    break
+            got = pick(fetch(key, kws[-1][:6], city, around=f"{p['lng']},{p['lat']}"))
         if got:
             pc[pid] = got
             fixed += 1
