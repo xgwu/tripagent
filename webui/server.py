@@ -654,7 +654,8 @@ def city_meta(name: str) -> dict:
             "name": name,
             "n_pois": len(city["pois"]),
             "n_closed": sum(1 for p in city["pois"] if p.get("closed_days")),
-            "pois": {p["id"]: {"id": p["id"], "name": p["name"], "lat": p["lat"], "lng": p["lng"]}
+            "pois": {p["id"]: {"id": p["id"], "name": p["name"], "lat": p["lat"], "lng": p["lng"],
+                               "category": p.get("category")}
                      for p in city["pois"]},
         }
     return CITY_META[name]

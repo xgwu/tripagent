@@ -294,6 +294,17 @@ function hopLine(s,tl,idx){
   return `↳ ${s.name}${dest?` → ${dest}`:""}`;
 }
 
+// 用餐 stop 判定：timeline 里作为用餐安排的美食 POI 自带 meal 字段（lunch/dinner，
+// 见 sequencer 美食分支），非美食 POI 无此字段 → 首选判据；
+// 兜底用 city_meta.pois.category==="food"（后端已补该字段；旧分享快照可能缺失）。
+function isFoodStop(s,meta){
+  if(!s||s.type!=="poi")return false;
+  if(s.meal)return true;
+  const p=meta&&meta.pois&&meta.pois[s.id];
+  return !!(p&&p.category==="food");
+}
+function foodMark(s,meta){return isFoodStop(s,meta)?"🍽":"";}
+
 function dayCard(d,meta,wdrops){
   const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
   const tl=d.timeline||[];
@@ -304,7 +315,8 @@ function dayCard(d,meta,wdrops){
     const img=isPoi?poiThumb(p):"";
     const swap=isPoi?`<button class="swapbtn" title="不喜欢？换成附近的同类地点" onclick="swapPoi(${d.day},'${s.id}')">🔁 换一个</button>`:"";
     const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="opacity:.55;font-size:12px">（途中）</span>`:"";
-    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span>${s.type==="poi"?((p&&p.category==="food")?"🍽":""):(ICON[s.type]||"")}</span><span style="flex:1">${s.name}${onway}</span>${img}${swap}</div>`;
+    const tag=s.type==="poi"?foodMark(s,meta):(ICON[s.type]||"");
+    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span style="flex:1">${tag?tag+" ":""}${s.name}${onway}</span>${img}${swap}</div>`;
   }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
@@ -391,7 +403,7 @@ async function renderAMap(meta,r){
         const p=meta.pois[x.id];
         const m=new AMap.Marker({position:[p.lng,p.lat],anchor:"bottom-center",
           content:`<div style="position:relative;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))"><div style="width:24px;height:24px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid #fff"></div><span style="position:absolute;left:0;top:0;width:24px;height:20px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700">${i+1}</span></div>`});
-        m.on("mouseover",()=>m.setLabel({content:`<div style="padding:2px 8px;font-size:12px">📍 Day ${d.day}·${i+1}｜${x.name}</div>`,direction:"top",offset:new AMap.Pixel(0,-6)}));
+        m.on("mouseover",()=>m.setLabel({content:`<div style="padding:2px 8px;font-size:12px">${isFoodStop(x,meta)?"🍽":"📍"} Day ${d.day}·${i+1}｜${x.name}</div>`,direction:"top",offset:new AMap.Pixel(0,-6)}));
         m.on("mouseout",()=>m.setLabel(null));
         overlays.push(m);
         (DAY_MARKERS[d.day]=DAY_MARKERS[d.day]||[]).push(m); // 按天归组，供 Day 开关显隐
@@ -474,7 +486,8 @@ function buildDoc(meta,r){
       const p=s.type==="poi"&&meta&&meta.pois[s.id];
       const img=s.type==="poi"?poiThumb(p):"";
       const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="color:#9ca3af;font-size:12px">（途中）</span>`:"";
-      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?((p&&p.category==="food")?"🍽":""):(ICON[s.type]||"")}</td><td>${s.name}${onway}</td><td class="pic">${img}</td></tr>`;
+      const tag=s.type==="poi"?foodMark(s,meta):(ICON[s.type]||"");
+      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":tag}</td><td>${s.type==="poi"&&tag?tag+" ":""}${s.name}${onway}</td><td class="pic">${img}</td></tr>`;
     }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
     ${d.reason?`<p style="margin:10px 2px;color:#6b7280;font-size:13px;line-height:1.7">${d.reason}</p>`:""}
@@ -555,7 +568,7 @@ async function exportICS(){
         `UID:tripagent-${d.day}-${i}-${ymd}@tripagent.app`,
         `DTSTART:${ymd}T${st}00`,
         `DTEND:${ymd}T${en}00`,
-        `SUMMARY:${_icsEsc(`Day${d.day} ${s.name}${s.type==="meal"?" 🍽":((LAST.city_meta.pois[s.id]||{}).category==="food"?" 🍽":"")}`)}`,
+        `SUMMARY:${_icsEsc(`Day${d.day} ${(s.type==="meal"||isFoodStop(s,LAST.city_meta))?"🍽 ":""}${s.name}`)}`,
         `DESCRIPTION:${_icsEsc(`主题：${d.theme||"行程"}｜交通约 ${Math.round(d.travel_km*10)/10}km`+(r.query?`｜需求：${r.query}`:""))}`,
         "END:VEVENT"]);
     });
@@ -614,8 +627,8 @@ function exportPNG(){
       x2.fillStyle="#52606d";x2.font='12.5px "Microsoft YaHei",sans-serif';
       x2.fillText(`${s.start}–${s.end}`,m,y+16);
       x2.fillStyle="#1f2933";x2.font='13.5px "Microsoft YaHei",sans-serif';
-      const poiMeta=s.type==="poi"&&meta&&meta.pois[s.id];
-      const nm=s.name+(s.type==="meal"?" 🍽":s.type==="hotel"?" 🏨":(poiMeta&&poiMeta.category==="food"?" 🍽":""));
+      const pre=(isFoodStop(s,meta)||s.type==="meal")?"🍽 ":s.type==="hotel"?"🏨 ":"";
+      const nm=pre+s.name;
       wrap(nm,W-2*m-120).forEach((t,i)=>x2.fillText(t,m+110,y+16+i*18));
       y+=lh+10+Math.max(0,(wrap(nm,W-2*m-120).length-1))*18;
       x2.strokeStyle="#e4e7eb";x2.lineWidth=0.5;
