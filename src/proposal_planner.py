@@ -15,7 +15,7 @@ from src import hotel as hotel_mod
 # 提案调用 temperature=0.2/seed=42 本身近似确定性，缓存纯省时无行为差异。
 # key 含库内 POI 数量：扩城/补库后自动失效；PROPOSE_PROMPT_VER：prompt 文案变更时递增令旧缓存失效；
 # TTL 7 天与 nl_cache 对齐。
-PROPOSE_PROMPT_VER = "v8"
+PROPOSE_PROMPT_VER = "v9"
 PROPOSAL_CACHE_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "proposal_cache.json")
 PROPOSAL_CACHE_TTL_S = 7 * 86400
@@ -79,6 +79,8 @@ PROPOSE_PROMPT = """请为{city}设计 {days} 天行程。
 招牌体验规则：先用世界知识判断用户需求的核心期待——每个城市都有公认必去的招牌景点（如上海的迪士尼度假区、北京环球影城、广州长隆），亲子/带娃类需求通常正期待这类招牌。若需求主题与某招牌景点高度匹配，必须把它作为主选排进某一天（独占一天，勿放 alternates）；只有当你有明确理由认为用户不会感兴趣（如需求明确排斥主题乐园）时才可不放。住宿锚点规则：用户指定住宿位置（如「住迪士尼附近」）时，行程必须包含该位置对应的标志性景点（住迪士尼附近则必含迪士尼），且该景点独占一天、优先安排在第一天，其余天数再安排其他区域。傍晚密度规则：博物馆/美术馆/展馆类场馆普遍 17 点前后闭馆，每天要为傍晚（17 点后）搭配至少 1 个晚间型停留点——夜展/灯光夜景/历史街区夜游/滨江步道/咖啡街区/书院茶馆等，避免傍晚大片空白；每天 4-6 个停留点中应含 1-2 个晚间型。慢节奏规则（针对老人/轮椅/行动不便/不要太累/慢节奏类需求，此规则下傍晚密度规则豁免）：每天 2-3 个停留点、绝不超过 4 个，以白天为主、尽量 17:30 前收尾，不安排只有夜间才开放或运营的点（酒吧/夜市/夜间演出/17 点后才开门的场馆——外滩、滨江步道、商业街、全天开放的经典景点不算夜间型点，白天照常安排）（除非用户明确提到夜景/夜市/夜游）；优先选择地势平缓、有无障碍条件、步行距离短的点位（平地园林主园区/滨湖步道/商业综合体/游船），避免登山型（虎丘山顶/山峰类）、石板路长距离古巷、需要大量站立排队的点位；同一天点位间车程尽量短，午后可安排 1 个茶馆/咖啡类慢休点，整体以从容、留有休息余量为准。
 亲子规则（针对带娃/亲子/孩子/遛娃类需求）：绝不安排 KTV、酒吧、夜店、商务会所等夜间娱乐场所，也不安排题材沉重的场所（战争/灾难类纪念馆）与高强度登山徒步；每天 4-5 个停留点为宜，上午与下午各安排 1 个适合儿童跑动的点位（动物园/主题乐园/海洋馆/公园）或动手型场馆（科技馆/自然博物馆），点位间车程尽量短、午后留一段弹性休息；餐饮优先选有儿童座位、出餐快的本地名店，避免重辣重口与需要长时间排队的网红店。
 备选规则：每天可附 0-2 个 alternates——你认为时间充裕时值得加上的点、或主选可能闭馆/排队过久时的同区域替补；备选不必与主选相邻，系统会按约束自动取舍。替补必须与当天主题同质（湖线日的替补也是湖线点、园林日的替补也是园林类），不要拿不同主题的点替补。
+点名规则（2026-09-15）：需求里明确点名的地点（如「想去宝业路宵夜街」「一定要去莲花岛」「逛逛圆融天幕街」）必须排进某一天的主选 stops——不要放进 alternates、也不要替换成同类其他地点；参考清单里有同名/近名点时直接用清单里的名字。
+远郊深度体验规则（2026-09-15）：参考清单里标了「（郊区）」的点是本地特色体验（湖鲜/古镇/温泉/乡村/郊野徒步），需求涉及这些主题时应主动纳入主选，并与同片区点位安排在同一天；不要因为「远」就一律回避。
 参考清单——以下{city}地点带完整数据（坐标/开放时间/适玩时长），排入即可直接落地；若与你更想推荐的地点重合，以你的专业判断为准：
 {library_hint}
 严格输出 JSON：
@@ -154,7 +156,8 @@ def _crossday_area_overlap(day_ids: dict, all_pois: dict) -> list:
 
 
 def _norm(s: str) -> str:
-    return re.sub(r"[\s·・（）()\-—_、，。…「」『』]", "", (s or "")).lower()
+    """落地匹配的归一化口径 —— 委托 poi_db.norm_name（与「点名识别」共用，防词表漂移）。"""
+    return poi_db.norm_name(s)
 
 
 def _branch_variants(name: str) -> list:
@@ -171,10 +174,18 @@ def _branch_variants(name: str) -> list:
 
 
 def _library_hint(all_pois: dict) -> str:
-    """库内地点菜单（按类目分组），注入提案提示词引导优先选用库内点。"""
+    """库内地点菜单（按类目分组），注入提案提示词引导优先选用库内点。
+
+    郊区点位补「（郊区）」标注（2026-09-15 远郊召回缺陷）：菜单此前只给名字，
+    LLM 无从判断远近，于是远郊特色点（莲花岛/西山岛/朱家角类）长期不被提案——
+    标注后配合提案 prompt 的「远郊深度体验规则」使用。
+    """
     groups = {}
     for p in all_pois.values():
-        groups.setdefault(p["category"], []).append(p["name"])
+        nm = p["name"]
+        if p.get("area") in ("suburb", "far"):
+            nm = f"{nm}（郊区）"
+        groups.setdefault(p["category"], []).append(nm)
     return "\n".join(f"- {cat}：{'、'.join(names)}"
                      for cat, names in sorted(groups.items()))
 
@@ -510,9 +521,67 @@ def _reconcile_food_windows(day_map: dict, all_pois: dict, city: dict,
     return day_map
 
 
+def _nearest_day(day_map: dict, all_pois: dict, poi: dict) -> int:
+    """与 poi 几何最近的一天（并列时取点数更少者，再取更早的天）。"""
+    best, best_key = None, None
+    for d, ids in day_map.items():
+        pts = [all_pois[i] for i in ids if i in all_pois]
+        dist = min((poi_db.haversine_km(poi["lat"], poi["lng"], q["lat"], q["lng"])
+                    for q in pts), default=float("inf"))
+        key = (dist, len(pts), d)
+        if best_key is None or key < best_key:
+            best, best_key = d, key
+    return best if best is not None else 1
+
+
+def _inject_named_pois(day_map: dict, all_pois: dict, query: str, grounding: dict) -> list:
+    """用户点名的库内点位 → 确定性注入（2026-09-15 点名召回缺陷修复）。
+
+    LLM 对「用户点名」的遵守不稳定：实测 query「广州2天，晚上想去宝业路宵夜街吃宵夜」
+    提案 13 个点里一个都不是它，而落地率 100% 说明该点在库内完全可用——于是它从未进入
+    TOPTW 池（「能排但从不被选」）。落地后必须兜底，与住宿锚点硬保障同构。
+
+    与住宿锚点的区别：**不受 anchor_hard_guarantee 开关控制**——住宿锚点是顺带约定，
+    用户点名是硬需求。注入目标天 = 几何最近的那天（同片区顺路）；注入位置 = 当天队尾
+    （晚间型点排收尾更自然；忠实模式 TOPTW 只排序不选点，插入位置仅影响 rank 利润）。
+    返回 [(poi, day)]，供后续「是否真排进最终行程」的对账披露。
+
+    ⚠️ 两个字段分工（2026-09-15 二次修正，踩过的坑）：
+      `grounding["named_pois"]`   = **需求点名的全量库内点位**（无论是否注入、无论 LLM
+        是否已提案）。这是「必选」与「对账披露」的口径来源。
+      `grounding["named_injected"]` = 只记**本次真正由我们注入**的那些，作审计留痕。
+    起初两者混用（forced/对账都读 named_injected），于是 LLM **恰好提案了点名点**时反而
+    不被列为必选、被剔后也不披露——苏州「1天想去莲花岛」实测：LLM 提案了它，进 day_map
+    即跳过注入 → named_injected 为空 → 求解器把它剔掉 → 用户看到行程里没有莲花岛且
+    零提示。**「LLM 听话」和「用户要求被满足」是两件事，后者必须独立对账。**
+    """
+    named = poi_db.names_mentioned_in(query or "", list(all_pois.values()))
+    if not named:
+        return []
+    grounding["named_pois"] = [{"id": p["id"], "name": p["name"], "area": p.get("area")}
+                               for p in named]
+    used = {pid for ids in day_map.values() for pid in ids}
+    injected, notes = [], []
+    for p in named:
+        if p["id"] in used:
+            continue
+        d = _nearest_day(day_map, all_pois, p)
+        day_map[d] = list(day_map.get(d, [])) + [p["id"]]
+        used.add(p["id"])
+        injected.append((p, d))
+        notes.append({"id": p["id"], "name": p["name"], "day": d,
+                      "reason": "需求点名点位，确定性注入（不依赖 LLM 是否采纳）"})
+    if notes:
+        grounding["named_injected"] = notes
+    return injected
+
+
 def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict,
                         all_pois: dict, days: int, query: str, anchor_poi: dict | None):
     """落地后确定性修整：锚点注入（开关控制）→ 缺天补齐 → 单天 MIN_STOPS 补强。"""
+    # 用户点名锚定（2026-09-15）：放在最前——后续各 gate（亲子/慢节奏/片区重排/餐窗
+    # 对账）都能看到它并给出可解释的处置，而不是被静默忽略
+    _inject_named_pois(day_map, all_pois, query, grounding)
     # 住宿锚点硬保障（开关默认关）：锚点地标未进行程时确定性注入
     if anchor_poi is not None and hotel_mod.hard_guarantee_enabled():
         note = hotel_mod.ensure_landmark_in_day_map(day_map, days, anchor_poi)
@@ -699,12 +768,37 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
     return day_map, themes, grounding
 
 
+def forced_ids_for(anchor_poi: dict | None, grounding: dict) -> set:
+    """求解器「必选点」集合（唯一口径，2026-09-15）。
+
+    两类来源：
+      1. 住宿锚点地标 —— 仅在 `anchor_hard_guarantee` 开关打开时（顺带约定，可关）
+      2. **用户点名点位** —— 不受开关控制（硬需求）
+
+    为什么点名点必须进必选：忠实执行模式下所有主选利润相同，求解器剔除时先丢利润最低者，
+    而注入点排在队尾（rank=0）恰好第一个被丢（实测 GZ069 注入后立刻被剔除 → 行程里根本没有
+    用户点名的地方）。用户点名是硬需求：「要丢就丢 LLM 提的点，不是丢它」。
+    注意 forced 只抬利润、**不突破时间硬约束**——点本身不可行时照旧被剔，由 plan() 末尾的
+    `named_lost` 对账披露。
+
+    ⚠️ 口径用 `named_pois`（需求点名的**全量**库内点位），不是 `named_injected`（本次注入的
+    那些）——LLM 恰好自己提案了点名点时 named_injected 为空，用后者会让该点既不被必选、
+    也不被对账（踩过的坑，详见 `_inject_named_pois` docstring）。
+    """
+    forced = ({anchor_poi["id"]}
+              if (anchor_poi and hotel_mod.hard_guarantee_enabled()) else set())
+    named = grounding.get("named_pois") or grounding.get("named_injected") or []
+    forced |= {n["id"] for n in named}
+    return forced
+
+
 def _compose_m7(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 date0: str | None, hotel: dict | None, anchor_poi: dict | None,
                 grounding: dict, alt_map: dict | None,
                 time_limit_s: float, main_bonus: float, soft_w: float,
                 progress=None, reuse_days: dict | None = None) -> dict:
     """M7 复用 M2 compose（TOPTW + 修复链 + 文案），参数固定便于闭环重算。"""
+    forced = forced_ids_for(anchor_poi, grounding)
     return m2_planner.compose(city, query, days, day_map, themes, use_llm=True,
                               date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                               main_bonus=main_bonus, soft_w=soft_w,
@@ -716,8 +810,7 @@ def _compose_m7(city: dict, query: str, days: int, day_map: dict, themes: dict,
                                                "lng": hotel["lng"], "resolved": hotel["note"]}
                                               if hotel else None)},
                               mode="m7_proposal",
-                              forced_ids={anchor_poi["id"]}
-                              if (anchor_poi and hotel_mod.hard_guarantee_enabled()) else None)
+                              forced_ids=forced or None)
 
 
 def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
@@ -888,6 +981,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     final_day_ids = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
                      for d in r["itinerary"]["days"]}
     r["area_overlap"] = _crossday_area_overlap(final_day_ids, all_pois)
+    final_kept_ids = {i for ids in final_day_ids.values() for i in ids}
     r["proposal"] = proposal
     r["grounding"] = grounding
     # 用户可读通知：compose 层需求满足检测 + 提案层独占日建议 + 天气/节假日提示
@@ -895,5 +989,16 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     r["notices"] = (list(r.get("notices") or [])
                     + list(grounding.get("far_big_solo") or [])
                     + weather_mod.trip_notices(city, date0, days))
+    # 点名对账（2026-09-15）：**需求点名**的库内点位仍可能被硬约束剔掉（时间预算/里程/
+    # 闭馆/亲子）——必须显式披露，否则用户以为系统无视了他的明确要求。
+    # 口径是 named_pois（全量点名点），不是 named_injected（只记本次注入的）：LLM 恰好自己
+    # 提案了点名点时 named_injected 为空，用后者会「用户点名被剔却零提示」。
+    _named_all = grounding.get("named_pois") or grounding.get("named_injected") or []
+    _lost_named = [n for n in _named_all if n["id"] not in final_kept_ids]
+    if _lost_named:
+        r["notices"].append({
+            "type": "named_lost", "dropped": [n["name"] for n in _lost_named],
+            "message": (f"你点名的 {'、'.join(n['name'] for n in _lost_named)} "
+                        f"因时间/里程/闭馆等硬约束未能排入，可考虑单独安排半天或减少其它点位")})
     r["latency_s"] = round(time.time() - t0, 1)  # A+B+C 全链路耗时
     return r

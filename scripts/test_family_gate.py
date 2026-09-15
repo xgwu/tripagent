@@ -15,7 +15,7 @@ re-export；确定性 gate 挂到选点链**每个入口**（教训：漏一个�
   4. 求解器主选过滤（m2_planner._solve_all_days）
   5. 剔点补位（m2_planner._alt_substitute）
   6. 薄天补强池（proposal_planner）
-  7. 提案 prompt 规则（PROPOSE_PROMPT 亲子规则，VER v8）
+  7. 提案 prompt 规则（PROPOSE_PROMPT 亲子规则，引入于 VER v8，此后只增不减）
 
 本单测覆盖判据、纯函数 gate、求解层主选过滤，并用源码守卫锁住挂载点。
 
@@ -163,8 +163,11 @@ case("7c m2_planner 的 is_family_ok gate ≥3 处（主选/池/备选）",
 case("7d proposal_planner 有主选亲子移除 + 补强池过滤",
      "family_removed" in src_pp and src_pp.count("is_family_ok") >= 2,
      f"is_family_ok {src_pp.count('is_family_ok')} 处")
+import re
+_ver_m = re.search(r'PROPOSE_PROMPT_VER = "v(\d+)"', src_pp)
 case("7e 提案 prompt 含亲子规则且版本号已递增",
-     "亲子规则（针对带娃" in src_pp and 'PROPOSE_PROMPT_VER = "v8"' in src_pp)
+     "亲子规则（针对带娃" in src_pp and _ver_m is not None and int(_ver_m.group(1)) >= 8,
+     f"VER=v{_ver_m.group(1) if _ver_m else '?'}（亲子规则引入于 v8，此后只许增）")
 case("7f proposal_planner 的 _is_family_query 已委托统一判据",
      "return m2_planner.is_family_query(query)" in src_pp)
 

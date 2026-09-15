@@ -23,6 +23,13 @@ MEAL_EXIT_GRACE_H = 0.75  # 游完出来/收尾补餐的窗尾宽限（报障 12
 MEAL_END_LEAD_H = 1.5     # 收尾场景（末点游完）晚餐提前量：17:15 收工离 18:00 开餐 45min
                           # < MEAL_LEAD_H 线 → 晚餐块整个不出现。与迟到午餐守门同 1.5h 口径
                           # （16:30 前收工仍留白，不破坏傍晚留白设计）
+MEAL_EARLY_TOL_H = 1.0    # 餐窗提前容差（2026-09-15 日内空档治理）：正餐点可早于餐窗起点
+                          # 最多 1h 开吃（午餐 11:00 起、晚餐 17:00 起），不必干等到
+                          # 12:00/18:00 整点。旧写法 start=max(t2, ws, open_h) 把餐厅钉死在
+                          # 整点：10:45 到达的天白等 75min——实测这正是日内空档的唯一成因
+                          # （南京科举博物馆→绿柳居 75min、北京故宫→四季民福 75min、
+                          # 苏州琵琶语→朱鸿兴 87min、武汉长江大桥→户部巷 45min）。
+GAP_NOTICE_MIN = 60       # 日内空档披露阈值（分钟）：≥该值的空白记入 gaps 并提示用户
 
 # 慢节奏（老人/轮椅/不累/慢节奏/悠闲/宽松）：全链路宽松化口径。
 # 定义在 sequencer（最底层），m2_planner/proposal_planner 从此 re-export，
@@ -199,6 +206,33 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
     for _w in _food_win.values():
         pending_food_win[_w] = pending_food_win.get(_w, 0) + 1
 
+    def _fill_wait_with_meal(open_t: float):
+        """把尚未安排的餐块放进「等待开门」的空白里。
+
+        等待开门是硬窗口造成的、无法压缩的空白——但至少该吃饭：旧实现里这段空白
+        既没有安排也没有餐块（2026-09-15 空档治理实测：花城广场 16:45 出来 → 珠江夜游
+        19:00 开门，2h15 空白 + 晚餐被判「途中已解决」，双输）。餐块优先对齐餐窗起点，
+        对不齐就紧贴开门时刻；放不下 1h 餐块则不插（交给后续 LEAD/收尾补餐兜底）。
+        """
+        nonlocal t
+        for key in ("lunch", "dinner"):
+            if key in used_meals or pending_food_win.get(key, 0) > 0:
+                continue
+            ws, _we = meal_windows[key]
+            if open_t < ws - MEAL_LEAD_H:
+                continue                      # 走到该点时这餐还没到点，别提前吃
+            if ws > t and ws + 1.0 <= open_t + 1e-9:
+                start = ws                    # 对齐餐窗起点（窗内吃完再进点）
+            else:
+                start = max(t, open_t - 1.0, ws - MEAL_EARLY_TOL_H)
+            if start + 1.0 > open_t + 1e-9:
+                continue                      # 餐块放不进这段等待
+            timeline.append({"type": "meal",
+                             "name": "午餐" if key == "lunch" else "晚餐",
+                             "start": _fmt(start), "end": _fmt(start + 1.0)})
+            used_meals.add(key)
+            t = start + 1.0
+
     def _insert_generic_meals(cur_t, late_grace_h: float = 0.0, lead_h: float | None = None):
         """普通餐块：到达时刻已跨过饭点（含 ≤30min 提前量）且该餐未被占用 → 插入。
 
@@ -250,7 +284,9 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                 ws, we = meal_windows[key]
                 if key in used_meals:
                     continue
-                start = max(t2, ws, p["open_h"])  # 早于开门则顺延到开门
+                start = max(t2, ws - MEAL_EARLY_TOL_H, p["open_h"])  # 早于开门则顺延到开门
+                # 注：ws 用「餐窗起点 - 提前容差」而非窗起点本身——早到不必干等到整点，
+                # 见 MEAL_EARLY_TOL_H 注释（该行是日内空档的唯一成因）
                 if start > we + 1e-9:      # 已过该餐窗（开吃时刻晚于窗尾）
                     continue
                 # 早到等待：最多等 MAX_MEAL_WAIT_H（防连锁推迟后续景点/留出大空档）。
@@ -308,6 +344,8 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         # 餐块：若到达时刻已跨过饭点且该餐未安排，先吃再逛（通行途中用餐）
         _insert_generic_meals(t)
         if t < p["open_h"]:
+            # 等待开门（硬窗口，无法压缩）：若有尚未安排的餐块且放得下，先在等待里吃饭
+            _fill_wait_with_meal(p["open_h"])
             t = p["open_h"]
         # M5：日期感知 —— 闭馆日为硬约束（违规会被二级修复剔除，保证最终行程不踩闭馆）
         if weekday and weekday in p.get("closed_days", []):
@@ -355,9 +393,71 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         if t > day_end + 1e-9:
             violations.append({"poi": "返程", "day": day_no,
                                "reason": f'返回酒店时刻{_fmt(t)}超出当日活动时间上限 {city["day_end"]}'})
+    _by_id = {p["id"]: p for p in pois}
     return {"timeline": timeline, "travel_km": travel_km, "travel_h": travel_h,
             "violations": violations, "repairs": repairs, "finish": _fmt(t),
+            "gaps": scan_gaps(timeline, _by_id),
             "weekday": weekday}  # P1-4：周几随天透出，前端展示闭馆日语境
+
+
+def scan_gaps(timeline: list, by_id: dict | None = None) -> list:
+    """扫描日内空档：相邻两项活动之间、扣除通行时间后仍 ≥ GAP_NOTICE_MIN 的空白。
+
+    空档不是「排错了」，而是时间轴的真实组成（下一站 17:00 才开门 / 餐点未到）；
+    但它必须被显式记录与披露——否则前端只看到两块活动之间凭空少了 2.5h，像 bug
+    （2026-09-15 空档治理：慢节奏靠移除夜间点规避，通用场景此前无人管）。
+    成因分类（供文案与诊断）：
+      wait_open 为衔接下一站开放时间（硬窗口，不可压缩）
+      wait_meal 等待餐点/餐窗（餐点提前容差已压缩到 ≤1h）
+      free      无窗口约束的自由活动/休整
+    首项活动之前不计（从第一项活动起算），避免出发时刻噪声。
+    """
+    by_id = by_id or {}
+    gaps = []
+    prev_end, prev_name, pending = None, "", 0
+    for e in timeline:
+        if e.get("type") == "hop":
+            pending += int(e.get("min") or 0)
+            continue
+        if e.get("type") not in ("poi", "meal", "hotel"):
+            continue
+        try:
+            s, en = _hm_min(e["start"]), _hm_min(e["end"])
+        except (KeyError, ValueError, TypeError):
+            continue
+        if prev_end is not None:
+            idle = s - prev_end - pending
+            if idle >= GAP_NOTICE_MIN:
+                nxt = by_id.get(e.get("id")) if e.get("type") == "poi" else None
+                if e.get("type") == "meal":
+                    # 措辞覆盖两种子情形：餐块落在餐窗起点（真在等饭点）／餐块被提前塞到
+                    # 晚开门点之前（此时段本就没有待游览点位）。用「无待游览点位」统一表述
+                    reason, note = "wait_meal", "等待餐点（该时段无待游览点位）"
+                elif nxt is not None and (nxt.get("open_h") or 0) * 60 > prev_end + pending:
+                    reason, note = "wait_open", f"{nxt.get('name', '')} {nxt.get('open', '')} 开门"
+                else:
+                    reason, note = "free", "自由活动/返回休整"
+                gaps.append({"start": _min_fmt(prev_end + pending), "end": e["start"],
+                             "min": idle, "after": prev_name,
+                             "before": e.get("name"), "reason": reason, "note": note})
+        prev_end, prev_name, pending = en, e.get("name", ""), 0
+    return gaps
+
+
+def _hm_min(hm) -> int:
+    """"HH:MM" → 自 00:00 起的分钟数（scan_gaps 内部按分钟运算）。"""
+    h, m = str(hm).split(":")[:2]
+    return int(h) * 60 + int(m)
+
+
+def _min_fmt(minutes) -> str:
+    """分钟数 → "HH:MM"（注意与 _fmt 区分：_fmt 收**小时 float**）。
+
+    踩坑（2026-09-15）：scan_gaps 全程按分钟运算，却直接调 `_fmt(prev_end+pending)`
+    → 16:00 的 960 分钟被当成 960 小时，披露文案显示 "960:00"。
+    """
+    m = int(minutes)
+    return f"{m // 60:02d}:{m % 60:02d}"
 
 
 def _fmt(h: float) -> str:
@@ -440,7 +540,9 @@ def food_window_plan(ids: list, all_pois: dict, city: dict,
             reason[f["id"]] = "营业时间与当天剩余餐窗不匹配"
     dinner_food = [f for f in foods if assign.get(f["id"]) == "dinner"]
     if dinner_food:
-        dinner_start = poi_db.hhmm_to_h(city["meal_slots"]["dinner"][0])
+        # 有效晚餐起点 = 餐窗起点 - 提前容差（与 _build_timeline / _insert_foods 同口径）
+        dinner_start = (poi_db.hhmm_to_h(city["meal_slots"]["dinner"][0])
+                        - MEAL_EARLY_TOL_H)
         day_start = poi_db.hhmm_to_h(city["day_start"])
         dinner_ids = {f["id"] for f in dinner_food}
         # 晚餐餐厅由 _insert_foods 放在序列末尾（最贴近晚餐窗）→ 到达时刻 ≈ 其余各点
@@ -498,7 +600,8 @@ def _insert_foods(seq_rest: list, foods: list, hotel, city: dict,
             if b is not None and a is not None:
                 detour += poi_db.travel_hours(f, b, mode) - poi_db.travel_hours(a, b, mode)
             arrive_est = times[pos] + (poi_db.travel_hours(a, f, mode) if a is not None else 0)
-            wait = max(0.0, ws_t - arrive_est)          # 早到等待
+            # 早到等待：与 _build_timeline 同口径（餐窗起点 - 提前容差）
+            wait = max(0.0, (ws_t - MEAL_EARLY_TOL_H) - arrive_est)
             late = max(0.0, arrive_est - we_t)          # 晚于窗尾（基本必被剔除）
             cost = detour + 0.6 * wait + 10.0 * late
             if wait > MAX_MEAL_WAIT_H and pos < len(seq):
@@ -711,5 +814,9 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
         total_km += tl["travel_km"]
         tl["dropped"] = pre_drop + tl.get("dropped", [])  # 前置修剪与修复链剔除合并
         result_days.append({"day": d, **tl})
+    # 日内空档汇总（2026-09-15 空档治理）：逐日 scan_gaps 结果升到行程级，
+    # 供 compose 生成用户可见提示（此前空档是"隐形的"，前端只看到时间轴凭空断开）
+    day_gaps = [{"day": d["day"], **g} for d in result_days for g in d.get("gaps", [])]
     return {"days": result_days, "total_violations": len(all_violations),
-            "total_travel_km": total_km, "dropped_pois": all_dropped}
+            "total_travel_km": total_km, "dropped_pois": all_dropped,
+            "gaps": day_gaps}

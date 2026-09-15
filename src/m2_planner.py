@@ -335,9 +335,35 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
 FOOD_DETOUR_MIN = 25  # food 点插入相邻点之间允许的最大绕行（分钟），超过即换/剔
 
 
+# ---- 目的地型餐饮 vs 配套餐饮（2026-09-15 点名/远郊召回修复）----
+# `_fix_food_detours` 的设计前提是「咖啡是配套不是目标」（docstring 原话），但
+# 农家乐 / 湖鲜馆 / 蟹庄 / 度假餐饮 / 美食街**本身就是用户的目标**：它们常在郊区、
+# 停留时间长，通勤绕行大是必然的、也是值得的。
+# 实测（苏州「1天，想去莲花岛吃大闸蟹」，SZ062 莲花岛是 category=food 的阳澄湖农家乐
+# 集群、area=suburb、dur=2h）：被本函数判成「造成绕行的配套餐饮」→ 换成市内餐厅，
+# **用户点名的核心体验被静默顶掉**（且剔除记录还被吞掉，行程里看不出发生过什么）。
+FOOD_DEST_AREA = ("suburb", "far")      # 郊区餐饮不可能是「顺路配套」
+FOOD_DEST_MIN_DUR_H = 2.0               # 长停留 = 目的地（配套停留通常 <1.5h）
+_DEST_FOOD_RE = re.compile(
+    r"农家|农庄|山庄|蟹庄|渔家|渔村|湖鲜|河鲜|海鲜|度假|生态园|果园|茶园|酒庄|葡萄园")
+
+
+def _is_destination_food(p: dict) -> bool:
+    """目的地型餐饮（郊区 / 长停留 / 农家乐类）——不参与绕行换店与剔除。
+
+    配套餐饮（市内咖啡馆/网红小馆）仍受守门约束；目的地型餐饮的「大绕行」是需求本身。
+    """
+    if p.get("area") in FOOD_DEST_AREA:
+        return True
+    if float(p.get("dur") or 0) >= FOOD_DEST_MIN_DUR_H:
+        return True
+    return bool(_DEST_FOOD_RE.search(p.get("name") or ""))
+
+
 def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | None,
                       hotel: dict | None, t_mode: str | None,
-                      theme_day: int | None = None) -> tuple[dict, dict]:
+                      theme_day: int | None = None,
+                      protect: set | None = None) -> tuple[dict, dict]:
     """美食/咖啡配套绕行守门：food 点在序列中造成大绕路 → 换成顺路同类店，无顺路替代则剔除。
 
     theme_day：单日主题承载天 —— 仅该天用主题通行口径评估绕行，其余天车驾。
@@ -345,6 +371,10 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
     为一家网红咖啡店横穿城区。咖啡是配套不是目标——配套必须贴着当日主线路径。
     每次替换/剔除后全量走 sequencer 校验，保证只改善不变糟。
     返回 (更新后的 day_map, {day: [修正描述]}）。
+
+    protect（2026-09-15）：**用户点名的点位拒绝被替换/剔除**——点名是硬需求，
+    不能因为「绕路」这类软指标被换掉（同 `forced_ids_for` 的口径，两道防线同源）。
+    `_is_destination_food` 的目的地型餐饮同样豁免（见其 docstring：绕行是需求本身）。
     """
     from src.poi_db import haversine_km
     # 替代池：food 类 + 任何带「咖啡」tag 的场馆（咖啡街/艺术园区咖啡等均可顺路替代）
@@ -353,6 +383,7 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
     food_pool = [p for p in all_pois.values()
                  if _is_coffee_venue(p) and not sequencer.is_full_day(p)]
     used = {pid for ids in day_map.values() for pid in ids}
+    protect = set(protect or ())
     fixes: dict = {}
     for d in sorted(day_map):
         ids = list(day_map.get(d) or [])
@@ -369,6 +400,8 @@ def _fix_food_detours(day_map: dict, city: dict, all_pois: dict, date0: str | No
             for k, p in enumerate(seq):
                 if p.get("category") != "food":
                     continue
+                if p["id"] in protect or _is_destination_food(p):
+                    continue  # 用户点名 / 目的地型餐饮（郊区·长停留·农家乐）：不以「绕路」为由换掉
                 if hotel is not None:
                     a = hotel if k == 0 else seq[k - 1]
                     b = hotel if k == len(seq) - 1 else seq[k + 1]
@@ -568,6 +601,35 @@ def _demand_notices(query: str, dropped_recs: list, itin: dict, all_pois: dict) 
     return notices
 
 
+def _duration_text(minutes) -> str:
+    h, m = divmod(int(minutes or 0), 60)
+    return f"{h}h{m:02d}min" if h else f"{m}min"
+
+
+def _gap_notices(itin: dict) -> list:
+    """日内空档披露（2026-09-15 空档治理）。
+
+    空档是时间轴的真实组成（下一站 17:00 才开门 / 餐点未到），用户已明确
+    「傍晚留白不自动补点」——所以不填，但必须**披露**：否则前端只看到两块活动之间
+    凭空少了 2.5h，看起来像排程出错。按天聚合一条，避免徽标泛滥。
+    """
+    by_day: dict = {}
+    for g in itin.get("gaps", []) or []:
+        by_day.setdefault(g.get("day"), []).append(g)
+    out = []
+    for d in sorted(by_day):
+        gs = by_day[d]
+        longest = max(gs, key=lambda x: x.get("min", 0))
+        total = sum(x.get("min", 0) for x in gs)
+        out.append({
+            "type": "day_gap", "day": d, "min": total, "gaps": gs,
+            "message": (f"Day{d} 有 {len(gs)} 段共 {_duration_text(total)} 空档："
+                        f"{longest.get('start')}-{longest.get('end')}"
+                        f"（{longest.get('note', '')}）"),
+        })
+    return out
+
+
 def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             use_llm: bool = True, date0: str | None = None, hotel: dict | None = None,
             time_limit_s: float = toptw.TIME_LIMIT_S,
@@ -687,11 +749,13 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     # ---- 阶段3.4：美食配套绕行守门（确定性，0 LLM 成本）----
     # food 点（咖啡/网红店）造成大绕路 → 换顺路同类店或剔除；先于填空执行，
     # 剔除产生的空窗可由阶段3.5 补晚间点补偿
+    # protect＝用户点名的库内点位（2026-09-15）：点名是硬需求，不许被「绕路」软指标换掉
     final_day_map = {d["day"]: [s["id"] for s in d["timeline"] if s["type"] == "poi"]
                      for d in itin["days"]}
     final_day_map, food_fixes = _fix_food_detours(
         final_day_map, city, all_pois, date0, hotel, t_mode,
-        theme_day=sequencer.scoped_theme_day(final_day_map, all_pois, query))
+        theme_day=sequencer.scoped_theme_day(final_day_map, all_pois, query),
+        protect={p["id"] for p in poi_db.names_mentioned_in(query or "", all_pois.values())})
     if food_fixes:
         itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
                                          hotel=hotel, query=query)
@@ -745,6 +809,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             _dropped_seen.add(dr["id"])
             dropped_recs.append(dr)
     notices = _demand_notices(query, dropped_recs, itin, all_pois)
+    notices += _gap_notices(itin)
 
     return {"mode": mode, "query": query, "days": days,
             "candidates": meta.get("candidates"), "invalid_poi_ids": meta.get("invalid_poi_ids"),

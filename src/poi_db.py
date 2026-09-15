@@ -33,6 +33,47 @@ def load_city(name: str = "杭州") -> dict:
         return json.load(f)
 
 
+# ---- 需求文本里的「点名点位」识别（2026-09-15 远郊/点名召回缺陷）----
+# 「用户点名就必须排」是硬需求，不能赌 LLM 是否采纳：实测 query「广州2天，晚上想去
+# 宝业路宵夜街吃宵夜」→ LLM 提案 13 个点里没有它，而落地率 100% 说明库内完全可落地，
+# 于是这点在 TOPTW 池里从未出现（「能排但从不被选」）。
+# 识别口径：规范化后 POI 名、或其去括号主干作为子串出现在规范化需求文本中，且长度 ≥3
+# （外滩/西湖这类 2 字名不判，避免误命中）；与落地匹配共用 norm_name，防两套词表漂移。
+NAME_MENTION_MIN = 3
+
+
+def norm_name(s: str) -> str:
+    """POI 名 / 任意文本规范化（去空白与常见分隔符、统一小写）。
+
+    「落地匹配」与「点名识别」共用此口径——两套归一化必然漂移（本项目老坑）。
+    """
+    return re.sub(r"[\s·・（）()\-—_、，。…「」『』]", "", (s or "")).lower()
+
+
+def core_name(s: str) -> str:
+    """POI 名主干：去掉括号补充说明（「广州塔（小蛮腰）」→「广州塔」）。"""
+    return re.sub(r"[（(][^（()）]*[)）]", "", s or "").strip()
+
+
+def names_mentioned_in(text: str, pois) -> list:
+    """识别需求文字里被点名的库内点位（确定性、无 LLM）。返回按传入顺序去重的 POI 列表。"""
+    key = norm_name(text)
+    if not key:
+        return []
+    hits, seen = [], set()
+    for p in pois:
+        pid = p.get("id")
+        if pid in seen:
+            continue
+        nm = p.get("name") or ""
+        for cand in {norm_name(nm), norm_name(core_name(nm))}:
+            if len(cand) >= NAME_MENTION_MIN and cand in key:
+                seen.add(pid)
+                hits.append(p)
+                break
+    return hits
+
+
 # ---- 湖线点判定（贯穿性湖偏好需求专用，如「湖边骑行」「最好临湖」）----
 # 名字含湖岸词缀（湖/岛/湾/堤/码头/滨/岸/洲/渚）或 view 类目（观景台/山顶看湖）。
 # 误伤面核过苏州 75 点：命中全部为湖线点（金鸡湖东方之门/独墅湖教堂/西山岛/

@@ -22,6 +22,7 @@ SOFT_CAP_MIN = 60          # 软窗罚分封顶：偏差超过该分钟数等效
                            # 也不放 morning 点进晚间，时段空间被白扔；封顶后空窗由日内填空补晚间型点
 TIME_LIMIT_S = 2.0         # 单日求解预算
 MEAL_BUFFER_MIN = 120      # M6：排序器会在日中插入午餐+晚餐各 1h，求解器预算预扣，防止过度打包后整体后移溢出
+LATE_POINT_MARGIN_MIN = 60 # 晚间型点（18:00 后开门）预算放宽时预留的收尾/返程余量
 
 # 建议时段 → 软时间窗（相对 day_start 的小时时刻；None = 该侧不约束）
 SLOT_WINDOWS = {
@@ -60,10 +61,22 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
     start_day = poi_db.hhmm_to_h(city["day_start"])
     end_day = poi_db.hhmm_to_h(city["day_end"])
     # M6：求解器 horizon 预扣餐块缓冲（排序器实测会插入午餐+晚餐）；不足则保底 4h 活动时间
-    horizon = max(240, int((end_day - start_day) * 60) - MEAL_BUFFER_MIN)
+    day_window = max(240, int((end_day - start_day) * 60))
+    horizon = max(240, day_window - MEAL_BUFFER_MIN)
 
     def to_min(h_abs):
         return int(round((h_abs - start_day) * 60))
+
+    # 预算放宽（2026-09-15 夜间型点缺陷）：餐块预扣是"防过度打包"的保守估计，但它不能
+    # 让**营业窗口本来可排**的点变成不可行——只要池里有 18:00 后开门的点，预扣后 horizon
+    # 会小于「该点最早可结束时刻 + 返程腿」，该点就被判死：实测 宝业路宵夜街(18:00-02:00)
+    # 与 珠江夜游(19:00-21:30) 在 horizon=630 下恒不可行，预扣降到 60 立刻入选。
+    # 故按池内最晚需求放宽，上限 = 真实日窗（排序器口径 09:00→21:30）——求解器放行的
+    # 解在排序器侧仍可能判超时，但那是可解释的剔点，好过整类夜间点结构性排不进。
+    latest_end = max((to_min(p["open_h"]) + int(round(p["dur"] * 60)) for p in candidates),
+                     default=0)
+    if latest_end + LATE_POINT_MARGIN_MIN > horizon:
+        horizon = max(horizon, min(day_window, latest_end + LATE_POINT_MARGIN_MIN))
 
     # M5 预剔除：闭店前玩不完的 POI（to_min(close)-dur < 0）窗口为空，进模型会 CP Solver fail
     candidates = [p for p in candidates
