@@ -159,6 +159,16 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
     meal_windows = {k: (poi_db.hhmm_to_h(meals[k][0]), poi_db.hhmm_to_h(meals[k][1]))
                     for k in meal_keys}
     used_meals = set()
+    # 正餐优先权（报障 15）：本日尚未处理的正餐点各自认领一个餐窗，通用餐块在这些窗位
+    # 让位——否则「游完就地补餐/收尾晚餐」会以更早时刻抢窗（11:30 就占掉午餐），正餐点
+    # 到场只剩另一窗、等到超 MAX_MEAL_WAIT_H → 判违规被剔，前端提示「美食POI未能安排进
+    # 用餐时段」。正餐点处理时释放认领；它最终排不进时，违规兜底与收尾补餐仍会接管，
+    # 饭不会没有。
+    _food_win = _assign_food_windows(
+        [q for q in pois if q.get("category") == "food" and not is_cafe(q)], city)
+    pending_food_win = {k: 0 for k in meal_keys}
+    for _w in _food_win.values():
+        pending_food_win[_w] = pending_food_win.get(_w, 0) + 1
 
     def _insert_generic_meals(cur_t, late_grace_h: float = 0.0, lead_h: float | None = None):
         """普通餐块：到达时刻已跨过饭点（含 ≤30min 提前量）且该餐未被占用 → 插入。
@@ -176,7 +186,10 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         nonlocal t
         lead = MEAL_LEAD_H if lead_h is None else lead_h
         for key, mstart in meal_keys.items():
-            if key not in used_meals and cur_t >= mstart - lead:
+            # 该窗已被尚未处理的正餐点认领 → 通用餐块让位（报障 15）
+            if key in used_meals or pending_food_win.get(key, 0) > 0:
+                continue
+            if cur_t >= mstart - lead:
                 # 迟到午餐守门：距晚餐窗开始不足 1.5h 不再补午餐（背靠背两餐不合常理），
                 # 视为该餐已在途中/游览中解决，只保留晚餐
                 if key == "lunch" and "dinner" not in used_meals \
@@ -195,9 +208,14 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         is_last = p is pois[-1]
         if p.get("category") == "food" and not is_cafe(p):
             # ---- 美食 POI：必须落入未占用的餐窗 ----
+            # 释放本点认领的餐窗（此后不再需要通用餐块让位）；首选窗与 _insert_foods
+            # 的落位目标同源（_assign_food_windows），避免两处口径漂移
+            _pw = _food_win.get(p["id"])
+            if _pw and pending_food_win.get(_pw, 0) > 0:
+                pending_food_win[_pw] -= 1
             th = poi_db.travel_hours(prev, p, mode) if prev is not None else 0.0
             t2 = t + th
-            pref = FOOD_PREF_WIN.get(p.get("best_time"), "lunch")
+            pref = _pw or FOOD_PREF_WIN.get(p.get("best_time"), "lunch")
             win_order = [pref] + [k for k in meal_keys if k != pref]
             for key in win_order:
                 ws, we = meal_windows[key]
@@ -239,7 +257,9 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
             else:
                 violations.append({"poi": p["name"], "day": day_no,
                                    "reason": "美食POI未能安排进用餐时段（餐窗已被占用或早到等待超限）"})
-                _insert_generic_meals(t)  # 该吃的饭照吃，只是这家店去不了
+                # 该吃的饭照吃，只是这家店去不了；窗尾宽限与「游完就地补餐」同口径
+                # （刚过窗尾 ≤45min 补晚午餐/晚餐），避免「餐厅被剔 + 该餐无餐块」双输
+                _insert_generic_meals(t, late_grace_h=MEAL_EXIT_GRACE_H)
             continue
 
         # ---- 非美食 POI：原逻辑 ----
@@ -334,6 +354,33 @@ def _day_score_key(p: dict):
     return pref
 
 
+def _assign_food_windows(foods: list, city: dict) -> dict:
+    """正餐点 → 餐窗 的确定性分配（午市偏好优先，同窗超额顺延到另一窗）。
+
+    `_insert_foods` 的落位目标与 `_build_timeline` 里「通用餐块让位」共用此表——
+    两边口径必须一致，否则又会回到「通用餐块先占窗、正餐点到场无窗可排」的
+    优先级倒挂（报障 15：不管怎么排程，前端都提示美食 POI 未进用餐时段）。
+    开门晚于窗尾的窗对该点不可用 → 不分配（避免为排不进的点空留餐窗）。
+    """
+    if not foods:
+        return {}
+    meals = city["meal_slots"]
+    win_mid = {k: (poi_db.hhmm_to_h(meals[k][0]) + poi_db.hhmm_to_h(meals[k][1])) / 2
+               for k in ("lunch", "dinner")}
+    win_end = {k: poi_db.hhmm_to_h(meals[k][1]) for k in ("lunch", "dinner")}
+    wins_left = list(win_mid)
+    assigned = {}
+    for f in sorted(foods, key=lambda p: (
+            win_mid.get(FOOD_PREF_WIN.get(p.get("best_time"), "lunch"), 12.5), -p["rating"])):
+        pref = FOOD_PREF_WIN.get(f.get("best_time"), "lunch")
+        cands = ([pref] if pref in wins_left else []) + [k for k in wins_left if k != pref]
+        pick = next((k for k in cands if f.get("open_h", 0) < win_end[k] - 1e-9), None)
+        if pick:
+            wins_left.remove(pick)
+            assigned[f["id"]] = pick
+    return assigned
+
+
 def _insert_foods(seq_rest: list, foods: list, hotel, city: dict,
                   mode: str | None = None) -> list:
     """餐窗感知的美食点插入：把 foods 逐个插入 seq_rest 的
@@ -344,15 +391,13 @@ def _insert_foods(seq_rest: list, foods: list, hotel, city: dict,
     meals = city["meal_slots"]
     win_mid = {k: (poi_db.hhmm_to_h(meals[k][0]) + poi_db.hhmm_to_h(meals[k][1])) / 2
                for k in ("lunch", "dinner")}
+    # 窗位分配与 _build_timeline 的让位口径统一（同窗超额顺延另一窗）
+    win_of = _assign_food_windows(foods, city)
     # 美食点按目标餐窗先后插入（午市偏好先插，避免两个点抢同一窗）
     foods = sorted(foods, key=lambda p: (win_mid.get(FOOD_PREF_WIN.get(p.get("best_time"), "lunch"), 12.5), -p["rating"]))
-    wins_left = list(win_mid)  # 尚未分配的餐窗
     day_start = poi_db.hhmm_to_h(city["day_start"])
     for f in foods:
-        pref = FOOD_PREF_WIN.get(f.get("best_time"), "lunch")
-        target_win = pref if pref in wins_left else (wins_left[0] if wins_left else pref)
-        if target_win in wins_left:
-            wins_left.remove(target_win)
+        target_win = win_of.get(f["id"]) or FOOD_PREF_WIN.get(f.get("best_time"), "lunch")
         target = win_mid.get(target_win, 12.5)
         # 预计算序列各位置的到达时刻（day_start 起累计 travel+dur，跨过饭点补偿餐块 1h）
         t_est, times, prev_q = day_start, [day_start], None
