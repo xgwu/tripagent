@@ -388,11 +388,19 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
         travel_h += th
         travel_km += poi_db.haversine_km(prev["lat"], prev["lng"], hotel["lat"], hotel["lng"])
         t += th
-        timeline.append({"type": "hotel", "name": "返回酒店",
+        # 住宿锚点展示名：去掉 resolve_hotel 附加的「（住宿锚点）」「（市中心附近）」括注
+        _hname = re.sub(r"（[^）]*）\s*$", "", hotel.get("name") or "").strip() or "酒店"
+        timeline.append({"type": "hotel", "name": f"返回{_hname}",
                          "start": _fmt(t - th), "end": _fmt(t)})
         if t > day_end + 1e-9:
             violations.append({"poi": "返程", "day": day_no,
                                "reason": f'返回酒店时刻{_fmt(t)}超出当日活动时间上限 {city["day_end"]}'})
+        # 出发行（2026-09-15 报障 14）：此前「从酒店出发」只体现为时间轴首行的一个
+        # 无源 hop（↳ 驾车 15 分钟），酒店名全程不出现——多城联游时前端更是完全看不到
+        # 酒店（plan_multi 不返回 hotel 键，徽标/地图标记一起丢）。显式插入起点行，
+        # 前端按 type=hotel 渲染 🏨，用户一眼看到今天从哪出发、回哪住。
+        timeline.insert(0, {"type": "hotel", "name": _hname,
+                            "start": _fmt(day_start), "end": _fmt(day_start)})
     _by_id = {p["id"]: p for p in pois}
     return {"timeline": timeline, "travel_km": travel_km, "travel_h": travel_h,
             "violations": violations, "repairs": repairs, "finish": _fmt(t),

@@ -316,7 +316,9 @@ function dayCard(d,meta,wdrops){
     const swap=isPoi?`<button class="swapbtn" title="不喜欢？换成附近的同类地点" onclick="swapPoi(${d.day},'${s.id}')">🔁 换一个</button>`:"";
     const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="opacity:.55;font-size:12px">（途中）</span>`:"";
     const tag=s.type==="poi"?foodMark(s,meta):(ICON[s.type]||"");
-    return `<div class="tlrow"><span class="time">${s.start}–${s.end}</span><span style="flex:1">${tag?tag+" ":""}${s.name}${onway}</span>${img}${swap}</div>`;
+    // 住宿锚点出发行是 0 时长（start===end）→ 只显示单个时刻，避免「09:00–09:00」误读
+    const tspan=(s.start&&s.start===s.end)?s.start:`${s.start}–${s.end}`;
+    return `<div class="tlrow"><span class="time">${tspan}</span><span style="flex:1">${tag?tag+" ":""}${s.name}${onway}</span>${img}${swap}</div>`;
   }).join("");
   const viol=(d.violations&&d.violations.length)?`<div class="viol">⚠️ ${d.violations.map(v=>`${v.poi}：${v.reason}`).join("；")}</div>`:"";
   const drop=(d.dropped&&d.dropped.length)?`<div class="drop">🗑 剔除：${d.dropped.map(x=>`${x.name}（${x.reason}）`).join("；")}</div>`:"";
@@ -449,10 +451,14 @@ async function drawRealRoutes(map,meta,r,token){
   const legs=[];
   for(const d of (r.itinerary.days||[])){
     const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
+    // 仅当「该天确实以酒店为出发/返回锚点」时才画酒店腿：多城联游的酒店只属于住宿城，
+    // 若对所有天都补酒店腿，苏州天会被画出「苏州→杭州西湖→苏州」的假长途路线。
+    // 判据用时间轴里的 type=hotel 行（后端在酒店锚定日才生成）——单一事实来源。
+    const hasHotel=(d.timeline||[]).some(x=>x.type==="hotel");
     const pts=[];
-    if(r.hotel)pts.push([r.hotel.lng,r.hotel.lat]);
+    if(r.hotel&&hasHotel)pts.push([r.hotel.lng,r.hotel.lat]);
     for(const x of (d.timeline||[]))if(x.type==="poi"&&meta.pois[x.id])pts.push([meta.pois[x.id].lng,meta.pois[x.id].lat]);
-    if(r.hotel&&pts.length>1)pts.push([r.hotel.lng,r.hotel.lat]);
+    if(r.hotel&&hasHotel&&pts.length>1)pts.push([r.hotel.lng,r.hotel.lat]);
     if(pts.length>1)legs.push({day:d.day,color,pts});
   }
   await Promise.all(legs.map(async({day,color,pts})=>{
@@ -487,7 +493,8 @@ function buildDoc(meta,r){
       const img=s.type==="poi"?poiThumb(p):"";
       const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="color:#9ca3af;font-size:12px">（途中）</span>`:"";
       const tag=s.type==="poi"?foodMark(s,meta):(ICON[s.type]||"");
-      return `<tr><td class="t">${s.start}–${s.end}</td><td class="i">${s.type==="poi"?"":tag}</td><td>${s.type==="poi"&&tag?tag+" ":""}${s.name}${onway}</td><td class="pic">${img}</td></tr>`;
+      const tspan=(s.start&&s.start===s.end)?s.start:`${s.start}–${s.end}`;
+      return `<tr><td class="t">${tspan}</td><td class="i">${s.type==="poi"?"":tag}</td><td>${s.type==="poi"&&tag?tag+" ":""}${s.name}${onway}</td><td class="pic">${img}</td></tr>`;
     }).join("");
     return `<div class="day"><h3 style="background:${color}">Day ${d.day}${d.weekday?`｜${d.weekday}`:""}｜${d.theme||""}<span>交通 ${Math.round(d.travel_km*10)/10}km｜收尾 ${d.finish}</span></h3>
     ${d.reason?`<p style="margin:10px 2px;color:#6b7280;font-size:13px;line-height:1.7">${d.reason}</p>`:""}
@@ -563,6 +570,9 @@ async function exportICS(){
     const day=new Date(base);day.setDate(day.getDate()+d.day-1);
     const ymd=`${day.getFullYear()}${pad(day.getMonth()+1)}${pad(day.getDate())}`;
     (d.timeline||[]).forEach((s,i)=>{
+      // 0 时长行（住宿锚点「出发行」09:00–09:00）是时点标记不是日程 → 跳过，
+      // 否则写出 DTSTART==DTEND 的零长事件，部分日历客户端会拒收
+      if(s.start&&s.start===s.end)return;
       const st=(s.start||"09:00").replace(":",""),en=(s.end||s.start||"10:00").replace(":","");
       evs.push(["BEGIN:VEVENT",
         `UID:tripagent-${d.day}-${i}-${ymd}@tripagent.app`,
@@ -625,7 +635,7 @@ function exportPNG(){
         return;
       }
       x2.fillStyle="#52606d";x2.font='12.5px "Microsoft YaHei",sans-serif';
-      x2.fillText(`${s.start}–${s.end}`,m,y+16);
+      x2.fillText((s.start&&s.start===s.end)?s.start:`${s.start}–${s.end}`,m,y+16);
       x2.fillStyle="#1f2933";x2.font='13.5px "Microsoft YaHei",sans-serif';
       const pre=(isFoodStop(s,meta)||s.type==="meal")?"🍽 ":s.type==="hotel"?"🏨 ":"";
       const nm=pre+s.name;

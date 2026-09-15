@@ -12,7 +12,15 @@ import hashlib, io, json, os, re, sys, threading, time, urllib.parse, uuid
 from datetime import date as _date, timedelta as _td
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+# 控制台 UTF-8（Windows 默认 GBK 会让中文 print 直接 UnicodeEncodeError）。
+# 用 reconfigure（原地改编码）而非新建 TextIOWrapper——后者在同一进程里被包装两次时，
+# 前一个 wrapper 失去引用即 __del__ 关闭底层 buffer，后续 print 报
+# 「I/O operation on closed file」（2026-09-15 报障 14 写 plan_multi 单测时实测：
+# 测试脚本先包装、再 `from webui import server` 二次包装 → 第一行 print 即崩）。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):  # 非标准 stdout（被替换为非 TextIOWrapper）时退回旧写法
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from src import poi_db, m1_planner, llm_client  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
@@ -477,6 +485,29 @@ def _hotel_city_probe(cname: str, text: str) -> bool:
     return result
 
 
+def _lift_seg_notices(cname: str, off: int, notices: list) -> list:
+    """把单城分段的 notices 上浮到多城结果（报障 14 同族缺陷）。
+
+    单城 `plan()` 会返回 notices（点名点未排入 / 日内空档披露 / 需求未满足），
+    多城此前**整块丢弃** → 用户看不到任何解释。且 notice 里的 Day 号是**段内局部号**
+    （杭州段第 1 天在多城里其实是 Day 2），直接合并会指错天 → 按偏移 off 重写。
+    其余类型（named_lost 等）无 day 字段，带上城市标签即可区分。
+    """
+    out = []
+    for n in notices or []:
+        m = dict(n)
+        if isinstance(m.get("day"), int):
+            m["day"] += off
+        if isinstance(m.get("days"), list):   # weather.trip_notices 的降雨天列表
+            m["days"] = [x + off if isinstance(x, int) else x for x in m["days"]]
+        msg = m.get("message") or ""
+        if off and msg.startswith("Day"):
+            m["message"] = re.sub(r"^Day(\d+)", lambda x: f"Day{int(x.group(1)) + off}", msg)
+        m.setdefault("city", cname)
+        out.append(m)
+    return out
+
+
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
                use_llm: bool, planner, hotel_text: str | None = None) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
@@ -504,11 +535,12 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             alloc[donor] -= 1
             alloc[hotel_city] += 1
 
-    merged_days, merged_pois, merged_gaps = [], {}, []
+    merged_days, merged_pois, merged_gaps, merged_notices = [], {}, [], []
     tot = {"violations": 0, "km": 0.0, "dup": 0, "cands": 0, "lat": 0.0,
            "proposed": 0, "unmatched": 0, "rate_w": 0.0}
     seg_date0 = _date.fromisoformat(date0) if date0 else None
     day_no = 0
+    hotel_out = None  # 住宿锚点（报障 14）：单城 plan() 会透出 hotel，多城此前整个丢掉
     for i, cname in enumerate(use):
         di = alloc[i]
         if di < 1:
@@ -518,7 +550,10 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         seg_hotel = hotel_text if (hotel_text and hotel_city == i) else None
         r = planner.plan(city, query, di, use_llm=use_llm, date0=d0,
                          hotel_text=seg_hotel)
+        if seg_hotel and r.get("hotel"):
+            hotel_out = r["hotel"]  # 住宿城市段的解析结果（名称/经纬度/解析来源）
         it = r["itinerary"]
+        _seg_start = day_no + 1                 # 本段第一天在全局的 day 号
         for d in it["days"]:
             day_no += 1
             d["day"] = day_no
@@ -527,7 +562,13 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         meta = city_meta(cname)
         merged_pois.update(meta["pois"])
         g = r.get("grounding") or {}
-        merged_gaps.extend(g.get("gaps") or [])
+        _off = _seg_start - 1                   # 段内局部 day 号 → 全局号 的偏移
+        for _g in (g.get("gaps") or []):
+            _gg = dict(_g)
+            if isinstance(_gg.get("day"), int):
+                _gg["day"] += _off              # 缺口台账/披露的 Day 引用须是全局号
+            merged_gaps.append(_gg)
+        merged_notices.extend(_lift_seg_notices(cname, _off, r.get("notices")))
         tot["violations"] += it.get("total_violations", 0)
         tot["km"] += it.get("total_travel_km", 0.0)
         tot["dup"] += r.get("n_dup_across_days", 0) or 0
@@ -551,6 +592,8 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         "query": query,
         "date0": date0,
         "cities": use,
+        "hotel": hotel_out,
+        "notices": merged_notices,
         "itinerary": {"days": merged_days, "total_violations": tot["violations"],
                       "total_travel_km": round(tot["km"], 1), "dropped_pois": []},
         "grounding": grounding,
