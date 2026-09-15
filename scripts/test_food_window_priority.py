@@ -138,6 +138,35 @@ kept9 = [pid for pid in dm9[1]
 case("9 充裕天两家正餐均保留", len(kept9) == 2, f"kept={[allp[p]['name'] for p in kept9]}")
 case("9b 充裕天无降级记录", not g9.get("food_demoted"), str(g9.get("food_demoted")))
 
+print("\n== 用例 10：is_cafe 判据（粤式「早茶」标签不得被误判为咖啡馆）==")
+# 报障17 根因：旧判据 `"茶" in t` 把「早茶/茶点/茶楼」全判成咖啡 → 粤菜老字号被踢出
+# 餐窗竞争 → 无 meal 标记（前端不显 🍽）+ 通用餐块照插 = 一天两顿午饭。
+_gz = poi_db.load_city("广州")
+_gz_all = {p["id"]: p for p in (poi_db.parse_poi(p, _gz) for p in _gz["pois"])}
+for _pid, _nm in (("GZ053", "点都德"), ("GZ051", "陶陶居"), ("GZ052", "广州酒家"), ("GZ054", "莲香楼")):
+    case(f"10 广州 {_nm} 判为正餐（非咖啡）", not sequencer.is_cafe(_gz_all[_pid]),
+         f"tags={_gz_all[_pid].get('tags')}")
+_sh = poi_db.load_city("上海")
+_sh_all = {p["id"]: p for p in (poi_db.parse_poi(p, _sh) for p in _sh["pois"])}
+for _pid in ("SH055", "SH056", "SH057"):
+    case(f"10 上海 {_sh_all[_pid]['name']} 仍正确判为咖啡馆",
+         sequencer.is_cafe(_sh_all[_pid]), f"tags={_sh_all[_pid].get('tags')}")
+case("10 合成：茶餐厅（正餐）不得判为咖啡",
+     not sequencer.is_cafe({"category": "food", "name": "某某茶餐厅", "tags": ["港式"]}), "")
+case("10 合成：喜茶（茶饮）判为咖啡/茶饮",
+     sequencer.is_cafe({"category": "food", "name": "喜茶", "tags": []}), "")
+
+print("\n== 用例 11：时间轴上出现的正餐 POI 必须带 meal 标记（报障17 根因不变量）==")
+tl_gz, allp_gz = _run("广州", ["GZ007", "GZ053", "GZ051", "GZ034"])
+_nomeal = [s["name"] for s in tl_gz["timeline"]
+           if s.get("type") == "poi" and s.get("id") in allp_gz
+           and allp_gz[s["id"]].get("category") == "food"
+           and not sequencer.is_cafe(allp_gz[s["id"]]) and not s.get("meal")]
+_marked = [(s["name"], s["meal"]) for s in tl_gz["timeline"] if s.get("meal")]
+print("  时间轴正餐落位:", _marked, "| 无 meal 标记的正餐:", _nomeal)
+case("11a 时间轴上不得出现无 meal 标记的正餐 POI", not _nomeal, str(_nomeal))
+case("11b 至少一家正餐落进餐窗", bool(_marked), str(_marked))
+
 print("\n== 不变量：以上各天都不得出现「既无餐块也无美食落位」的裸天")
 for label, tl in [("用例1 苏州Day1", tl), ("用例2 上海Day2", tl2), ("用例3 苏州对照", tl3),
                   ("用例4 苏州", tl4), ("用例5 苏州", tl5)]:

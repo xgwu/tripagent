@@ -126,13 +126,29 @@ def scoped_theme_day(day_map: dict, all_pois: dict, query: str | None) -> int | 
     return best
 
 
+# 咖啡/茶饮（饮品店）识别信号。
+# ⚠️ 不得用裸「茶」做子串：粤式酒楼的老字号标签是「早茶」「茶点」「茶楼」，
+# 裸「茶」会把陶陶居/广州酒家/点都德/莲香楼这类**正餐**误判为咖啡馆。
+# 误判后果（2026-09-15 报障17 实测）：美食分支 `not is_cafe(p)` 整段跳过 →
+# ① 该 POI 无 meal 标记（前端不显示 🍽，用户分不清哪个是用餐点）
+# ② 通用餐块照常插入 → 同一天出现「餐厅 + 午餐块 + 餐厅 + 晚餐块」= 两顿午饭
+_CAFE_NAME_RE = re.compile(
+    r"咖啡|茶饮|奶茶|果茶|coffee|cafe|星巴克|瑞幸|luckin|喜茶|奈雪|茶颜|蜜雪",
+    re.IGNORECASE)
+_CAFE_TAG_SUBSTR = ("咖啡", "coffee", "cafe", "茶饮", "奶茶", "果茶")
+
+
 def is_cafe(p: dict) -> bool:
-    """咖啡馆/茶饮类：food 类目但非正餐——不参与餐窗竞争，不顶替正餐餐块。"""
+    """咖啡馆/茶饮类：food 类目但非正餐——不参与餐窗竞争，不顶替正餐餐块。
+
+    判据只认**饮品店**强信号（咖啡/茶饮/奶茶/果茶/连锁茶饮品牌）；粤式「早茶」
+    「茶点」「茶楼」属正餐标签，必须判为 False（否则正餐会被踢出餐窗竞争）。
+    """
     if p.get("category") != "food":
         return False
-    if "咖啡" in (p.get("name") or ""):
+    if _CAFE_NAME_RE.search(p.get("name") or ""):
         return True
-    return any("咖啡" in t or "茶" in t or "coffee" in t.lower()
+    return any(any(s in t.lower() for s in _CAFE_TAG_SUBSTR)
                for t in (p.get("tags") or []))
 
 
