@@ -26,6 +26,7 @@ header .sub{color:var(--muted);font-size:13px}
 .kpi span{font-size:12px;color:var(--muted)}
 h2{font-size:20px;margin:42px 0 12px;padding-left:10px;border-left:4px solid var(--accent)}
 h3{font-size:16px;margin:24px 0 8px}
+h4{font-size:14px;margin:16px 0 6px;color:var(--muted)}
 p{margin:10px 0}
 table{width:100%;border-collapse:collapse;margin:12px 0;background:var(--card);font-size:13.5px;border-radius:10px;overflow:hidden}
 th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
@@ -33,6 +34,7 @@ th{background:var(--chip);color:var(--accent);font-weight:600}
 code{background:var(--code-bg);border-radius:4px;padding:1px 6px;font-size:12.5px;font-family:"SF Mono",Menlo,Consolas,monospace}
 pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;padding:14px;overflow-x:auto;font-size:12.5px;line-height:1.6}
 .note{background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:10px 14px;font-size:13px;color:var(--muted)}
+.warnbox{background:var(--card);border:1px solid var(--warn);border-left:4px solid var(--warn);border-radius:0 10px 10px 0;padding:12px 16px;margin:14px 0;font-size:13.5px}
 .chartbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:16px 0}
 .chartbox h4{margin:0 0 8px;font-size:14px;color:var(--muted);font-weight:500}
 .svgbox{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;margin:16px 0}
@@ -50,19 +52,22 @@ pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;pa
 
 <header>
   <h1>TOPTW 算法原理与 TripAgent 应用报告</h1>
-  <div class="sub">覆盖 src/toptw.py 全部实现 · 对应代码 main@930dc51 · 2026-09-13</div>
+  <div class="sub">覆盖 src/toptw.py 全部实现 · 对应代码 main@7222dc3 · 2026-09-15（M14）</div>
 </header>
 
 <div class="kpis">
   <div class="kpi"><b>1 车</b><span>单日单路径模型</span></div>
-  <div class="kpi"><b>45 点</b><span>典型候选池规模/天</span></div>
+  <div class="kpi"><b>池=主选</b><span>忠实执行模式（默认开）</span></div>
   <div class="kpi"><b>0.2~1.1s</b><span>提前停止后单日耗时（预算 2s）</span></div>
-  <div class="kpi"><b>0 违规</b><span>回归 13 例约束断言</span></div>
+  <div class="kpi"><b>0 违规</b><span>回归 14 例约束断言</span></div>
 </div>
 
 <h2>1 · 一页看懂</h2>
 <p>TOPTW（Team Orienteering Problem with Time Windows，带时间窗的团队定向问题）回答的是：<b>时间预算有限时，去哪些点、按什么顺序去，能让行程总价值最大</b>。它与 TSP/VRP 的本质区别在于——TSP/VRP 要求访问全部节点、最小化成本；TOPTW 允许<b>放弃</b>部分节点（损失其利润），在时间预算内<b>最大化</b>选中节点的利润总和。这恰好就是行程规划的核心权衡：景点无穷多，一天只够去三四个。</p>
-<p>TripAgent 用 OR-Tools RoutingModel 把「一天行程」建模成单车 TOPTW：<b>利润函数</b>编码「主选权重 + 景点评分 + LLM 顺位奖励」，<b>硬约束</b>（营业时间窗、通行时间、当日上限）由求解器保证可行，<b>软约束</b>（建议游玩时段）以罚分形式参与优化。求解器有权把 LLM 提案里时间上放不下的点换掉——这是整个系统「世界知识提案 + 求解器守门」双引擎结构的第二台引擎。</p>
+<p>TripAgent 用 OR-Tools RoutingModel 把「一天行程」建模成单车 TOPTW：<b>利润函数</b>编码「主选权重 + 景点评分 + LLM 顺位奖励 + 点级需求加成」，<b>硬约束</b>（营业时间窗、通行时间、当日上限）由求解器保证可行，<b>软约束</b>（建议游玩时段）以罚分形式参与优化。</p>
+<div class="warnbox">
+<b>M11 起本项目对 TOPTW 的用法有一次关键收敛：忠实执行模式（默认开）。</b>求解池<b>只含提案主选</b>，主选以 10⁶ 利润锁定，求解器从「可以换点」退到「<b>只排序 + 保证可行</b>」——选点权完全收归提案层（LLM）。原因见第 7 章：求解器的优化目标（利润最大化、填满时间）会与用户的节奏意图（慢节奏/带老人/不要太累）<b>直接打架</b>，且优化器总会赢。换点能力保留为可回退配置（<code>TOPTW_FAITHFUL_MODE=0</code>）。
+</div>
 
 <h2>2 · TOPTW 问题原理</h2>
 <h3>2.1 从定向越野说起</h3>
@@ -111,55 +116,79 @@ s.t. 路径连通、连续；
   <path class="svg-dash" d="M230,182 C300,205 360,215 400,218"/>
   <text x="60" y="250" class="svg-small">实线 = 选中路径（利润 90+80+85+70 = 325，时间可行）</text>
   <text x="60" y="270" class="svg-small">虚线圈 = 被弃点：X 利润虽高(95)但绕路 + 时间窗冲突，纳入将挤掉 B+C（155分）</text>
-  <text x="60" y="290" class="svg-small">求解器权衡「利润 vs 时间成本」，这正是行程规划「景点无穷、一天有限」的数学化</text>
+  <text x="60" y="290" class="svg-small">换点模式：求解器权衡「利润 vs 时间成本」；忠实模式：主选全锁，弃点只可能是装不下</text>
 </svg>
 </div>
 
 <h2>3 · 求解技术：OR-Tools 建模三要素</h2>
-<p>本项目使用 Google OR-Tools 的 <code>RoutingModel</code>（CP-SAT 系约束求解），三个关键机制分别对应 TOPTW 的三个组成部分：</p>
+<p>本项目使用 Google OR-Tools 的 <code>RoutingModel</code>，三个关键机制分别对应 TOPTW 的三个组成部分：</p>
 <table>
 <tr><th>机制</th><th>API</th><th>在本项目中的用法</th></tr>
-<tr><td><b>可选访问</b></td><td><code>AddDisjunction([idx], penalty)</code></td><td>每个候选点挂一个 disjunction；<b>penalty = 该点利润</b>——求解器访问它就赚利润、跳过它就损失利润，penalty 与绕路成本自动权衡。这是「选点」能力的来源</td></tr>
-<tr><td><b>时间维度</b></td><td><code>AddDimension(transit_cb, 0, horizon, fix_start=False, "time")</code></td><td>transit 回调 = <code>上游游玩时长 + 通行分钟</code>；节点 CumulVar 设硬范围 <code>[开门, 闭店−游玩时长]</code>（到达截止语义与 sequencer 对齐）；horizon = 当日跨度 − 120min 餐块缓冲</td></tr>
-<tr><td><b>软时间窗</b></td><td><code>SetCumulVarSoftLowerBound / SoftUpperBound</code></td><td>best_time 建议时段（morning/afternoon/evening/lunch）映射为软窗，偏差每分钟罚 5 分，并有 60 分钟封顶（见 §5）</td></tr>
+<tr><td><b>可选访问</b></td><td><code>AddDisjunction([idx], penalty)</code></td><td>每个候选点挂一个 disjunction；<b>penalty = 该点利润</b>——求解器访问它就赚利润、跳过它就损失利润，penalty 与绕路成本自动权衡。这是「选点」能力的来源；<b>忠实模式下主选利润含 10⁶，等价于把主选变成必选</b></td></tr>
+<tr><td><b>时间维度</b></td><td><code>AddDimension(transit_cb, 0, horizon, fix_start=False, "time")</code></td><td>transit 回调 = <code>上游游玩时长 + 通行分钟</code>；节点 CumulVar 设硬范围 <code>[开门, 闭店−游玩时长]</code>（到达截止语义与 sequencer 对齐）；<b>horizon = 当日跨度 − 120min 餐块缓冲</b>（保底 240）</td></tr>
+<tr><td><b>软时间窗</b></td><td><code>SetCumulVarSoftLowerBound / SoftUpperBound</code></td><td>best_time 建议时段（morning/afternoon/evening/lunch）映射为软窗，偏差每分钟罚 5 分，并有 60 分钟封顶（见第 5 章）</td></tr>
 </table>
-<div class="note">实现细节：自环（未被访问的可选节点）transit 必须返回 0，否则时间维度不可行——这是 OR-Tools 建模的经典坑；另RoutingIndexManager 的绑定参数顺序为 <code>(num_nodes, num_vehicles, starts, ends)</code>，传错会静默得到错误规模。</div>
+<div class="note">实现细节：自环（未被访问的可选节点）transit 必须返回 0，否则时间维度不可行——这是 OR-Tools 建模的经典坑；另 <code>RoutingIndexManager</code> 的绑定参数顺序为 <code>(num_nodes, num_vehicles, starts, ends)</code>，传错会静默得到错误规模（本项目实证：传 <code>(1, n, 0)</code> 会得到 n 辆车、1 个节点）。</div>
 
 <h2>4 · 利润函数：把「产品语义」编码进目标</h2>
-<p>TOPTW 的落地质量几乎取决于利润函数怎么设计——它决定了求解器「认为什么重要」。TripAgent 的利润分四层：</p>
-<pre>profit(p) = 60 × rating            ← 平台评分（3~5 分制）
-          + 15 × rank              ← LLM 提案顺位（首点 rank 最大，逐位递减）
-          + 600 × 主选标记          ← LLM 主选一次性加成
-          + 1,000,000 × 必选标记    ← forced（住宿锚点地标），不可舍弃</pre>
+<p>TOPTW 的落地质量几乎取决于利润函数怎么设计——它决定了求解器「认为什么重要」。TripAgent 的利润分五层：</p>
+<pre>profit(p) = 60 × rating               ← 平台评分（3~5 分制）
+          + 15 × rank                 ← LLM 提案顺位（首点 rank 最大，逐位递减）
+          + 600 × is_main             ← LLM 主选一次性加成
+          + int(p["_bonus"] or 0)     ← 点级需求加成（如湖线点 +150）
+          [+ 1,000,000 × is_forced]   ← 住宿锚点地标，不可舍弃
+          [+ 1,000,000 × (is_main and lock_mains)]  ← 忠实执行模式：主选锁定</pre>
 
-<div class="chartbox"><h4>典型利润构成对比（rating=4 主选 vs 备选 vs 必选锚点）</h4>
+<div class="chartbox"><h4>典型利润构成对比（rating=4 的主选 / 备选 / 必选锚点）</h4>
 <canvas id="c1" height="120"></canvas></div>
 
 <table>
 <tr><th>设计点</th><th>取值</th><th>理由</th></tr>
-<tr><td><code>MAIN_BONUS</code></td><td>600</td><td>M3-1 参数扫描 300~1000 结果一致，取中位留余量——保证「任何一个主选 &gt; 任何几个备选之和」，求解器只会在<b>时间不可行</b>时才动主选</td></tr>
+<tr><td><code>MAIN_BONUS</code></td><td>600</td><td>M3-1 参数扫描 300~1000 结果一致，取中位留余量——保证「任何一个主选 &gt; 任何几个备选之和」，换点模式下求解器只会在<b>时间不可行</b>时才动主选</td></tr>
 <tr><td><code>RATING_W</code></td><td>60/分</td><td>同分主选之间按评分定去留；两档评分差 120 分 &lt; 600，不会翻越主选边界</td></tr>
-<tr><td><code>RANK_BONUS</code></td><td>15/名</td><td>同为主选时保持 LLM 顺序（相似度目标）；参照 Google 可配置行程生成论文的同型设计，该论文中「与用户需求相似度」占利润 70% 权重</td></tr>
-<tr><td><code>forced</code></td><td>+10⁶</td><td>住宿锚点等地标必选点；舍弃代价远超任何组合收益，但<b>时间可行性仍由硬窗保证</b>——必选点排不下会暴露为违规而非被静默丢弃</td></tr>
+<tr><td><code>RANK_BONUS</code></td><td>15/名</td><td>同为主选时保持 LLM 顺序（相似度目标）；参照 Google 可配置行程生成论文的同型设计</td></tr>
+<tr><td><code>_bonus</code></td><td>点级，如 150</td><td>贯穿性偏好（湖线点）加成：量级取主选加成 1/4——够扭转两个主选之间的取舍，不干预主选 vs 备选的 600 级格局。<b>必须 int</b>：<code>AddDisjunction</code> 罚分要求 int64，float 直接 TypeError</td></tr>
+<tr><td><code>forced</code> / <code>lock_mains</code></td><td>+10⁶</td><td>住宿锚点地标 / 忠实模式下的全部主选；舍弃代价远超任何组合收益，但<b>时间可行性仍由硬窗保证</b>——必选点排不下会暴露为违规/剔除记录，而非被静默丢弃</td></tr>
 </table>
+<div class="note">点级 <code>_bonus</code> 由调用方在候选池上以 <code>dict(p, _bonus=…)</code> 塞入——<b>dict 拷贝，不污染 <code>all_pois</code></b>；否则同一 POI 被多天复用时加成会串味。</div>
 
-<h2>5 · 时间约束体系：硬窗、软窗与封顶</h2>
-<p>这是本项目迭代最多的部分，共四层，由硬到软：</p>
+<h2>5 · 时间约束体系：硬窗、软窗、封顶与跨零点</h2>
+<p>这是本项目迭代最多的部分，共五层，由硬到软：</p>
 <table>
 <tr><th>层</th><th>机制</th><th>语义</th></tr>
-<tr><td>① 当日域</td><td><code>horizon = 当日跨度 − 120min</code></td><td>排序器会在日中插午餐+晚餐各 1h，求解预算<b>预扣餐块缓冲</b>（M6），防止过度打包后整体后移溢出</td></tr>
+<tr><td>① 当日域</td><td><code>horizon = max(240, 当日跨度 − 120min)</code></td><td>排序器会在日中插午餐+晚餐各 1h，求解预算<b>预扣餐块缓冲</b>（M6），防止过度打包后整体后移溢出</td></tr>
 <tr><td>② 营业硬窗</td><td><code>CumulVar.SetRange(开门, 闭店−时长)</code></td><td>到达 + 游玩 ≤ 闭店；窗口为空的点（闭店前玩不完）在建模前<b>预剔除</b>，防 CP Solver 直接 fail</td></tr>
 <tr><td>③ 建议软窗</td><td><code>SoftLowerBound / SoftUpperBound</code>，5 分/分钟</td><td>morning→12 点前、afternoon→13 点后、evening→17 点后、lunch→11~13:30（<code>SLOT_WINDOWS</code>）</td></tr>
-<tr><td>④ 软窗封顶</td><td>偏差 &gt;60min 收紧硬域</td><td>M3-2 关键修正：旧逻辑线性罚分无上限（晚到 5h 罚 1500 分），求解器「宁可晚到硬扛罚分」也不弃点——morning 点被拖到傍晚、时段空间白扔；封顶后<b>要么贴时段排、要么干脆不排（弃利润）</b>，腾出的空窗由日内填空补 evening 型点</td></tr>
+<tr><td>④ 软窗封顶</td><td>偏差 &gt;60min 收紧硬域（<code>SOFT_CAP_MIN</code>）</td><td>M3-2 关键修正：旧逻辑线性罚分无上限（晚到 5h 罚 1500 分），求解器「宁可晚到硬扛罚分」也不弃点——morning 点被拖到傍晚、时段空间白扔；封顶后<b>要么贴时段排、要么干脆不排（弃利润）</b></td></tr>
+<tr><td>⑤ 跨零点归一</td><td><code>parse_poi</code>：<code>close_h ≤ open_h</code> → <code>+24</code></td><td><b>M14 新增</b>：闭店时刻不晚于开门时刻即视为跨过午夜的次日时刻（18:00-02:00 → close_h 26.0）。不做这一步则点位被三重判死，详见下节</td></tr>
 </table>
 <div class="note">冲突仲裁：软窗封顶与营业窗冲突时<b>营业窗优先</b>（能开就行）——约束的优先级是 硬可行性 &gt; 时段偏好 &gt; 利润。</div>
+
+<h3>5.1 跨零点归一化：为什么它是「上游一处，全库受益」（M14）</h3>
+<p><b>故障现象</b>：广州宝业路宵夜街（18:00-02:00）与南京 1912 街区（17:00-02:00）自入库起<b>从未能被排进任何行程</b>。</p>
+<p><b>根因</b>：<code>hhmm_to_h("02:00") = 2.0</code> 而 <code>day_start = 9.0</code>，于是该点被三重判死：</p>
+<pre>① 预剔除（建模前）：  to_min(close) - dur = (2-9)*60 - 90 = -510  &lt; 0        → 出池
+② 时间窗（硬域）：    lo = to_min(open) = 540
+                     hi = to_min(close) - dur = -510
+                     lo(540) &gt; hi(-510)  →  SetRange 得到空域
+③ 排序器（sequencer）：任意 t 都满足 t + dur &gt; close_h = 2.0  → 恒报「超出营业时间」</pre>
+<p><b>修法</b>：在解析层统一归一（<code>close_h ≤ open_h</code> 时 +24），而不是在下游三处各打一个补丁。全库 528 点中<b>仅 2 点触发</b>，其余 526 点零影响。</p>
+<table>
+<tr><th>放置位置</th><th>改动面</th><th>风险</th></tr>
+<tr><td>下游逐处打补丁（预剔除 / 时间窗 / 排序器）</td><td>3 处以上，且未来新增判据还要再补</td><td>漏一处即复发；各层语义可能不一致</td></tr>
+<tr><td><b>上游 <code>parse_poi</code> 归一（采用）</b></td><td>1 处</td><td>全库 2 点受影响，526 点零影响；所有下游自动一致</td></tr>
+</table>
+<div class="warnbox">
+<b>「死点」的判定特征（已固化为单测断言）</b>：把 <code>close_h</code> 还原成 2.0（不归一）后，该点在求解结果里<b>既不入选、也不出现在 dropped 列表</b>——它从模型中<b>完全消失</b>。这与「利润权衡剔除」（进池、被弃、进 dropped）是两种截然不同的失败形态。<code>scripts/test_cross_midnight_close.py</code> 用 8 组断言把这两者区分固化下来。
+</div>
+<p class="note">注意：归一化解除的是「绝对不可排」，<b>不等于「必然入选」</b>。新入库的 KTV（闭店 06:00 → close_h 30.0）依赖归一化才排得进；同理宝业路宵夜街归一化后仍未落地，是因为提案层不提案它（召回层问题），与这里无关。</p>
 
 <h2>6 · 求解器配置与提前停止</h2>
 <pre>p.first_solution_strategy   = PATH_CHEAPEST_ARC      // 构造：最便宜弧优先
 p.local_search_metaheuristic = GUIDED_LOCAL_SEARCH    // 改进：引导局部搜索
 p.time_limit                = 2.0s                    // 单日预算</pre>
 <p>GLS 在搜索末段常出现「解略有提升但耗时照付」的空转——实测 2s 预算 100% 打满。项目挂了 <b>at-solution 回调</b>做收敛判断：</p>
-<pre>每次求得新解 → 记录 CostVar().Max()
+<pre>每次求得新解 → 记录 CostVar().Max()（obj_hist）
 连续两次提升 &lt; 0.5% → solver.FinishCurrentSearch() 提前结束
 （SolveWithParameters 仍返回当前最优解；回调取值失败则等 2s 超时兜底）</pre>
 
@@ -168,19 +197,52 @@ p.time_limit                = 2.0s                    // 单日预算</pre>
 
 <p>求解失败（<code>sol is None</code>）时返回 <code>solved=False</code>，上层自动降级 M1 贪婪链路——求解器不可行不会导致整单失败，这是三级降级链（M7 求解 → M2 兜底 → M1 贪婪）的入口之一。</p>
 
-<h2>7 · 编排层：TOPTW 在整条管线里的位置</h2>
-<p>单日求解器之上是 <code>_solve_all_days</code> 编排层，四项工程化设计：</p>
+<h2>7 · 忠实执行模式：TOPTW 角色的收敛（M11 · 默认开）</h2>
+<div class="warnbox">
+<b>为什么要在求解层「主动削弱自己」？</b>因为 TOPTW 的目标函数是「时间预算内利润最大化」——它<b>天然倾向于把时间填满</b>。而用户的节奏意图（「带老人」「不要太累」「慢节奏」）恰恰要求「<b>不要填满</b>」。当两者冲突时，优化器必然赢，因为它掌握着取舍权。这不是调参能解决的，是<b>权利归属</b>问题。
+</div>
+<p><b>解法</b>：把选点权整体交还提案层。参数 <code>lock_mains=True</code> 时：</p>
+<pre>for idx in 1..n:  AddDisjunction([idx], profit(node))
+
+profit(p):
+    pr = 60*rating + 15*rank
+    if p in 主选:
+        pr += 600
+        if lock_mains: pr += 1_000_000      # ← 主选变成事实上的必选
+    if p in forced: pr += 1_000_000
+    pr += int(p["_bonus"] or 0)</pre>
+<p>配套的编排层变化：</p>
+<table>
+<tr><th>环节</th><th>换点模式（<code>lock_mains=False</code>）</th><th>忠实执行（<code>lock_mains=True</code>）</th></tr>
+<tr><td>池构造</td><td>主选 + 邻域备选(半径 8km/8 个) + LLM alternates</td><td><code>pool = list(mains)</code>——<b>只含主选</b></td></tr>
+<tr><td>求解目标</td><td>选点 + 排序</td><td><b>只排序 + 保证可行</b></td></tr>
+<tr><td>点数上限</td><td>时间预算与利润函数决定</td><td><b>落地 ≤ 提案</b></td></tr>
+<tr><td>剔除原因口径</td><td>「利润权衡」或「时间装不下」</td><td>「时间预算内无法纳入（主选锁定仍装不下）」——<b>只剩一种</b></td></tr>
+<tr><td>补位</td><td>池内换点 + <code>_alt_substitute</code> + LLM 兜底加点</td><td>只走 <code>_alt_substitute</code>（<b>净零换位</b>，换出 N 个必须换进 N 个）</td></tr>
+<tr><td>闭环</td><td>阶段 3 <code>_feedback_loop</code> 参与</td><td>跳过 <code>_feedback_loop</code>（不新增点）</td></tr>
+</table>
+
+<div class="chartbox"><h4>同一提案在两种模式下的落地站点数（慢节奏天 vs 普通天）</h4>
+<canvas id="c4" height="150"></canvas></div>
+
+<p><b>实测收益</b>：慢节奏天不再被堆到 5-7 站/20:47 收尾；剔除原因单一使前端文案可信；点数可预期。</p>
+<p><b>代价与缓解</b>：失去「库内自由发挥」对提案的补偿能力（若提案点全闭馆或全超时，忠实模式不会换点）。缓解手段把补偿<b>前移到提案层</b>——更完整的库内菜单注入、prompt 片区/招牌规则、以及「净零换位」在剔点后仍可同主题替换。</p>
+<p><b>可回退</b>：env <code>TOPTW_FAITHFUL_MODE=0</code> / <code>false</code> / <code>no</code> / <code>off</code>，或 config.json <code>toptw_faithful_mode: false</code>。单测 <code>scripts/test_faithful_mode.py</code>（4 例）覆盖「池=主选 / 主选锁定 / 净零换位」。</p>
+
+<h2>8 · 编排层：TOPTW 在整条管线里的位置</h2>
+<p>单日求解器之上是 <code>_solve_all_days</code> 编排层，五项工程化设计：</p>
 <table>
 <tr><th>设计</th><th>实现</th><th>收益</th></tr>
-<tr><td><b>逐日建池</b></td><td>主选 + LLM alternates（同天优先）+ 地理邻近召回，全局 <code>used_backup</code> 去重</td><td>池约 45 点/天：够求解器换点，又不至于稀释利润信号</td></tr>
+<tr><td><b>逐日建池</b></td><td>忠实模式：<code>pool = list(mains)</code>；换点模式：主选 + LLM alternates（同天优先）+ 地理邻近召回，全局 <code>used_backup</code> 去重</td><td>忠实模式下池规模 = 提案点数，求解更快且行为可预期</td></tr>
 <tr><td><b>线程并行</b></td><td>建池串行（维护去重状态）→ 线程池并行求解（≤4 并发）→ 串行合并</td><td>OR-Tools 求解释放 GIL，多天耗时 ≈ 最慢单天</td></tr>
 <tr><td><b>天复用（reuse）</b></td><td>C 闭环/重平衡未触及的天直接复用上次有序解，不重解</td><td>跨天调整只动少数天，全量重解是纯浪费</td></tr>
 <tr><td><b>闭馆预剔除</b></td><td>日期感知：当日闭馆的主选进池前剔除并记「求解器强制换点」</td><td>主选闭馆信号进闭环 REVISE，而非求解器内部静默换点</td></tr>
-<tr><td><b>酒店 depot</b></td><td>hotel 作为虚拟节点（全天开放、0 时长）置于 nodes[0]，每日强制出发返回</td><td>首尾交通真实；无酒店时用「首主选换位到 depot」替代</td></tr>
+<tr><td><b>酒店 depot</b></td><td>hotel 作为虚拟节点（全天开放、0 时长）置于 <code>nodes[0]</code>，每日强制出发返回</td><td>首尾交通真实；无酒店时本应「首主选换位到 depot」（该逻辑当前失效，见第 11 章）</td></tr>
 </table>
-<p>求解输出两样东西：<b>有序访问序列</b>（交给 sequencer 做时间轴与修复链）和<b>被弃点列表</b>（进入「为什么没去这些点」的用户可见解释 + 闭环信号）。被剔主选会触发两级补救：提案备选确定性补位（同主题优先）→ LLM 兜底补点；需求主题（动物/博物馆等）彻底丢失时向用户出 ⚠️ 通知。</p>
+<p><b>容量预检与求解器同口径（M12 新增）</b>：跨天重平衡在挪点前调用 <code>_day_horizon(city)</code>（= <code>max(240, 日长分钟 − MEAL_BUFFER_MIN)</code>）与 <code>_day_load(ids, all_pois, mode)</code>（dur 合计 + 按序列相邻腿时间累加，偏保守）。<b>两者必须与 <code>toptw.solve_day</code> 的 horizon 口径完全一致</b>，否则会出现「预检放行、TOPTW 仍剔」的错配（报障 14 根因）。</p>
+<p>求解输出两样东西：<b>有序访问序列</b>（交给 sequencer 做时间轴与修复链）和<b>被弃点列表</b>（进入「为什么没去这些点」的用户可见解释 + 闭环信号）。被剔主选会触发两级补救：提案备选净零换位（同主题优先）→ LLM 兜底补点；需求主题彻底丢失时向用户出 ⚠️ 通知。</p>
 
-<h2>8 · 参数调优历程与实测效果</h2>
+<h2>9 · 参数调优历程与实测效果</h2>
 <table>
 <tr><th>阶段</th><th>改动</th><th>结果</th></tr>
 <tr><td>M2 初版</td><td>利润函数 + 硬窗 + disjunction</td><td>链路跑通，主选保留率受时间预算约束合理取舍</td></tr>
@@ -188,30 +250,48 @@ p.time_limit                = 2.0s                    // 单日预算</pre>
 <tr><td>M3-2</td><td>软窗罚分封顶 60min（收紧硬域）</td><td>morning 点不再被拖到深夜，时段空间由填空复用</td></tr>
 <tr><td>M5/M6</td><td>闭馆预剔除；horizon 预扣餐缓冲；酒店 depot</td><td>0 闭馆违规；过度打包消除；首尾交通真实</td></tr>
 <tr><td>M8.5</td><td>at-solution 提前停止 + 逐日并行 + 天复用</td><td>单日 2.0s → 0.2~1.1s；端到端 23.3s → 12.9s（缓存 8.3s）</td></tr>
+<tr><td><b>M11</b></td><td><b>忠实执行模式（lock_mains，默认开）</b></td><td>池=主选、落地 ≤ 提案、剔除原因单一；节奏类需求不再被利润函数抹平</td></tr>
+<tr><td><b>M12</b></td><td><b><code>_bonus</code> 点级加成（湖偏好）+ 容量预检同口径</b></td><td>贯穿偏好可穿透求解层；挪点不再「预检放行、求解仍剔」</td></tr>
+<tr><td><b>M14</b></td><td><b>跨零点闭店归一化（上游 parse_poi）</b></td><td>救活 GZ069/NJ021 两个死点；KTV（06:00 闭店）等凌晨点位可排</td></tr>
 </table>
 
 <div class="chartbox"><h4>端到端规划耗时演进（杭州 2 日样例，秒）</h4>
 <canvas id="c3" height="160"></canvas></div>
 
-<h2>9 · 与 Google 可配置行程生成论文的对照</h2>
+<h2>10 · 与 Google 可配置行程生成论文的对照</h2>
 <table>
 <tr><th>设计维度</th><th>Google 论文</th><th>TripAgent</th></tr>
 <tr><td>问题建模</td><td>TOPTW（OR-Tools）</td><td>同</td></tr>
-<tr><td>利润构成</td><td>用户需求相似度为主（70% 权重）+ 评分</td><td>主选加成 600 + 评分 60/分 + 顺位 15/名（LLM 相似度目标用顺位稀疏表达）</td></tr>
-<tr><td>必访点</td><td>硬约束集合</td><td>forced 大额利润（10⁶）——软硬之间，时间可行性仍归硬窗管</td></tr>
-<tr><td>时间窗</td><td>营业硬窗</td><td>硬窗 + best_time 软窗 + 封顶（自有增强）</td></tr>
+<tr><td>利润构成</td><td>用户需求相似度为主（70% 权重）+ 评分</td><td>主选加成 600 + 评分 60/分 + 顺位 15/名 + 点级 <code>_bonus</code>（LLM 相似度目标用顺位稀疏表达）</td></tr>
+<tr><td>必访点</td><td>硬约束集合</td><td>forced / 忠实模式下主选均为大额利润（10⁶）——软硬之间，时间可行性仍归硬窗管</td></tr>
+<tr><td>时间窗</td><td>营业硬窗</td><td>硬窗 + best_time 软窗 + 封顶 + <b>跨零点归一化</b>（自有增强）</td></tr>
 <tr><td>弃点解释</td><td>—</td><td>dropped 原因用户可见 + 闭环补救（自有增强）</td></tr>
+<tr><td><b>求解器是否换点</b></td><td>未涉及（论文只做排序/可行化）</td><td><b>忠实模式与论文一致（只排序）；换点模式是 TripAgent 曾经的额外能力</b></td></tr>
 </table>
 
-<h2>10 · 边界与演进方向</h2>
+<h2>11 · 实现坑与已知缺陷</h2>
+<table>
+<tr><th>项</th><th>说明</th><th>状态</th></tr>
+<tr><td>自环 transit 必须 0</td><td>未被访问的可选节点，其自环 transit 若不返回 0，时间维度直接不可行</td><td>已处理</td></tr>
+<tr><td><code>RoutingIndexManager</code> 参数顺序</td><td>绑定顺序为 <code>(num_nodes, num_vehicles, starts, ends)</code>；本项目实证传 <code>(1, n, 0)</code> 会得到 n 辆车、1 个节点</td><td>已规避（显式 <code>(n, 1, [0], [0])</code>）</td></tr>
+<tr><td><code>AddDisjunction</code> 罚分需 int64</td><td>利润里混入 float（如 <code>_bonus</code> 未强转）会 TypeError</td><td>已处理（<code>int()</code> 强转）</td></tr>
+<tr><td>静态方法绑定</td><td><code>routing.AddAtSolutionCallback</code> 传实例方法会报 unbound；须用闭包/模块级函数</td><td>已处理</td></tr>
+<tr><td><b>depot 换位失效</b></td><td><code>nodes[0], nodes[nodes.index(first)] = nodes[nodes.index(first)], nodes[0]</code> 是 Python 元组赋值陷阱——LHS 第二次赋值时<b>重算 <code>nodes.index(first)</code></b>（此时 first 已在 <code>nodes[0]</code>，返回 0）→ 交换被整体撤销。后果：「无酒店时 depot 取主选第一点」<b>从未生效</b>，depot 恒为 <code>candidates[0]</code>。当前影响≈0（池构造 mains 在前），但序列化条件下会取错点</td><td><b>未修</b>（登记）。修它必须<b>同时</b>把换位移到 <code>RoutingIndexManager</code> 构造之前——现在 <code>SetRange</code> 在交换前执行，换成功反而会造成窗口与节点错位</td></tr>
+<tr><td>跨零点闭店</td><td>close_h &lt; open_h 的点被三重判死，从模型完全消失</td><td>已修（M14，见 5.1）</td></tr>
+<tr><td>不惩罚行程内部空档</td><td>evening 软窗 + 点少的天会把时间轴拉出数小时空档；慢节奏靠移除真夜间点规避，通用场景未治（动 solver 风险大）</td><td><b>已知遗留</b></td></tr>
+</table>
+
+<h2>12 · 边界与演进方向</h2>
 <ul>
-<li><b>单车模型</b>：单日单路径符合旅游场景；若引入「上午/下午分组」需求，可扩展为 2 车 TOPTW（ morning 组 + afternoon 组）。</li>
+<li><b>单车模型</b>：单日单路径符合旅游场景；若引入「上午/下午分组」需求，可扩展为 2 车 TOPTW（morning 组 + afternoon 组）。</li>
 <li><b>利润静态性</b>：利润不随拥挤度/天气变化——拥堵与天气感知排入待办后，可作为时段相关的利润调整项注入。</li>
-<li><b>预算感知</b>：门票价格未进目标函数，可加预算约束维度（预算内利润最大化）。</li>
-<li><b>提前停止阈值</b>：0.5%/连续两次为经验值，可在更多城市样本上校准（当前单日 0.2~1.1s 已接近建池固定开销）。</li>
+<li><b>预算感知</b>：门票价格（<code>price</code> 字段已回填）未进目标函数，可加预算约束维度（预算内利润最大化）。</li>
+<li><b>提前停止阈值</b>：0.5% / 连续两次为经验值，可在更多城市样本上校准（当前单日 0.2~1.1s 已接近建池固定开销）。</li>
+<li><b>空档惩罚项</b>：在目标中加入「行程内部大空档惩罚」以治理通用场景的时间轴空窗——需谨慎评估对求解时间与稳定性的影响。</li>
+<li><b>召回层补强（让「能排但没被提案」的点可落地）</b>：忠实模式下求解器不再换点，提案层的召回质量权重进一步上升——需强化「片区日」提案引导与检索召回。</li>
 </ul>
 
-<div class="note" style="margin-top:28px">本文档基于 src/toptw.py（188 行）与 src/m2_planner.py 编排层真实代码编写 · 配套文档：<code>docs/TripAgent-架构设计.html</code>（系统全景与 M7 管线）· <code>docs/TripAgent-性能优化报告.html</code>（性能专项）</div>
+<div class="note" style="margin-top:28px">本文档基于 src/toptw.py（199 行）与 src/m2_planner.py 编排层真实代码编写（2026-09-15，M14）· 配套文档：<code>docs/TripAgent-架构设计.html</code>（系统全景与 M7 管线）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）</div>
 
 </div>
 <script>
@@ -228,25 +308,37 @@ let charts=[];
 function renderCharts(){
   charts.forEach(c=>c.destroy());charts=[];
   const common={responsive:true,plugins:{legend:{labels:{color:tick()}}},scales:{x:{ticks:{color:tick()},grid:{color:grid()}},y:{ticks:{color:tick()},grid:{color:grid()},beginAtZero:true}}};
+
   const c1=new Chart(document.getElementById("c1"),{type:"bar",data:{
-    labels:["评分利润(60×4)","LLM顺位奖励(rank4)","主选加成","必选加成(forced)"],
+    labels:["评分利润(60×4)","LLM顺位奖励(rank4)","主选加成","必选/锁定加成"],
     datasets:[
       {label:"主选点",data:[240,60,600,0],backgroundColor:"#3fbf7f"},
       {label:"备选点",data:[240,0,0,0],backgroundColor:"#94a3b8"},
-      {label:"必选锚点",data:[240,60,600,1000000],backgroundColor:"#f0b429"}]},
+      {label:"必选锚点 / 忠实模式主选",data:[240,60,600,1000000],backgroundColor:"#f0b429"}]},
     options:{...common,plugins:{...common.plugins,tooltip:{callbacks:{label:c=>c.dataset.label+": "+c.raw}}}}});
   charts.push(c1);
+
   const c2=new Chart(document.getElementById("c2"),{type:"bar",data:{
     labels:["武汉 Day1","武汉 Day2","杭州 Day1","杭州 Day2"],
     datasets:[{label:"固定预算(秒)",data:[2,2,2,2],backgroundColor:"#94a3b8"},
               {label:"提前停止后实测(秒)",data:[1.1,0.4,0.6,0.2],backgroundColor:"#3fbf7f"}]},
     options:common});
   charts.push(c2);
+
   const c3=new Chart(document.getElementById("c3"),{type:"line",data:{
     labels:["优化前","P0 天复用+并行","P1 提前停止+缓存","缓存命中"],
     datasets:[{label:"端到端耗时(秒)",data:[23.3,17.8,12.9,8.3],borderColor:"#3fbf7f",backgroundColor:"rgba(63,191,127,.15)",fill:true,tension:.3,pointRadius:5}]},
     options:common});
   charts.push(c3);
+
+  const c4=new Chart(document.getElementById("c4"),{type:"bar",data:{
+    labels:["慢节奏天（提案 3 点）","普通天（提案 5 点）"],
+    datasets:[
+      {label:"换点模式：落地站点数",data:[7,6],backgroundColor:"#e08b6a"},
+      {label:"忠实执行：落地站点数",data:[3,5],backgroundColor:"#3fbf7f"},
+      {label:"提案承诺点数",data:[3,5],type:"line",borderColor:"#57606a",backgroundColor:"#57606a",borderDash:[6,4],pointRadius:5}]},
+    options:{...common,plugins:{...common.plugins,title:{display:true,text:"忠实执行把「落地 ≤ 提案」变成硬性质（慢节奏天不再被堆到 5-7 站）"}}}});
+  charts.push(c4);
 }
 renderCharts();
 </script>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TripAgent 项目报告 v2 — LLM 世界知识 × TOPTW 混合行程规划</title>
+<title>TripAgent 项目报告 v3 — LLM 世界知识 × TOPTW 混合行程规划</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{
@@ -67,24 +67,25 @@ li{margin:4px 0;font-size:14.5px}
 <div class="wrap">
 
 <header class="hero">
-  <h1>TripAgent 项目报告 <span style="font-size:15px;opacity:.8">v2</span></h1>
+  <h1>TripAgent 项目报告 <span style="font-size:15px;opacity:.8">v3</span></h1>
   <p>LLM 世界知识提案 × OR-Tools TOPTW 求解的多日行程规划系统</p>
   <p style="margin-top:10px">
-    <span class="badge">Python · 96 commits</span>
-    <span class="badge">7 城市 · 395 POI</span>
+    <span class="badge">Python · 140 commits / 5 天</span>
+    <span class="badge">8 城市 · 528 POI</span>
+    <span class="badge">37,315 对交通缓存</span>
     <span class="badge">DeepSeek + 高德 + OSRM</span>
     <span class="badge">线上运行中</span>
-    <span class="badge">报告日期 2026-09-12（v1 当日 07:22）</span>
+    <span class="badge">报告日期 2026-09-15</span>
   </p>
 </header>
 
 <div class="grid" style="margin-bottom:8px">
-  <div class="kpi"><b>20/20</b><span>评测硬违规 0（五城×双方案）</span></div>
-  <div class="kpi"><b>100%</b><span>M7 落地率（10/10 组全 100%）</span></div>
-  <div class="kpi"><b>0</b><span>幻觉 POI（结构性归零）</span></div>
-  <div class="kpi"><b>395</b><span>POI 库规模（7 城）</span></div>
-  <div class="kpi"><b>25,726</b><span>真实路网交通缓存对</span></div>
-  <div class="kpi"><b>13/13</b><span>回归用例（离线+LLM 双跑）</span></div>
+  <div class="kpi"><b>528</b><span>POI 库规模（8 城）</span></div>
+  <div class="kpi"><b>37,315</b><span>真实路网交通缓存对</span></div>
+  <div class="kpi"><b>0</b><span>硬约束违规（14 用例回归）</span></div>
+  <div class="kpi"><b>100%</b><span>POI 实拍图覆盖（8 城）</span></div>
+  <div class="kpi"><b>140</b><span>提交（M1–M14，5 天）</span></div>
+  <div class="kpi"><b>14/14</b><span>回归用例（8 城全覆盖）</span></div>
   <div class="kpi"><b>12.9s</b><span>端到端规划（优化前 23.3s，-45%）</span></div>
 </div>
 
@@ -92,50 +93,57 @@ li{margin:4px 0;font-size:14.5px}
 <div class="panel">
 <p>TripAgent 回答一个核心问题：<b>通用大模型（豆包/千问级）的旅行「品味」很好，但直接生成的行程不可行——幻觉地点、营业时间冲突、跨天重复、里程不现实。</b>项目的解法是让 LLM 与优化器各做擅长的事：</p>
 <p style="text-align:center;font-size:15px"><b>世界知识主导选点，确定性系统负责「落地 + 约束 + 求解」。</b></p>
-<p>LLM 凭旅行常识决定「去哪、为什么去」（上海亲子就该想到迪士尼），系统保证行程<b>物理可行</b>（真实路网时间、营业窗口、闭馆日、餐窗、里程预算）且<b>结构最优</b>（OR-Tools TOPTW 利润最大化）。防幻觉不靠限制提案，而靠落地匹配——未落地的提案自动成为「POI 库缺口采购清单」，反向驱动数据扩容。</p>
+<p>LLM 凭旅行常识决定「去哪、为什么去」（上海亲子就该想到迪士尼），系统保证行程<b>物理可行</b>（真实路网时间、营业窗口、闭馆日、餐窗、里程预算）且<b>结构最优</b>（OR-Tools TOPTW 排序与可行性）。防幻觉不靠限制提案，而靠落地匹配——未落地的提案自动成为「POI 库缺口采购清单」，反向驱动数据扩容。</p>
+<p><b>v3 的定位微调（M11 忠实执行模式）</b>：随着提案层 prompt 成熟（v7），选点权进一步收归 LLM——TOPTW 从「可以换点」退到「只排序 + 保证可行」。这不是能力削减，而是<b>职责归位</b>：节奏与强度是用户意图，应由理解意图的一方决定；求解器不该用利润函数替用户做减站点决策。求解器仍保留换点能力（配置可回退），并继续负责它最不可替代的两件事：<b>时间窗可行性</b>与<b>顺序最优</b>。</p>
 </div>
 
-<h2>二、核心管线（M7 经验提案模式）</h2>
+<h2>二、核心管线（M7 经验提案 + M11 忠实执行）</h2>
 <div class="flow">
   <div class="fstep"><b>0 · 多轮澄清</b><span>LLM 保守判断需求缺失（天数/同行人/歧义），至多追问一问，选项卡片交互</span></div>
   <div class="farrow">→</div>
-  <div class="fstep"><b>A · 世界知识提案</b><span>LLM 自由生成多日行程：主选 + note + alternates + 招牌体验规则</span></div>
+  <div class="fstep"><b>A · 世界知识提案</b><span>LLM 凭世界知识自由生成多日行程：主选 + note + alternates + 招牌/片区/餐窗规则（prompt v7）</span></div>
   <div class="farrow">→</div>
-  <div class="fstep"><b>B · 落地匹配</b><span>四级匹配回库：精确 → 包含 → 模糊(difflib≥0.62) → LLM 辅助；失败记入库缺口</span></div>
+  <div class="fstep"><b>B · 落地匹配</b><span>四级匹配回库：精确 → 分支变体 → 包含/模糊(difflib≥0.62) → LLM 辅助；失败记入库缺口台账</span></div>
   <div class="farrow">→</div>
-  <div class="fstep"><b>C · TOPTW 求解</b><span>OR-Tools 逐日求解：营业时间窗 + 酒店锚点 + 闭馆硬过滤 + 利润函数</span></div>
+  <div class="fstep"><b>C · TOPTW 求解</b><span>OR-Tools 逐日：营业硬窗 + 酒店 depot + 闭馆预剔 + 软时间窗；<b>忠实模式：池=主选，只排序</b></span></div>
   <div class="farrow">→</div>
-  <div class="fstep"><b>D · 闭环与文案</b><span>跨天重平衡 → 主选被剔/缺口回传 LLM 修正（≤2轮）→ 文案对齐最终时间轴</span></div>
+  <div class="fstep"><b>D · 闭环与文案</b><span>跨天重平衡 → alt 净零换位 → 缺口/剔除回传 LLM 修正（≤2 轮）→ 文案对齐最终时间轴</span></div>
 </div>
 <div class="panel">
-<p><b>四层防护</b>保证产出质量（v2 新增第四层）：</p>
+<p><b>四层防护</b>保证产出质量：</p>
 <ul>
-  <li><b>提案层</b>：招牌体验规则（亲子→迪士尼）、全天大点独占日、雨天室内引导、傍晚密度规则；</li>
-  <li><b>守门层 <span class="tag t-p">v2 新增</span></b>：远郊大点片区守门 <code>_far_big_point_regroup</code>——距市中心 &gt;12km 的 4h+ 大点与 10km 外片区错配混排时，求解前自动重排到最近的天；family 严格档下 5h+ 远郊点（野生动物世界/海洋公园级）独占一日；</li>
-  <li><b>求解层</b>：主选高利润 + LLM 备选低权重 + 地理邻近检索备选（双源）入池，不可行按利润权衡换点；补位优先同主题备选（动物换动物）；</li>
-  <li><b>闭环层</b>：落地缺口/落地率&lt;85%/主选被剔 ≥2 处 → 带原因回传修正再求解（上限 2 轮，防震荡守卫）；需求标签（动物/博物馆等 16 类白名单）点位被剔光且无同主题保留 → 明确通知用户。</li>
+  <li><b>提案层</b>：招牌体验规则（亲子→迪士尼）、全天大点独占日、远郊大点片区规则、雨天室内引导、傍晚密度规则、<b>慢节奏规则</b>、<b>贯穿偏好规则</b>、<b>正餐规则</b>（午晚各一家、默认 1 家、午市店一天最多 1 家）；</li>
+  <li><b>守门层</b>：远郊大点片区守门 <code>_far_big_point_regroup</code>（距市中心 &gt;12km 的 4h+ 大点与 10km 外片区错配混排时求解前重排；family 档 5h+ 远郊点独占一日；<b>环湖/海岛主题日豁免不拆</b>）；跨天片区分散 <code>_crossday_area_overlap</code>（相邻两天 &lt;1.2km 点位对）；</li>
+  <li><b>求解层</b>：忠实模式主选以 10⁶ 利润锁定（同 forced 口径），求解器只优化顺序与可行性；模式可回退到「主选高利润 + 双源备选换点」；</li>
+  <li><b>闭环层</b>：落地缺口 / 落地率&lt;85% / 主选被剔 ≥2 处 → 带原因回传修正再求解（≤2 轮防震荡）；阶段 3 <code>_alt_substitute</code> 净零换位（同主题优先）——补位不增加站点数；需求主题点位被剔光且无同主题保留 → 前端 ⚠️ 明确通知。</li>
 </ul>
 </div>
 
-<h2>三、里程碑演进（两天 · 96 个提交）</h2>
+<h2>三、里程碑演进（五天 · 140 个提交）</h2>
 <div class="panel">
 <ul class="tl">
   <li><b>M1 验证假设</b> — 「LLM 库内组线」：候选卡片只发库内 ID，幻觉结构性归零，优化层修复价值量化</li>
   <li><b>M2 求解层</b> — OR-Tools TOPTW（营业硬窗+利润函数）+ 每日文案重生成</li>
-  <li><b>M3 交通与调参</b> — OSRM 真实路网矩阵、best_time 软时间窗、修复窗口语义错位（主选被删真凶）、6 persona 评测</li>
+  <li><b>M3 交通与调参</b> — OSRM 真实路网矩阵、best_time 软时间窗 + 罚分封顶、修复窗口语义错位（主选被删真凶）、6 persona 评测</li>
   <li><b>M4 多城扩展</b> — 5 城 162 POI、高德 L2 实况路况、候选卡片 token 压缩 13~23%</li>
   <li><b>M5 日期感知</b> — closed_days 建模 + 全链路硬约束（LLM 软引导/求解硬过滤/校验修复）</li>
   <li><b>M6 多日衔接</b> — 酒店锚点（每日起终点 depot）+ 跨天去重 + 餐块预算预扣</li>
   <li><b>M7 经验提案</b> — 回归架构初心：世界知识提案 → 落地 → 求解；缺口探测器</li>
   <li><b>M7.5 对照落地</b> — 《TOPTW+LLM 混合方案》P0/P1 全部实现：闭环反馈、备选 alternates、多轮澄清；对标 Google《Optimizing LLM-based trip planning》补跨天重平衡局部搜索</li>
   <li><b>M8 数据工程</b> — add_city 一键扩城 / onboard_city.sh 扩库回填流水线 / 缺口清零；北京 onboarding（80 POI）、成都补全</li>
-  <li><b>M8.5 性能工程 <span class="tag t-p">v2 新增</span></b> — 性能探针插桩 → P0/P1/P2 三批优化 + 补点闭环去 LLM 化：端到端 23.3s → 首次 12.9s（-45%）/ 缓存命中 8.3s（-64%），质量零回归</li>
-  <li><b>M9 主题保真 <span class="tag t-p">v2 新增</span></b> — 「亲子动物行程无动物点」三层根因修复：杭州库补动物园+野生动物世界、远郊大点守门、同主题补位 + 需求丢失通知；去掉亲子里程硬上限（几何职责移交守门层）</li>
-  <li><b>M10 工程化收尾 <span class="tag t-p">v2 新增</span></b> — 天气/节假日感知、提案缓存多实例健壮化、补位命中率观测、城市库校验器+扩充 SOP、发布门禁（本地+GitHub Actions）、移动端细节；待办清单清零</li>
+  <li><b>M8.5 性能工程</b> — 性能探针插桩 → P0/P1/P2 三批优化 + 补点闭环去 LLM 化：端到端 23.3s → 首次 12.9s（-45%）/ 缓存命中 8.3s（-64%），质量零回归</li>
+  <li><b>M9 主题保真</b> — 「亲子动物行程无动物点」三层根因修复：杭州库补动物园+野生动物世界、远郊大点守门、同主题补位 + 需求丢失通知；去掉亲子里程硬上限（几何职责移交守门层）</li>
+  <li><b>M10 工程化收尾</b> — 天气/节假日感知、提案缓存多实例健壮化、补位命中率观测、城市库校验器+扩充 SOP、发布门禁（本地+GitHub Actions）、移动端细节</li>
+  <li><b>M11 忠实执行模式 <span class="tag t-p">v3 新增</span></b> — 选点权收归提案层：<code>toptw_faithful_mode</code> 默认开，求解池 = 主选，主选以极大利润锁定，TOPTW 只排序与保可行；剔除记录区分「装不下」与「利润权衡」两种口径；<b>点数收敛为「落地 ≤ 提案」</b></li>
+  <li><b>M12 体验保真四条线 <span class="tag t-p">v3 新增</span></b> — ① <b>节奏线</b>：慢节奏档全链路宽松化（老人/轮椅/不累/太累），2–3 点/天、白天为主、真夜间点全清、站数下限 3；② <b>餐窗线</b>：正餐 POI 餐窗优先权 + 单天餐窗统一分配 + 主选层提前降级；③ <b>偏好线</b>：贯穿性偏好（临湖/环湖）穿透全链路，湖线点利润加成；④ <b>跨城线</b>：跨城住宿锚点探测 + 天数住宿倾斜 + 美食窗去重</li>
+  <li><b>M13 城库扩容与开城广州 <span class="tag t-p">v3 新增</span></b> — 苏州 30→75（骑行/咖啡/美食/环太湖四批）、南京 33→49、<b>广州 0→79</b>：8 城 528 点、交通缓存 37,315 对、8 城实拍图 100%；全城开城流水线固化</li>
+  <li><b>M14 正确性审计与守卫 <span class="tag t-p">v3 新增</span></b> — 跨零点闭店归一化（救活 GZ069/NJ021 两个「死点」）、KTV 新子类入库（4 家广州 KTV）、城市注册表多副本守卫 <code>test_city_registry.py</code>、缓存改动纯度校验手法、剔点记录合并不覆盖</li>
 </ul>
+<p class="note">提交节奏：09-11 55 个 → 09-12 43 个 → 09-13 6 个 → 09-14 21 个 → 09-15 15 个。M11 起进入「线上反馈驱动」阶段——每个报障都走「复现 → 探针定位根因 → 确定性修复 → 单测固化 → 回归 → 线上 fresh 重放」的完整闭环。</p>
 </div>
+<div class="chartbox"><canvas id="c6"></canvas></div>
 
-<h2>四、性能优化专项（M8.5 · 2026-09-12 下午）</h2>
+<h2>四、性能优化专项（M8.5）</h2>
 <div class="panel">
 <p><b>瓶颈定位</b>（探针 <code>probe_perf.py</code> 插桩实测，武汉 2 天基准 23.3s）：</p>
 <ul>
@@ -154,10 +162,12 @@ li{margin:4px 0;font-size:14.5px}
 </div>
 <div class="chartbox"><canvas id="c5"></canvas></div>
 <div class="panel">
-<p><b>质量零损失</b>：全部优化伴随离线回归 13/13 + 真实 LLM 端到端 0 违规验证；TOPTW 单天求解 2.0s → 0.2~1.1s；反馈推荐单次调用 5.5s → 2.8s。详细技术报告见 <code>docs/TripAgent-性能优化报告.html</code>。</p>
+<p><b>质量零损失</b>：全部优化伴随离线回归 + 真实 LLM 端到端 0 违规验证；TOPTW 单天求解 2.0s → 0.2~1.1s；反馈推荐单次调用 5.5s → 2.8s。</p>
 </div>
 
-<h2>五、典型案例：动物主题行程三层根因（M9 · v2 新增）</h2>
+<h2>五、典型案例（根因定位 → 分层修复）</h2>
+
+<h3>案例 1 · 动物主题行程无动物点（M9）</h3>
 <div class="panel">
 <p><b>现象</b>：「带 5 岁孩子去杭州玩 2 天，不要太累，最好有动物或者博物馆」——行程里没有任何动物相关 POI。逐环节重放定位：</p>
 <table>
@@ -168,13 +178,45 @@ li{margin:4px 0;font-size:14.5px}
   <tr><td>修复链</td><td><span class="tag t-r">剔除</span></td><td>亲子里程超预算（&gt;20km/天）剔最远点——海洋公园（萧山 18.8km）与拱宸桥片区（城北）相距 24km+</td></tr>
   <tr><td>补位</td><td><span class="tag t-a">丢主题</span></td><td>备选补位只看几何，不保留「动物」需求；库内无第二个轻量动物点</td></tr>
 </table>
-<p><b>三层修复</b>（8090eb9 / 45dfa4f / 3297ee7 / 580b54d，四个提交）：</p>
-<ul>
-  <li><b>数据</b>：杭州库新增杭州动物园（HZ056，虎跑旁 ¥20/2.5h，政府公示+携程双源核实）与杭州野生动物世界（HZ057，富阳 ¥210/5.5h，三源核实）；KEYWORD_TAGS 加动物映射——「亲子+动物+不累」首次有市区级轻量可行解；</li>
-  <li><b>守门</b>：<code>_far_big_point_regroup</code> 远郊大点片区守门（错配点求解前移到最近的天），family 严格档 5h+ 远郊点独占日（防互踢震荡）；同步去掉亲子里程硬上限（几何合理性由守门层在事前保证，而非修复链事后剔点）；</li>
-  <li><b>主题保真</b>：补位同主题优先 + <code>_demand_notices</code> 需求丢失检测（动物/博物馆等白名单点位被剔光且无同主题保留 → 前端 ⚠️ 徽标明确告知，而非静默丢失）。</li>
-</ul>
-<p><b>验收</b>：真实 LLM 端到端——原查询 Day1 动物园 + Day2 自然博物院均入行程、0 违规；野生动物世界查询独占日正确触发；守门单测 7/7、离线回归 13/13。</p>
+<p><b>三层修复</b>（8090eb9 / 45dfa4f / 3297ee7 / 580b54d）：<b>数据</b>（杭州库补杭州动物园 HZ056 + 野生动物世界 HZ057，KEYWORD_TAGS 加动物映射）、<b>守门</b>（远郊大点片区守门 + family 档 5h+ 独占日，去掉亲子里程硬上限）、<b>主题保真</b>（补位同主题优先 + <code>_demand_notices</code> 需求丢失检测 + 前端 ⚠️ 徽标）。</p>
+</div>
+
+<h3>案例 2 · 慢节奏档「全链旁路」——一个正则吃掉了整条宽松策略（M12）</h3>
+<div class="panel">
+<p><b>现象</b>：「带老人玩 2 天，不要太累」的行程被 TOPTW 塞到 20:30 才收尾、单天 5-7 站。慢节奏档明明已上线，全部宽松规则却像没生效。</p>
+<p><b>根因</b>：<code>SLOW_PACE_RE</code> 当时写作 <code>老人|轮椅|不累|…</code>——<b>「不要太累」不含「不累」这个连续子串</b>（中间隔了「要」和「太」）。正则不匹配 → <code>_slow=False</code> → 慢节奏档整条链路被旁路：prompt 规则、夜间点移除、TOPTW 禁池、MIN_STOPS、提案截断 stops≤4、补强池三重过滤<b>全部失效</b>。</p>
+<p><b>教训（写进项目公约）</b>：<b>慢节奏触发的亲子回归全是离线确定性路径，测不出 LLM 提案链的正则门控</b>——正则改动必须用真实 LLM 实测验证，不能只靠离线回归。</p>
+<p><b>修复后的兜底七处</b>（缺一即漏，因为 evening 点/超员点即使被 prompt 禁止，仍会从 alt 补位/填空/换点/池捞回来）：主选层移除 evening+nightlife 点 / <code>_alt_substitute</code> 跳过夜间备选 + 补位 cap4 / MIN_STOPS 统一 3（2 点实测 13:00 收工偏薄）/ TOPTW 禁池彻底化（邻域池 + LLM alts 都不进池）/ 提案层截断 stops≤4 / 补强池三重过滤 / 站数下限 <code>min_keep=3</code> 防两层闭环里 rebalance 把凑起来的天挪薄。</p>
+<p><b>夜间点判据精准化（报障 11）</b>：<code>poi_db.is_night_only(p)</code> = nightlife 类目 or <code>open_h ≥ 16.5</code>。<b>不能按 best_time=evening 一刀切</b>——外滩（0:00-23:59）/南京路步行街/陆家嘴滨江/山塘街全是全天开放点，误杀曾致上海亲子慢节奏 Day2/Day3 2 站 15:21/14:45 就收工。</p>
+</div>
+
+<h3>案例 3 · 正餐 POI 永远排不进餐窗（M12）</h3>
+<div class="panel">
+<p><b>现象</b>：前端长期提示「美食 POI 未能安排进用餐时段」。</p>
+<p><b>根因</b>：<code>_build_timeline</code> 单趟遍历里<b>通用餐块先到先占窗</b>（11:30 占掉午餐窗、17:00 占掉晚餐窗），等遍历到真实正餐 POI 时窗口已被占，只能落进另一个窗或超 <code>MAX_MEAL_WAIT_H</code> → 违规剔除 → 前端提示。<b>教训：候补块与真实 POI 之间必须有显式优先权——真实 POI 优先。</b></p>
+<p><b>修复</b>：<code>_assign_food_windows</code> 统一分配（午市优先 / 同窗顺延 / 不可用窗不分配）+ <code>pending_food_win</code> 认领计数让通用餐块让位；残余形态由 <code>food_window_plan</code> + <code>_reconcile_food_windows</code>（主选层<b>提前降级</b>、不回填 alt_map、写 <code>grounding.food_demoted</code>）+ PROPOSE_PROMPT v7（正餐 ≤2 且午晚各一家、默认 1 家）解决。线上美食剔除 4 → 0。</p>
+<p><b>餐窗补齐三件套</b>（报障 10/12）：<code>MEAL_LEAD_H=0.5</code> 通用化（到达距饭点 ≤30min 先吃再逛）、游完就地补餐、<code>MEAL_EXIT_GRACE_H=0.75</code> 窗尾宽限 + <code>MEAL_END_LEAD_H=1.5</code> 收尾晚餐提前量——专治 2~4h 游览横跨餐窗的盲区（上博 10:15–13:15 出来已过窗尾，「途中解决」把午餐吞掉）。</p>
+<p class="note">教训：<b>确定性 gate 必须挂在循环/重试链路的每一个入口</b>——挂在第一轮漏了第二轮等于没挂；<b>提前降级优于事后剔除 + 提示</b>。</p>
+</div>
+
+<h3>案例 4 · 两个「死点」：自入库起从未能被排进任何行程（M14）</h3>
+<div class="panel">
+<p><b>现象</b>：广州宝业路宵夜街（18:00-02:00）与南京 1912 街区（17:00-02:00）两个 nightlife 点，上线以来一次都没进过任何行程。</p>
+<p><b>根因</b>：<code>parse_poi</code> 的 <code>close_h = hhmm_to_h(close)</code> <b>不处理跨午夜</b>——18:00-02:00 被解析成 <code>open_h=18.0, close_h=2.0</code>，从而被三重判死：</p>
+<pre>① toptw 预剔除：to_min(close) - dur = -420 - 90 &lt; 0        → 建模前就出池
+② toptw 时间窗：lo = to_min(open) = 540  &gt;  hi = -510      → 窗口为空
+③ sequencer：任意到达时刻都满足 t + dur &gt; close_h          → 恒报「超出营业时间」</pre>
+<p><b>修法</b>：<code>close_h &lt;= open_h</code> 时 <code>+24</code> 归一（02:00 → 26.0）。全库 528 点中仅这 2 点触发，其余 526 点零影响；归一化后与 <code>day_end</code> 上限共同决定它只能排在当天收尾时段，符合真实语义。</p>
+<p><b>判定特征（固化为单测断言）</b>：单测里还原 <code>close_h</code> 后，该点在求解器中「<b>既不入选也不出现在 dropped</b>」——从模型<b>完全消失</b>。这是「死点」区别于「利润权衡剔除」的判据，已固化在 <code>scripts/test_cross_midnight_close.py</code>（8 组断言，含修复前对照）。</p>
+<p><b>运行时验证</b>：<code>parse_poi(GZ069)</code> 实测 <code>close_h=26.0</code> ✅。GZ069 仍未出现在行程里，但根因已不同——现在是<b>提案层 LLM 不提案它</b>（<code>toptw_dropped</code> 为空 = 从未进求解器），属召回层问题，与修复前「进了池也被判死」是两回事。</p>
+</div>
+
+<h3>案例 5 · 骑行主题日被「拆杀」（M12）</h3>
+<div class="panel">
+<p><b>现象</b>：苏州环太湖骑行主题日，提案完全正确，落地后湖点被拆散到不同天，行程跑偏古城。</p>
+<p><b>根因链</b>：LLM 提案正确 → <code>_far_big_point_regroup</code> 把环湖线点位间 17-26km 判为「错配」强制挪到邻天（<code>FAR_BIG_KM=12</code> / <code>SPREAD_KM=10</code> 对<b>环湖线本身</b>失效——湖线点位天然相距十几公里）→ 邻天市区动线 TOPTW 把湖点团灭。</p>
+<p><b>修复</b>：非 family 严格档时，被判错配的点<b>全部 &gt;12km 远郊</b> → 环湖/海岛主题日豁免不拆；同时 <code>CYCLE_MAX_KM</code> 6→8km（6km 会在古城尺度误伤：虎丘→双塔 6.2km 被标车程而文案说骑行），修 <code>_hop_label</code> 与文案一致性。</p>
+<p><b>验证</b>：回归 14/14；双日冒烟 Day1 保留 4 湖点整编制 + Day2 古城独立。</p>
 </div>
 
 <h2>六、评测结果（真实 LLM 全链路）</h2>
@@ -191,9 +233,9 @@ li{margin:4px 0;font-size:14.5px}
   <tr><td>库缺口</td><td>—</td><td><span class="tag t-g">0（首轮 24 个已全部消化）</span></td><td>缺口探测器当前无输出</td></tr>
   <tr><td>日均 POI 数（均值）</td><td>8.7</td><td><b>9.1</b></td><td>M7 略优</td></tr>
   <tr><td>路网均程（分钟）</td><td>20.0</td><td>20.7</td><td>基本持平</td></tr>
-  <tr><td>端到端耗时</td><td>10.4s</td><td><b>12.9s</b>（v1 时 18.8s）</td><td>性能专项后与 M2 差距缩至 2.5s，换世界知识选点</td></tr>
+  <tr><td>端到端耗时</td><td>10.4s</td><td><b>12.9s</b></td><td>性能专项后与 M2 差距缩至 2.5s，换世界知识选点</td></tr>
 </table>
-<p class="note">eval_m7.py · 5 城（杭州/南京/上海/苏州/武汉）× 2 persona（经典文化/亲子休闲）× 2 方案；2026-09-12 重跑。</p>
+<p class="note">eval_m7.py · 5 城 × 2 persona × 2 方案；2026-09-12 重跑。回归基准 <code>eval_regression.py</code> 已扩至 <b>14 用例 / 8 城</b>（离线 CI + <code>--llm</code> 双模式），当前 14/14 全绿。</p>
 </div>
 
 <h2>七、关键技术决策</h2>
@@ -201,15 +243,21 @@ li{margin:4px 0;font-size:14.5px}
 <h3>1. 为什么不直接让大模型排行程</h3>
 <p>直接生成的行程有三类结构性问题：地点幻觉（不存在/已关闭的店）、时间不可行（跨城 30 分钟「顺路」）、约束盲区（闭馆日/餐窗/跨天重复）。M1 已量化验证：候选卡片约束下 LLM 幻觉归零，但选点品味被库限制；M7 把品味还给它，可行性交还给求解器。</p>
 <h3>2. 利润函数而非规则堆叠</h3>
-<p>TOPTW 利润 = 主选标记 1000 + 评分×60 + LLM 顺位×15，软时间窗每偏差 1 分钟罚 5 分。参数扫描发现 MAIN_BONUS 300~1000 结果完全一致（主选本就 28/28 保留），SOFT_W=5 最优——调参用数据说话。</p>
+<p>TOPTW 利润 = 主选标记 600 + 评分×60 + LLM 顺位×15，软时间窗每偏差 1 分钟罚 5 分（封顶 60min）。参数扫描发现 <code>MAIN_BONUS</code> 300~1000 结果完全一致，<code>SOFT_W=5</code> 最优——调参用数据说话。点级需求加成（湖偏好）走 <code>_bonus</code> 字段，<b>必须 int</b>（OR-Tools 罚分要求 int64）。</p>
 <h3>3. 闭环只修「世界知识被否决」</h3>
 <p>备选被求解器剔除是正常行为，不触发闭环；<b>主选（LLM 世界知识的判断）被时间预算否决</b>才是需要反馈的信号（宋城/迪士尼案例）。修正采纳有防震荡守卫：新提案剔除数必须减少才采纳。</p>
 <h3>4. 确定性算法优先于 LLM 调用</h3>
-<p>跨天重平衡用纯局部搜索（0 LLM 成本）：移动 POI 到更近日簇，接受条件为 0 违规 + 0 修复剔除 + 总里程改善 &gt;0.5km − 2km 相似度罚分；全天大点与锚点永不动。这与 Google 论文的 stage-2 set packing 局部搜索同构。性能专项进一步践行该原则：备选确定性补位优先于 LLM 兜底，提案级缓存直接跳过 A 阶段。</p>
+<p>跨天重平衡用纯局部搜索（0 LLM 成本）；备选确定性补位优先于 LLM 兜底；提案级缓存直接跳过 A 阶段。这与 Google 论文的 stage-2 set packing 局部搜索同构。</p>
 <h3>5. 文案与时间轴强一致</h3>
-<p>主题和理由都基于最终时间轴重生成（曾出现「标题有宋城、列表没有宋城」的教训），REGEN_PROMPT 明确禁止提及时间轴外地点。</p>
-<h3>6. 守门在事前，而非修复链事后 <span class="tag t-p">v2 新增</span></h3>
+<p>主题和理由都基于最终时间轴重生成（曾出现「标题有宋城、列表没有宋城」的教训），REGEN_PROMPT 明确禁止提及时间轴外地点；排程事实（闭馆日）注入 prompt，矛盾 tips 确定性剔除。</p>
+<h3>6. 守门在事前，而非修复链事后</h3>
 <p>动物主题案例的教训：依赖修复链按日里程事后剔点，会在「几何不可行」时误杀世界知识主选且丢失需求主题。正确姿势是提案层守门（求解前把错配点排好）+ 补位保主题 + 丢失显式通知——三层各司其职，修复链只处理真正的尾部情况。</p>
+<h3>7. 选点权收归提案层（M11 忠实执行）<span class="tag t-p">v3 新增</span></h3>
+<p>M7 时代求解器有权在利润函数下换点，导致「用户说慢节奏、求解器按利润塞满」这类<b>意图与优化目标打架</b>。M11 起默认忠实执行：TOPTW 只排序，主选锁定，点数上限由提案层承诺。代价是失去「库内自由发挥」的补偿能力，收益是<b>行为可解释</b>——剔除只剩一种原因（时间装不下），剔除记录口径也据此分流。配置 <code>toptw_faithful_mode</code> 可回退。</p>
+<h3>8. 判据失败先问「数据到位了吗」<span class="tag t-p">v3 新增</span></h3>
+<p>报障 16（<code>city_meta</code> 没下发 category → 前端用餐图标判据恒为假）、报障 17（<code>server.py</code> 城市映射表漏注册广州 → 全城图片 400）同族：<b>判据依赖的字段/条目要先验证真的存在，再怀疑逻辑</b>。另一条同族教训是「查数据缺失先排除自己查错键名」（<code>dur</code> vs <code>duration_h</code> 曾致误判）。</p>
+<h3>9. 多副本注册表必须有机守<span class="tag t-p">v3 新增</span></h3>
+<p>城市元数据散落 ≥5 处（<code>server.CITIES</code> / <code>_ID_PREFIX_CITY</code> / <code>_CITYCODE</code> / <code>fetch_poi_photos.CITYCODE</code> / <code>expand_travel_cache.CITIES</code> / 评测 <code>CASES</code>），<b>改一处必漏</b>——广州开城时正因漏改 <code>server.py</code> 副本而全城不出图。<code>scripts/test_city_registry.py</code> 现以「8 城 × 4 张表 + 前缀识别」硬断言守卫，开城/加城必跑。</p>
 </div>
 
 <h2>八、对照验证：混合方案文档 & Google 论文</h2>
@@ -217,13 +265,14 @@ li{margin:4px 0;font-size:14.5px}
 <table>
   <tr><th>能力项</th><th>方案/论文设计</th><th>TripAgent 实现</th><th>状态</th></tr>
   <tr><td>闭环反馈 + 阈值重做</td><td>P0</td><td>落地缺口/落地率&lt;85%/剔除≥2 → REVISE 回传修正（≤2轮）</td><td><span class="tag t-g">已落地</span></td></tr>
-  <tr><td>LLM 主选 + 备选</td><td>P1</td><td>alternates 槽位 → alt_map → 低权重入池（与检索备选双源）；同主题优先补位</td><td><span class="tag t-g">已落地</span></td></tr>
+  <tr><td>LLM 主选 + 备选</td><td>P1</td><td>alternates 槽位 → alt_map → 净零换位补位（同主题优先）；忠实模式下不进求解池</td><td><span class="tag t-g">已落地</span></td></tr>
   <tr><td>多轮澄清</td><td>P1</td><td>/api/clarify 保守追问一轮，选项卡片 + 静默降级；已与需求抽取合并为单次调用</td><td><span class="tag t-g">已落地</span></td></tr>
-  <tr><td>向量检索匹配层</td><td>P2</td><td>当前四级匹配（精确/包含/模糊/LLM 辅助）</td><td><span class="tag t-a">待做</span></td></tr>
+  <tr><td>向量检索匹配层</td><td>P2</td><td>当前四级匹配（精确/分支变体/包含模糊/LLM 辅助）</td><td><span class="tag t-a">待做</span></td></tr>
   <tr><td>跨天重平衡</td><td>Google stage-2 局部搜索</td><td>确定性 day-swap：地理错位修正，四重接受条件 + 回滚；增量重解（reuse）</td><td><span class="tag t-g">已落地</span></td></tr>
-  <tr><td>独立检索型备选</td><td>Google substitutes</td><td>地理邻近 recall 池 + LLM alternates 双源入池</td><td><span class="tag t-g">已存在</span></td></tr>
+  <tr><td>独立检索型备选</td><td>Google substitutes</td><td>地理邻近 recall 池 + LLM alternates 双源（忠实模式下作为可回退能力保留）</td><td><span class="tag t-g">已存在</span></td></tr>
   <tr><td>LLM-in-the-loop 修正</td><td>Google 未采用</td><td>REVISE 闭环（超出论文的自有设计，作兜底）</td><td><span class="tag t-p">自有增强</span></td></tr>
   <tr><td>需求主题保真通知</td><td>论文未涉及</td><td><code>_demand_notices</code> 需求丢失检测 + 前端徽标</td><td><span class="tag t-p">自有增强</span></td></tr>
+  <tr><td>忠实执行（不换点）</td><td>论文未涉及</td><td><code>lock_mains</code>：选点权收归提案层，求解器只排序</td><td><span class="tag t-p">自有增强</span></td></tr>
 </table>
 </div>
 
@@ -233,66 +282,72 @@ li{margin:4px 0;font-size:14.5px}
   <div class="panel" style="flex:1;min-width:260px">
     <p><b>数据规模</b></p>
     <ul style="padding-left:18px;margin:6px 0">
-      <li>7 城 <b>395 POI</b>（成都 82 / 北京 75 / 上海 68 / 杭州 57 / 武汉 50 / 南京 33 / 苏州 30）</li>
-      <li>交通缓存 <b>25,726 对</b>（L1 OSRM + L2 高德实况，L3 直线兜底）</li>
-      <li>实拍图缓存 396 点（缺失走瓦片兜底）</li>
-      <li>closed_days 全库回填，闭馆日全链路约束；<code>validate_city.py</code> 全量校验 7 城通过</li>
+      <li>8 城 <b>528 POI</b>（广州 79 / 成都 75 / 苏州 75 / 北京 74 / 上海 69 / 杭州 57 / 武汉 50 / 南京 49）</li>
+      <li>交通缓存 <b>37,315 对</b>（L1 OSRM 全城矩阵 + L2 高德实况增量，L3 直线兜底，全库 None 0）</li>
+      <li>实拍图缓存 <b>552 条 / 8 城 100% 覆盖</b>（高德图床直链，302 重定向）</li>
+      <li>closed_days 全库回填，闭馆日全链路约束；<code>validate_city.py</code> 全量校验 8 城通过</li>
+      <li>POI 缺口台账 <code>gap_log.py</code>：线上真实使用缺口持久化 + <code>gap_report.py</code> 汇总</li>
     </ul>
     <p><b>质量基建</b></p>
     <ul style="padding-left:18px;margin:6px 0">
-      <li>eval_regression 13 固化用例：离线 CI + --llm 双模式，当前双 13/13</li>
-      <li>守门单测 7/7（错配重排/family 独占日/合规不动/单天跳过等）；跨天重平衡单测 3/3</li>
-      <li><b>发布门禁 <span class="tag t-p">v2</span></b>：<code>release_gate.sh</code>（编译→单测→回归→库校验）+ GitHub Actions push/PR 自动执行</li>
+      <li>回归主闸门 <code>eval_regression.py</code> <b>14 用例 / 8 城</b>：离线 CI + <code>--llm</code> 双模式，当前 14/14</li>
+      <li>专项单测 6 套：忠实模式 4 / 容量预检 4 / 餐窗优先权 11 / <b>跨零点闭店 8</b> / 城市注册守卫（8 城×4 表） / 前端图标 18 项（node）</li>
+      <li>历史单测：远郊守门 7 / 跨天重平衡 3 / 单日主题口径 / 缺口台账 / 招牌规则稳定性矩阵</li>
+      <li><b>发布门禁</b> <code>release_gate.sh</code>（编译→单测→回归→8 城库校验）+ GitHub Actions push/PR 自动执行</li>
       <li>性能探针 <code>probe_perf.py</code>；补位命中率观测（alt_sub hit/miss/rate）</li>
-      <li>LLM 结果缓存 + 提案缓存（7 天 TTL，多实例线程锁 + ts 合并）控成本</li>
-      <li>天气/节假日感知（open-meteo 免 key，≥60% 降水提示室内+备雨具，失败静默降级）</li>
+      <li>缓存改动<b>纯度校验手法</b>：改大缓存前后用 <code>git show HEAD:&lt;file&gt;</code> 逐键比对，断言「既有键改动 0 / 删除 0，仅新增 N」</li>
     </ul>
   </div>
 </div>
 <div class="panel">
-<p><b>代码规模</b>（约 7,400 行）：<code>src/</code> 14 模块 3,264 行（proposal_planner / sequencer / m2_planner 为三大核心，新增 weather.py）；<code>webui/</code> 1,684 行（单端口 Python 服务 + 零依赖前端：高德 JS 地图、Day 卡、分阶段进度条、PNG 长图/ICS 导出、分享短链）；<code>scripts/</code> 20+ 运维与测试脚本 2,415 行（扩城/扩库/校验/门禁/探针/回归）。</p>
-<p><b>踩坑沉淀</b>（详见 docs/README-milestones.md）：OR-Tools RoutingIndexManager 反参、disjunction 自环 transit、depot 窗口、软时间窗 API 位置、求解器窗口语义错位、餐块预算预扣等 8 项记录；v2 新增：沙箱 SIGKILL 直连外呼进程（exit 137）、提案缓存 key 含库 POI 数量使库变更后缓存自然失效、内联调 planner 会绕过 server 的住宿提取环节。</p>
+<p><b>代码规模</b>（约 9,600 行）：<code>src/</code> 16 模块 3,710 行（proposal_planner 866 / m2_planner 866 / sequencer 702 为三大核心）；<code>webui/</code> 1,807 行（<code>server.py</code> 1,088 行单端口 stdlib 服务 + <code>index.html</code> 719 行零依赖 SPA：高德 JS 地图、Day 卡、分阶段进度条、PNG 长图/ICS 导出、分享短链）；<code>scripts/</code> 33 个运维与测试脚本 4,068 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺）。</p>
+<p><b>踩坑沉淀</b>（详见 <code>docs/README-milestones.md</code> 与架构文档）：OR-Tools RoutingIndexManager 反参、disjunction 自环 transit、depot 窗口、软时间窗 API 位置、求解器窗口语义错位、餐块预算预扣等历史 8 项；v3 新增：跨零点闭店三重判死、城市注册表多副本漏注册、缓存格式漂移假象（单行 vs indent=1 造成「3 万行删除」）、沙箱 SIGKILL 直连外呼进程（exit 137）、提案缓存 key 含库 POI 数量使库变更后缓存自然失效。</p>
 </div>
 
-<h2>十、行程质量打磨：线上反馈驱动的连续迭代</h2>
+<h2>十、行程质量打磨：线上反馈驱动的连续迭代（报障 1–17）</h2>
 <div class="panel">
-<p>以「真实用户查询 → 复现 → 根因 → 修复 → 端到端验证 → 回归」的节奏完成 <b>15+ 轮</b>迭代，覆盖展示、交通、正餐、时段、性能、主题六类体验问题：</p>
+<p>以「真实用户查询 → 复现 → 探针定位根因 → 确定性修复 → 端到端验证 → 回归」的节奏完成 <b>17 轮</b>报障闭环，覆盖展示、交通、正餐、时段、节奏、主题、图片七类体验问题：</p>
 <table>
-  <tr><th>问题</th><th>根因</th><th>修复（提交）</th></tr>
-  <tr><td>骑行主题仍按车程标时间</td><td>travel_hours 单一速度模型</td><td>mode 化速度模型穿透全链路；修复链「硬约束先行→预算收敛在后」（4aa58b0）</td></tr>
-  <tr><td>武康路连去两天</td><td>只挡同 POI，不挡同片区</td><td>提示词片区分散 + 确定性守门 <code>_crossday_area_overlap</code>（db6cf78）</td></tr>
-  <tr><td>tips 说「周一闭馆」但馆周一开</td><td>LLM 常识幻觉</td><td>闭馆日事实注入 REGEN + 矛盾 tips 确定性剔除（6c9a860）</td></tr>
-  <tr><td>博物馆行程 15 点收尾</td><td>场馆闭馆早，落选点进不了傍晚空窗</td><td>日内填空 stage（1cb3054）</td></tr>
-  <tr><td>为一家咖啡店横穿城区</td><td>food 点被餐窗钉死 + 几何未检查</td><td>三层：顺路规则→最小绕行重插→守门替换（53e7dea+3cabfc1）</td></tr>
-  <tr><td>午餐被安排咖啡馆 / 迪士尼日 17:34 显示午餐</td><td>咖啡占餐窗；全天大点日未豁免补餐</td><td>is_cafe() 识别（fe9596d）；大点日豁免+迟到补餐守门（f0427a6）</td></tr>
-  <tr><td>骑行 Day2「11:30 收尾→18:00 才有下一站」</td><td>压轴晚开点使填空误判无空窗</td><td>阶段 3.45 <code>_fix_gap_reorder</code> + 填空三重增强（6f08d78）</td></tr>
-  <tr><td>进度条「生成文案→求解→又生成文案」回跳</td><td>C 闭环质量重算是设计内行为</td><td>后端轮次后缀 + 前端「质量优化·第 2 轮」徽标（4eda0e3）</td></tr>
-  <tr><td>动物主题行程无动物点</td><td>三层根因（见第五章）</td><td>数据+守门+主题保真（8090eb9/45dfa4f/580b54d）</td></tr>
-  <tr><td>规划等待 23s 无反馈</td><td>LLM 串行 + TOPTW 跑满预算</td><td>性能专项四批措施 + 五段式进度条（M8.5）</td></tr>
+  <tr><th>报障</th><th>问题</th><th>根因</th><th>修复</th></tr>
+  <tr><td>1–6</td><td>骑行主题标车程时间 / 武康路连去两天 / tips 闭馆幻觉 / 博物馆 15 点收尾 / 为咖啡店横穿城区 / 迪士尼日 17:34 显示午餐</td><td>速度模型单一、只挡同 POI 不挡同片区、LLM 常识幻觉、闭馆早落选点无去处、food 点被餐窗钉死、全天大点日未豁免补餐</td><td>mode 化速度模型 / 片区分散守门 / 闭馆事实注入 / 日内填空 / 顺路重插 / 大点日豁免（4aa58b0 … f0427a6）</td></tr>
+  <tr><td>7–9</td><td>慢节奏天站数不足 / 「不要太累」被 TOPTW 塞满 / 慢节奏天 13:00 收工偏薄</td><td>慢节奏档全链路宽松规则缺失；<b>SLOW_PACE_RE 漏「太累」致全链旁路</b>；站数下限 2 太薄且被 rebalance 挪薄</td><td>慢节奏档全链宽松化 + 兜底七处 + MIN_STOPS 3 + 供出下限 min_keep（2248054 / 99cbc15 / b585060）</td></tr>
+  <tr><td>10–12</td><td>非慢节奏餐窗缝隙吞午餐 / 全天开放点被误判夜间点 / 2~4h 游览横跨餐窗吞午餐</td><td>MEAL_LEAD 只在慢节奏生效；夜间点判据按 best_time 一刀切；窗尾宽限与收尾提前量缺失</td><td>MEAL_LEAD 通用化 + 游完就地补餐 / <code>is_night_only</code> 精准判据 / 窗尾宽限 0.75h + 收尾提前量 1.5h（549bcff / ac96f53 / 9fba7c1）</td></tr>
+  <tr><td>13</td><td>美食餐厅保障不足 / 跨城住宿锚点缺失 / 天数分配未倾斜住宿城市</td><td>跨城联游三处缺口</td><td><code>_dedupe_food_windows</code> + <code>_hotel_city_probe</code> + 天数倾斜（47092f4）</td></tr>
+  <tr><td>14</td><td>挪点后目标天超载 / 骑行补强池含远点 / 剔除记录互相覆盖</td><td>挪点无容量预检；补强池未按距离过滤；剔点记录后写覆盖前写</td><td><code>_day_horizon</code>/<code>_day_load</code> 预检 + 骑行距离过滤 + (id,day) 去重合并不覆盖（9c575f8）</td></tr>
+  <tr><td>15</td><td>「不管怎么排程，前端都提示美食 POI 未安排进餐窗」</td><td>通用餐块先到先占窗，正餐 POI 无优先权</td><td><code>_assign_food_windows</code> + 让位认领 + 主选层提前降级 + prompt v7（b14d77c / 28b98f8 / 60c64c5）</td></tr>
+  <tr><td>16</td><td>用餐 POI 前端没有 🍽 图标</td><td><code>city_meta</code> 只下发 id/name/lat/lng，前端按 category 判定 → <b>恒为假</b></td><td>判据改用 timeline stop 的 <code>meal</code> 字段（对旧分享快照也有效）+ city_meta 补下发 category（66f3d6b）</td></tr>
+  <tr><td>17</td><td>广州前端 POI 全不出图（10/10 张 400）</td><td><code>server.py</code> 城市映射表漏注册广州（开城只改了 <code>fetch_poi_photos.py</code> 副本）；顺带发现 <code>is_cafe</code> 裸「茶」子串误杀粤式早茶致一天两顿午饭</td><td>映射表补齐 + 守卫测试固化 + 全城图片补齐 100% + is_cafe 判据收紧（9b176e4 / fbb4e21 / 3bd79b3）</td></tr>
 </table>
-<p class="note">另有：闭馆提示以库数据为准、跨天片区分散、每日 Tips、折叠剔除原因、hop 通行段、按钮置灰、Day 开关联动标点、支持目的地文案精简等十余项小修复。</p>
+<p class="note">另有：闭馆提示以库数据为准、跨天片区分散、每日 Tips、折叠剔除原因、hop 通行段、按钮置灰、Day 开关联动标点、支持目的地文案精简、未提住宿时不凭空生成住宿锚点（防 LLM 把行程范围误抽为住宿区域）等十余项小修复。</p>
 </div>
 
 <h2>十一、部署与运行</h2>
 <div class="panel">
-<p><b>线上入口</b>：<a href="https://tripagent-planner2.app.workbuddy.host/" style="color:var(--blue)">https://tripagent-planner2.app.workbuddy.host/</a>（Python 单端口服务，WorkBuddy 应用发布，当前版本 ac5c757）</p>
-<pre># 单次规划（M7 经验提案）
+<p><b>线上入口</b>：<a href="https://tripagent-planner2-80644.app.workbuddy.host/" style="color:var(--blue)">https://tripagent-planner2-80644.app.workbuddy.host/</a>（Python 单端口服务，WorkBuddy 应用发布，当前代码 <code>7222dc3</code>）</p>
+<pre># 单次规划（M7 经验提案 + M11 忠实执行）
 python main.py "带5岁孩子去杭州玩2天，不要太累，最好有动物或者博物馆" --city 杭州 --days 2 --proposal
 
 # 回归评测（离线 CI / --llm 真实全链路）
 python scripts/eval_regression.py [--llm]
 
-# 性能探针（LLM/TOPTW 各环节耗时插桩）
-python scripts/probe_perf.py
+# 专项单测（改对应模块就跑）
+python scripts/test_city_registry.py          # 城市注册表守卫（开城/加城必跑）
+python scripts/test_cross_midnight_close.py   # 跨零点闭店归一化
+python scripts/test_food_window_priority.py   # 餐窗优先权
+python scripts/test_faithful_mode.py          # 忠实执行模式
+python scripts/test_capacity_guard.py         # 挪点容量预检
+node scripts/test_webui_food_mark.js          # 前端用餐图标（18 项）
 
-# 发布门禁（编译→单测→回归→7 城库校验，push/PR 由 GitHub Actions 自动执行）
+# 发布门禁（编译→单测→回归→8 城库校验，push/PR 由 GitHub Actions 自动执行）
 PY=python3 bash scripts/release_gate.sh
 
 # 新城市 onboarding（六步流水线）/ 已有城市扩库回填（四步）/ 库全量校验
 scripts/onboard_city.sh new 广州 --prefix GZ
 scripts/onboard_city.sh expand 上海
+python scripts/fill_travel_cache_gaps.py 广州    # 既有城补新增点的交通对（纯增量）
+python scripts/backfill_poi_photos.py 广州       # 图片补缺
 python scripts/validate_city.py</pre>
-<p class="note">配置：config.json（业务，进 git）+ secrets.json（密钥，gitignore）；LLM 走 OpenAI 兼容 API（DeepSeek），地图/路网走高德 + OSRM，天气 open-meteo 免 key。</p>
+<p class="note">配置：<code>config.json</code>（业务，进 git：<code>m1_model</code> / <code>anchor_hard_guarantee</code> / <code>toptw_faithful_mode</code>）+ <code>secrets.json</code>（密钥，gitignore）；LLM 走 OpenAI 兼容 API（DeepSeek），地图/路网走高德 + OSRM，天气 open-meteo 免 key。环境变量 <code>TOPTW_FAITHFUL_MODE</code> 可临时覆盖忠实模式。</p>
 </div>
 
 <h2>十二、下一步计划</h2>
@@ -300,15 +355,16 @@ python scripts/validate_city.py</pre>
 <h3>P0 — 用户价值直接可感</h3>
 <table>
   <tr><th>方向</th><th>说明</th></tr>
-  <tr><td><b>行程交互式微调</b></td><td>前端点选某个 POI「换一个/删掉/换个时段」，后端局部重排——<code>_solve_all_days</code> 的 reuse 机制已具备只重解单天的基础；「🔁换一个」接口（/api/replace）也已存在，是体验拼图的最后一块</td></tr>
-  <tr><td><b>城市库批量扩充</b></td><td>流水线（校验器+SOP+门禁）已投产，优先补广州、深圳、西安、厦门、青岛、长沙</td></tr>
+  <tr><td><b>行程交互式微调</b></td><td>前端点选某个 POI「换一个/删掉/换个时段」，后端局部重排——<code>_solve_all_days</code> 的 reuse 机制已具备只重解单天的基础；「🔁换一个」接口（<code>/api/replace</code>）也已存在，是体验拼图的最后一块</td></tr>
+  <tr><td><b>城市库批量扩充</b></td><td>流水线（校验器+SOP+门禁+注册表守卫）已投产，下一批目标深圳、西安、厦门、青岛、长沙</td></tr>
   <tr><td><b>预算感知</b></td><td>price 字段进决策：按人均预算约束选择（权衡 ¥350 海洋公园 vs ¥20 动物园），行程末尾费用明细汇总</td></tr>
 </table>
 <h3>P1 — 质量与效率</h3>
 <table>
   <tr><th>方向</th><th>说明</th></tr>
+  <tr><td>召回层补强（让「能排但没被提案」的点可落地）</td><td>GZ069 宝业路宵夜街、SZ062 莲花岛这类远郊/主题型点，库与管线都正确，卡在提案层不提案——需「片区日」提案引导或检索召回强化</td></tr>
   <tr><td>偏好记忆</td><td>记住用户历史查询偏好（带娃/博物馆/节奏慢），下次默认带入</td></tr>
-  <tr><td>评测集扩充</td><td>回归 13 例 → 30+ 真实查询（多城市×多主题），接入发布门禁防质量回归</td></tr>
+  <tr><td>评测集扩充</td><td>回归 14 例 → 30+ 真实查询（多城市×多主题），接入发布门禁防质量回归</td></tr>
   <tr><td>文案 LLM 缓存</td><td>按「天点位序列」哈希缓存文案，同点位组合直接复用</td></tr>
   <tr><td>拥堵/时段感知</td><td>best_time 升级为「热门时段避让」（西湖类景点上午 10 点后自动调序）</td></tr>
   <tr><td>观测看板</td><td>/api/stats 已累计 alt_sub 命中率与延迟分位数，补一个内部只读可视化页</td></tr>
@@ -316,16 +372,23 @@ python scripts/validate_city.py</pre>
 <h3>P2 — 打磨与新场景</h3>
 <table>
   <tr><th>方向</th><th>说明</th></tr>
-  <tr><td>多城联游深化</td><td>基础版已有（≥2 城查询自动跨城逐城规划）；深化为跨城交通衔接（高铁段作为日间转移）</td></tr>
+  <tr><td>多城联游深化</td><td>基础版已有（≥2 城查询自动跨城逐城规划 + 住宿城市倾斜）；深化为跨城交通衔接（高铁段作为日间转移）</td></tr>
   <tr><td>多人协作</td><td>分享链接对方投票选点/改行程，需轻量会话存储</td></tr>
   <tr><td>DeepSeek 流式输出</td><td>文案生成改 SSE 流式，体感等待再降一档</td></tr>
   <tr><td>国际化</td><td>POI 加 en_name，文案与查询支持英文（面向入境游客）</td></tr>
 </table>
-<p class="note">已拍板移除：JSONDecodeError 容错（偶发按 DeepSeek 超时/重试处理）。已完成不再列入：主题保真、远郊守门、天气感知、酒店出发模式、城市流水线、发布门禁、移动端适配。</p>
+<h3>已知未修缺陷（登记待定）</h3>
+<table>
+  <tr><th>缺陷</th><th>影响与说明</th></tr>
+  <tr><td><code>toptw.py</code> depot 换位失效</td><td><code>nodes[0], nodes[nodes.index(first)] = ...</code> 是 Python 元组赋值陷阱——LHS 第二次赋值重算 <code>index(first)</code>（此时 first 已在 nodes[0]，返回 0）→ 交换被整体撤销。「无酒店时 depot 取主选第一点」从未生效。当前影响≈0（池构造 mains 在前），修它须同时把换位移到 <code>RoutingIndexManager</code> 构造之前</td></tr>
+  <tr><td><code>family_ok=false</code> 仅在离线链路生效</td><td>主链路（proposal_planner + TOPTW）不读该字段 → LLM 若给亲子 query 提案 KTV/酒吧，排程链不会拦（实测 LLM 自觉避开，但那是概率不是保证）。可选修法＝主链路加亲子 gate（类比 SLOW_PACE_RE 门控）</td></tr>
+  <tr><td>TOPTW 不惩罚行程内部空档</td><td>evening 软窗 + 点少的天会把时间轴拉出数小时空档（慢节奏靠移除真夜间点规避；通用场景未治，动 solver 风险大）</td></tr>
+</table>
+<p class="note">已拍板移除：JSONDecodeError 容错（偶发按 DeepSeek 超时/重试处理）、<code>_fill_evenings</code> 自动补晚间点（用户指令，傍晚空窗改为自然留白）。已完成不再列入：主题保真、远郊守门、天气感知、酒店出发模式、城市流水线、发布门禁、移动端适配、跨零点修复、KTV 子类。</p>
 </div>
 
 <footer class="note" style="margin-top:40px;text-align:center">
-TripAgent · M1–M10 · 2026-09-11/12 两日密集开发 96 commits · GitHub: xgwu/tripagent · 线上 tripagent-planner2.app.workbuddy.host
+TripAgent · M1–M14 · 2026-09-11/15 五日开发 140 commits · GitHub: xgwu/tripagent · 线上 tripagent-planner2-80644.app.workbuddy.host
 </footer>
 </div>
 
@@ -373,20 +436,20 @@ function drawCharts(){
   // c3: 迭代过程中 POI 库增长 vs 缺口消亡
   charts.push(new Chart(document.getElementById('c3'), {
     type:'line',
-    data:{labels:['M4 初版(4城162点)','M7 首轮评测','上海三期+骑行扩库','武汉扩库34→50','上海四期+五城对齐','M7.5 终评(6城315)','北京onboarding+成都补全','杭州动物园+野生动物世界(7城395)'],
+    data:{labels:['M4 四城初版','M7 首轮评测','M8 武汉扩库','M7.5 终评 6 城','M9 七城补齐','M13 苏/宁扩容','M13 开城广州 8 城'],
       datasets:[
-        {label:'POI 库规模',data:[162,162,220,236,268,315,373,395],borderColor:k.blue,backgroundColor:k.blue,tension:.3},
-        {label:'未消化库缺口数',data:[0,24,15,8,3,0,0,0],borderColor:k.red,backgroundColor:k.red,tension:.3}]},
+        {label:'POI 库规模',data:[162,162,236,315,395,449,528],borderColor:k.blue,backgroundColor:k.blue,tension:.3},
+        {label:'未消化库缺口数',data:[0,24,8,0,0,0,0],borderColor:k.red,backgroundColor:k.red,tension:.3}]},
     options:{plugins:{title:{display:true,text:'数据扩容：POI 库增长 vs 缺口清零（缺口探测器输出）'}},scales:{y:{beginAtZero:true}}}
   }));
 
-  // c4: 七城 POI 分布
+  // c4: 八城 POI 分布
   charts.push(new Chart(document.getElementById('c4'), {
     type:'doughnut',
-    data:{labels:['成都 82','北京 75','上海 68','杭州 57','武汉 50','南京 33','苏州 30'],
-      datasets:[{data:[82,75,68,57,50,33,30],
-        backgroundColor:[k.purple,k.blue,k.green,k.amber,'#d4546e','#3fa7a3','#8d6e63']}]},
-    options:{plugins:{title:{display:true,text:'七城 POI 库分布（合计 395）'},legend:{position:'bottom'}}}
+    data:{labels:['广州 79','成都 75','苏州 75','北京 74','上海 69','杭州 57','武汉 50','南京 49'],
+      datasets:[{data:[79,75,75,74,69,57,50,49],
+        backgroundColor:[k.purple,k.blue,k.green,k.amber,'#d4546e','#3fa7a3','#8d6e63','#c9a227']}]},
+    options:{plugins:{title:{display:true,text:'八城 POI 库分布（合计 528）'},legend:{position:'bottom'}}}
   }));
 
   // c5: 性能优化曲线
@@ -397,6 +460,16 @@ function drawCharts(){
         {label:'端到端耗时 (s)',data:[23.3,17.8,12.9,8.3,13.7],backgroundColor:[k.red,k.amber,k.blue,k.green,k.purple]},
         {label:'硬违规数',data:[0,0,0,0,0],type:'line',borderColor:k.green,backgroundColor:k.green,borderDash:[6,4]}]},
     options:{plugins:{title:{display:true,text:'性能专项：端到端 23.3s → 12.9s / 缓存 8.3s（违规始终 0）'}},scales:{y:{beginAtZero:true}}}
+  }));
+
+  // c6: 提交节奏 + 阶段性质
+  charts.push(new Chart(document.getElementById('c6'), {
+    type:'bar',
+    data:{labels:['09-11 M1–M6\n建设高峰','09-12 M8–M10\n评测与工程化','09-13 M10.5\n缺口台账','09-14 M12 体验保真\n报障 7–14','09-15 M11/M13/M14\n开城广州 · 忠实执行'],
+      datasets:[{label:'当日提交数',data:[55,43,6,21,15],
+        backgroundColor:[k.blue,k.blue,k.amber,k.purple,k.green]}]},
+    options:{plugins:{title:{display:true,text:'提交节奏：前两日构建主体，后三日线上反馈驱动迭代（累计 140）'}},
+      scales:{y:{beginAtZero:true}}}
   }));
 }
 drawCharts();
