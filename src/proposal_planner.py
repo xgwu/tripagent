@@ -369,10 +369,16 @@ def _is_family_query(query: str | None) -> bool:
     return bool(query and re.search(r"亲子|带.{0,4}(娃|孩子|小孩|儿童)|遛娃|儿童", query))
 
 
-def _far_big_point_regroup(day_map: dict, all_pois: dict, family: bool = False) -> list:
+def _far_big_point_regroup(day_map: dict, all_pois: dict, family: bool = False,
+                           city: dict | None = None, query: str = "") -> list:
     moves = []
     if len(day_map) < 2:
         return moves
+    # 挪点容量预检（报障 14）：目标天负载（dur+腿）超 TOPTW horizon 就不接——
+    # 挪完 TOPTW 重解必剔（骑行 Day2 塞 8 点剔 5 主选实证）。city/query 缺省时
+    # （旧调用方兼容）退化为不预检。
+    _t_mode = sequencer.travel_mode(query or "") if query else None
+    _horizon = m2_planner._day_horizon(city) if city else None
     for _pass in range(FAR_REGROUP_PASSES):
         moved_any = False
         # family：先标记所有「需独占日」的天——它们既不让位也不接收外来点（防两天互踢震荡）
@@ -423,6 +429,11 @@ def _far_big_point_regroup(day_map: dict, all_pois: dict, family: bool = False) 
                 for d2 in day_map:
                     if d2 == d or d2 in strict_days:
                         continue  # 不移入另一个需独占日的天
+                    # 容量预检：目标天加上 i 后 dur+腿 ≤ TOPTW horizon 才作候选
+                    if _horizon is not None:
+                        cand_ids = (day_map.get(d2) or []) + [i]
+                        if m2_planner._day_load(cand_ids, all_pois, _t_mode) > _horizon:
+                            continue
                     pts2 = [all_pois[j] for j in day_map.get(d2, [])
                             if j in all_pois and j != i]
                     # 空天也可作为落点（km 记 0）——独占日整理时尤其需要
@@ -528,7 +539,8 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
     # 远郊大点同天片区守门：错配点在求解前移到最近的天（防主题点被里程守门剔除）；
     # family 查询额外启用独占日档（5h+ 远郊点当天其他点全部让位）
     family = _is_family_query(query)
-    regroup = _far_big_point_regroup(day_map, all_pois, family=family)
+    regroup = _far_big_point_regroup(day_map, all_pois, family=family,
+                                     city=city, query=query)
     if regroup:
         grounding["far_regroup"] = regroup
     # family 独占日建议：整理后同天仍有其他停留点的 5h+ 远郊点 → 明确提示用户
@@ -569,6 +581,12 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                 continue  # family 5h+ 远郊点（野生动物世界类）同理：开放窗口仅 ~7h，不补点
             while len(day_map.get(d, [])) < MIN_STOPS:
                 rest = [p for i, p in all_pois.items() if i not in used]
+                if sequencer.travel_mode(query or "") == "cycling":
+                    # 骑行口径补强过滤（报障 14）：骑行合理半径 ≤12km，远郊点
+                    # 往返 1.5h+ 与骑行矛盾——薄天宁少勿远（天文馆 70km 案例）。
+                    # 慢节奏档另有 15km 过滤，取更严交集。
+                    rest = [p for p in rest
+                            if float(p.get("dist_center_km") or 0) <= 12.0]
                 if m2_planner.SLOW_PACE_RE.search(query or ""):
                     # 慢节奏补强池过滤：① 真夜间点（nightlife/晚开门——会在稀疏时间轴
                     # 上等待开场拉出数小时空档，2026-09-14 报障 6 圆融天幕街；

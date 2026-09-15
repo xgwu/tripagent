@@ -218,6 +218,30 @@ MIN_IMPROVE_KM = 0.5    # 接受移动所需的最小总里程改善
 MAX_REBALANCE_SWEEPS = 2
 
 
+def _day_horizon(city: dict) -> int:
+    """TOPTW 同口径的每日时间预算（分钟）：日长 - 餐块预扣，保底 240。
+
+    挪点容量预检必须与求解器同一口径，否则预检放行、TOPTW 仍剔（报障 14）。
+    """
+    start_day = poi_db.hhmm_to_h(city["day_start"])
+    end_day = poi_db.hhmm_to_h(city["day_end"])
+    return max(240, int((end_day - start_day) * 60) - toptw.MEAL_BUFFER_MIN)
+
+
+def _day_load(ids: list, all_pois: dict, mode: str | None) -> float:
+    """单日时间负载估算（分钟）：游玩 dur 合计 + 按给定序列的相邻腿时间。
+
+    腿时间按序列相邻对累加（追加式，非最优插序）——估算偏保守（偏大），
+    预检「宁严勿松」：预检放行后 TOPTW 仍可能微调顺序省出时间，反向则不行。
+    """
+    pts = [all_pois[i] for i in ids if i in all_pois]
+    if not pts:
+        return 0.0
+    total = sum(float(p.get("dur") or 0) for p in pts) * 60
+    total += sum(poi_db.travel_hours(a, b, mode) * 60 for a, b in zip(pts, pts[1:]))
+    return total
+
+
 def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | None,
                         hotel: dict | None, query: str, forced_ids: set | None = None,
                         max_sweeps: int = MAX_REBALANCE_SWEEPS) -> tuple[dict, int]:
@@ -234,6 +258,11 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
     # 慢节奏（老人/轮椅/不累）：供出后天至少保留 3 站——补强凑起来的天被重平衡
     # 挪薄会退回「半天收工」（2026-09-14 偏薄反馈：Day3 补强 3 点被挪走 1 → 2 站）
     min_keep = 3 if SLOW_PACE_RE.search(query or "") else 1
+    # 挪点容量预检（报障 14）：目标天负载（dur+腿，按 query 通行口径）超 TOPTW
+    # horizon 就不挪——挪完重解必被「主选锁定仍装不下」成片剔除（骑行 Day2 塞 8 点剔 5 实证）。
+    # 注：单日主题（"其中一天骑行"）天此处按全局口径近似，预检偏松由 TOPTW 兜底
+    _t_mode = sequencer.travel_mode(query or "")
+    _horizon = _day_horizon(city)
 
     def metric(dm):
         itin = sequencer.build_itinerary(dm, city, all_pois, date0=date0, hotel=hotel,
@@ -260,6 +289,8 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
                     cand = {k: list(v) for k, v in day_map.items()}
                     cand[i].remove(pid)
                     cand[j].append(pid)
+                    if _day_load(cand[j], all_pois, _t_mode) > _horizon:
+                        continue  # 目标天装不下 → 不挪（TOPTW 剔点比里程差更伤）
                     km, v2, nd2 = metric(cand)
                     if v2 == 0 and nd2 == 0 and km + MOVE_PENALTY_KM < best_km - MIN_IMPROVE_KM:
                         day_map = cand
@@ -574,8 +605,17 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                                    main_bonus, soft_w, mode=mode_map, reuse=reuse)
             if res2["n_mains_kept"] == res2["n_mains"]:
                 final_day_map = res2["final_day_map"]
-                solver_dropped = res2["solver_dropped"]
-                mains_dropped = res2["mains_dropped"]
+                # 剔点记录合并而非覆盖（报障 14）：第一轮剔点 + 重解轮剔点都是
+                # 真实发生的求解行为，覆盖会让线上排查只见重解轮残缺记录。
+                # 按 (id, day) 去重——挪天后同点重复被剔只记一次。
+                _seen_drop = {(x["id"], x["day"]) for x in solver_dropped}
+                for x in res2["solver_dropped"]:
+                    if (x["id"], x["day"]) not in _seen_drop:
+                        solver_dropped.append(x)
+                _seen_main = {(x["id"], x["day"]) for x in mains_dropped}
+                for x in res2["mains_dropped"]:
+                    if (x["id"], x["day"]) not in _seen_main:
+                        mains_dropped.append(x)
                 solved_days = res2["solved_days"]
                 n_mains, n_mains_kept = res2["n_mains"], res2["n_mains_kept"]
             else:
