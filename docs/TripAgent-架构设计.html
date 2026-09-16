@@ -151,7 +151,7 @@ li{margin:5px 0}
 
 <!-- 数据层 -->
 <rect x="16" y="516" width="888" height="42" rx="10" class="svg-box"/>
-<text x="34" y="534" class="svg-small">数据层：data/{城市}_pois.json（8 城 528 点）· travel_cache.json（L1 路网 37,315 对）· photo_cache（552 条，8 城 100%）</text>
+<text x="34" y="534" class="svg-small">数据层：data/{城市}_pois.json（9 城 573 点）· travel_cache.json（L1 路网 39,295 对）· photo_cache（597 条，9 城 100%）</text>
 <text x="34" y="551" class="svg-small">nl_cache · llm_cache · proposal_cache(gitignore) · route_cache · shares/ · config.json + secrets.json（gitignore）</text>
 </svg>
 <div class="figcap">图 1 · 四层架构：接入 → 理解 → 规划引擎（三模式并存）→ 求解编排 → 数据</div>
@@ -259,7 +259,7 @@ li{margin:5px 0}
 <text x="490" y="420" class="svg-small">TOPTW 可行解（OR-Tools，营业窗+里程+餐块预扣）</text>
 <text x="490" y="438" class="svg-small">闭馆日硬约束 ｜ 跨零点闭店归一化 ｜ 主题里程上限修复链</text>
 <text x="490" y="456" class="svg-small">餐窗统一分配（正餐 POI 优先权）｜ 慢节奏七处兜底 gate</text>
-<text x="490" y="474" class="svg-small">文案-时间轴字段级一致性 ｜ 城市注册表守卫（8 城×4 表）</text>
+<text x="490" y="474" class="svg-small">文案-时间轴字段级一致性 ｜ 城市注册表守卫（9 城×4 表）</text>
 </svg>
 <div class="figcap">图 2 · M7 八阶段管线：蓝色=LLM 环节（可降级），绿色=求解器，橙色=闭环回路；REVISE 触发点 1/2 共享 2 轮预算</div>
 </div>
@@ -297,8 +297,8 @@ li{margin:5px 0}
 <h3>4.3 评测与脚本基建（40 个脚本，5,231 行）</h3>
 <table>
 <tr><th>脚本</th><th>用途</th></tr>
-<tr><td><code>eval_regression.py</code>（<b>14 用例 / 8 城</b>）</td><td>回归主闸门：必含 POI 断言（上海亲子→SH006 迪士尼）、天数与 0 违规断言；<code>--llm</code> 走真实全链路，默认离线 mock</td></tr>
-<tr><td><code>test_city_registry.py</code> <span class="badge b-warn">M14</span></td><td><b>城市注册表守卫</b>：8 城 × 4 张映射表 + ID 前缀识别硬断言——开城/加城必跑（广州开城漏改 server 副本的教训）</td></tr>
+<tr><td><code>eval_regression.py</code>（<b>15 用例 / 9 城</b>）</td><td>回归主闸门：必含 POI 断言（上海亲子→SH006 迪士尼）、天数与 0 违规断言；<code>--llm</code> 走真实全链路，默认离线 mock</td></tr>
+<tr><td><code>test_city_registry.py</code> <span class="badge b-warn">M14</span></td><td><b>城市注册表守卫</b>：9 城 × 4 张映射表 + ID 前缀识别硬断言——开城/加城必跑（广州开城漏改 server 副本的教训）</td></tr>
 <tr><td><code>test_cross_midnight_close.py</code> <span class="badge b-warn">M14</span></td><td>跨零点闭店归一化 8 组断言：解析层/排序层/求解层 + <b>还原 close_h 的死点复现对照</b></td></tr>
 <tr><td><code>test_gap_manage.py</code> <span class="badge b-warn">M15</span></td><td>日内空档治理 14 例：餐窗提前容差 / 等待段补餐 / <code>scan_gaps</code> 分类 + <b>关掉 <code>MEAL_EARLY_TOL_H</code> 复现旧空档</b>的对照</td></tr>
 <tr><td><code>test_named_inject.py</code> <span class="badge b-warn">M15</span></td><td>点名召回 26 例：确定性注入 / 必选口径（<code>named_pois</code> vs <code>named_injected</code>）/ <b>目的地型餐饮豁免</b>（对照可精确复现「莲花岛被剔除」）/ 源码守卫</td></tr>
@@ -309,8 +309,8 @@ li{margin:5px 0}
 <tr><td><code>test_webui_food_mark.js</code> <span class="badge b-warn">M12</span></td><td>前端用餐图标 18 项（node）：判据取 timeline <code>meal</code> 字段 + category 兜底</td></tr>
 <tr><td><code>test_far_big_regroup.py</code> / <code>test_crossday_rebalance.py</code> / <code>test_theme_day_scope.py</code> / <code>test_gap_log.py</code></td><td>远郊守门 7 例 / 跨天重平衡 3 例 / 单日主题口径 / 缺口台账</td></tr>
 <tr><td><code>scripts/run_tests.py</code> <span class="badge b-warn">M15</span></td><td><b>统一测试 runner</b>：一次跑完 14 个 Python 单测 + 1 个前端守卫（含 node 自动定位、关键词过滤、失败尾因输出）——解决「门禁通配只匹配 .py、漏前端测试」与「手工逐个跑必漏」</td></tr>
-<tr><td><code>scripts/release_gate.py</code> + <code>.github/workflows/</code></td><td>发布门禁四步（编译→单测→回归→8 城库校验），<b>纯 Python 实现</b>（原 shell 版依赖 dirname/grep/mktemp，本机 Git Bash shim 下不可执行）；本地手动 + GitHub Actions push/PR 自动执行</td></tr>
-<tr><td><code>scripts/validate_city.py</code></td><td>城市库校验器：schema 必填字段/坐标范围/开闭门时段（支持跨零点营业）/类目白名单，8 城通过</td></tr>
+<tr><td><code>scripts/release_gate.py</code> + <code>.github/workflows/</code></td><td>发布门禁四步（编译→单测→回归→9 城库校验），<b>纯 Python 实现</b>（原 shell 版依赖 dirname/grep/mktemp，本机 Git Bash shim 下不可执行）；本地手动 + GitHub Actions push/PR 自动执行</td></tr>
+<tr><td><code>scripts/validate_city.py</code></td><td>城市库校验器：schema 必填字段/坐标范围/开闭门时段（支持跨零点营业）/类目白名单，9 城通过</td></tr>
 <tr><td><code>scripts/probe_perf.py</code> / <code>tune_params.py</code> / <code>stability_signature_rule.py</code></td><td>性能探针 / 参数扫描 / 招牌规则稳定性矩阵（多种子×多主题）</td></tr>
 <tr><td><code>scripts/onboard_city.sh</code> / <code>add_city.py</code> / <code>build_travel_cache.py</code> / <code>fill_travel_cache_gaps.py</code> / <code>backfill_poi_photos.py</code></td><td>开城与扩库流水线：新城市六步 / 扩库回填四步 / 交通矩阵全量重建 / <b>既有城新增点的交通对纯增量补缺</b> / 图片补缺（含周边搜索与 magic-bytes 实测）</td></tr>
 </table>
@@ -396,7 +396,7 @@ li{margin:5px 0}
 </table>
 
 <h3>5.10 交通耗时三级模型（mode 化）</h3>
-<p><code>poi_db.travel_hours(a, b, mode)</code> 按主题自动选速度模型：cycling（&lt;1.2km 步行 / 1.2~8km 骑行 12km/h / &gt;8km 车程）、hiking（&lt;3km 步行）、默认车程。数据源三级降级：<b>L1</b> 高德/OSRM 真实路网分钟缓存（37,315 对）→ <b>L2</b> 直线距离×城市系数 → <b>L3</b> 直线兜底。同一模型穿透 sequencer / TOPTW / 跨天重平衡 / metrics，保证各层时间观一致。</p>
+<p><code>poi_db.travel_hours(a, b, mode)</code> 按主题自动选速度模型：cycling（&lt;1.2km 步行 / 1.2~8km 骑行 12km/h / &gt;8km 车程）、hiking（&lt;3km 步行）、默认车程。数据源三级降级：<b>L1</b> 高德/OSRM 真实路网分钟缓存（39,295 对）→ <b>L2</b> 直线距离×城市系数 → <b>L3</b> 直线兜底。同一模型穿透 sequencer / TOPTW / 跨天重平衡 / metrics，保证各层时间观一致。</p>
 <p class="kv">阈值演进：<code>CYCLE_MAX_KM</code> 6→8km（M12）——6km 会在古城尺度误伤（虎丘→双塔 6.2km 被标车程而文案说骑行）；该常量同时被 <code>travel_hours</code> 与 <code>_hop_label</code> 共用，改一处即两处一致。</p>
 
 <h2>5A · 性能工程（M8.5 · 23.3s → 12.9s / 缓存 8.3s）</h2>
@@ -467,7 +467,7 @@ li{margin:5px 0}
 <pre>① toptw 预剔除：to_min(close) - dur = -420 - 90 &lt; 0
 ② toptw 时间窗：lo = to_min(open) = 540 &gt; hi = to_min(close) - dur = -510
 ③ sequencer：任意到达时刻都满足 t + dur &gt; close_h → 恒报「超出营业时间」</pre>
-<p><b>修法</b>：<code>close_h &lt;= open_h</code> 时 <code>+24</code>（00:00 全天点也走这条）。全库 528 点中<b>仅 2 点触发</b>（GZ069 宝业路宵夜街 18:00-02:00、NJ021 1912 街区 17:00-02:00），其余 526 点零影响。归一化后 <code>close_h=26.0</code>，与 <code>day_end</code> 上限共同决定它只能排在当天收尾时段，符合真实语义。</p>
+<p><b>修法</b>：<code>close_h &lt;= open_h</code> 时 <code>+24</code>（00:00 全天点也走这条）。全库 573 点中<b>仅 2 点触发</b>（GZ069 宝业路宵夜街 18:00-02:00、NJ021 1912 街区 17:00-02:00），其余 526 点零影响。归一化后 <code>close_h=26.0</code>，与 <code>day_end</code> 上限共同决定它只能排在当天收尾时段，符合真实语义。</p>
 <p><b>判定特征（已固化为单测）</b>：单测里还原 <code>close_h</code> 后，该点在求解器中「<b>既不入选也不出现在 dropped</b>」——从模型<b>完全消失</b>。这是「死点」区别于「利润权衡剔除」的判据（<code>scripts/test_cross_midnight_close.py</code>，8 组断言含修复前对照）。</p>
 <p class="kv"><b>新增点位若营业到凌晨，必须靠这个归一化才排得进</b>（KTV 的 06:00 闭店即依赖它）。注意归一化解除的是「绝对不可排」，不等于「必然入选」——GZ069 线上仍未落地，根因已变为提案层不提案（属召回层问题）。</p>
 </div>
@@ -484,7 +484,7 @@ li{margin:5px 0}
 <tr><td><code>scripts/expand_travel_cache.py</code> → <code>CITIES</code>/<code>NEW_IDS</code></td><td>交通缓存增量</td></tr>
 <tr><td><code>scripts/eval_regression.py</code> / <code>eval_m7.py</code> / <code>eval_ab.py</code></td><td>评测用例城市清单</td></tr>
 </table>
-<p><b>守卫</b>：<code>scripts/test_city_registry.py</code> 以「8 城 × 4 张映射表 + ID 前缀识别」硬断言守护，<b>开城/加城必跑</b>。这是「多副本必须有机守」原则的落地样本。</p>
+<p><b>守卫</b>：<code>scripts/test_city_registry.py</code> 以「9 城 × 4 张映射表 + ID 前缀识别」硬断言守护，<b>开城/加城必跑</b>。这是「多副本必须有机守」原则的落地样本。</p>
 </div>
 
 <h2>5G · 空档治理与点名召回（M15 · 一次迭代修三个缺陷）</h2>
@@ -504,9 +504,9 @@ li{margin:5px 0}
 <h2>6 · 数据层设计</h2>
 <table>
 <tr><th>资产</th><th>规模</th><th>结构要点</th></tr>
-<tr><td><code>data/{城市}_pois.json</code></td><td><b>8 城 528 点</b>（粤 79 / 蓉 75 / 苏 75 / 京 74 / 沪 69 / 杭 57 / 汉 50 / 宁 49）</td><td>id/name/tags/rating/category/duration_h/lat/lng/open/close/closed_days/note/price；id 前缀城市码（SH006/GZ079）；<code>validate_city.py</code> 全量校验。<b>各城缩进不统一</b>（广州/苏州 indent=1），mutate 脚本须先探测缩进</td></tr>
-<tr><td><code>travel_cache.json</code></td><td><b>37,315 对</b>（0 None）</td><td>结构 <code>{cities:{…}, minutes:{src_id:{dst_id:分钟}}}</code>；L1 OSRM <code>/table</code> 整表 / 高德 L2 实况；L3 直线×系数兜底。既有城补新点用 <code>fill_travel_cache_gaps.py</code>（纯增量，只写缺失键）</td></tr>
-<tr><td><code>photo_cache.json</code></td><td>552 条（8 城 100%）</td><td>POI → 高德图库直链，<code>/api/photo</code> 302 重定向，404 前端回退瓦片；含已删 POI 的孤儿键（552 ≠ 528，按库内点位数统计才是有效口径）；<b>单行无缩进</b></td></tr>
+<tr><td><code>data/{城市}_pois.json</code></td><td><b>9 城 573 点</b>（粤 79 / 蓉 75 / 苏 75 / 京 74 / 沪 69 / 杭 57 / 汉 50 / 宁 49）</td><td>id/name/tags/rating/category/duration_h/lat/lng/open/close/closed_days/note/price；id 前缀城市码（SH006/GZ079）；<code>validate_city.py</code> 全量校验。<b>各城缩进不统一</b>（广州/苏州 indent=1），mutate 脚本须先探测缩进</td></tr>
+<tr><td><code>travel_cache.json</code></td><td><b>39,295 对</b>（0 None）</td><td>结构 <code>{cities:{…}, minutes:{src_id:{dst_id:分钟}}}</code>；L1 OSRM <code>/table</code> 整表 / 高德 L2 实况；L3 直线×系数兜底。既有城补新点用 <code>fill_travel_cache_gaps.py</code>（纯增量，只写缺失键）</td></tr>
+<tr><td><code>photo_cache.json</code></td><td>597 条（9 城 100%）</td><td>POI → 高德图库直链，<code>/api/photo</code> 302 重定向，404 前端回退瓦片；含已删 POI 的孤儿键（597 ≠ 573，按库内点位数统计才是有效口径）；<b>单行无缩进</b></td></tr>
 <tr><td><code>gap_log.json</code></td><td>—</td><td>POI 缺口台账：线上未落地地点持久化 + <code>gap_report.py</code> 汇总为扩库清单</td></tr>
 <tr><td><code>nl_cache.json</code></td><td>—</td><td>NLU 解析缓存（query→days/date/hotel/cities），相同问法零成本；<b>在 git 内</b>（污染须随修复清理）</td></tr>
 <tr><td><code>llm_cache.json</code></td><td>—</td><td>/api/plan 与 /api/clarify 结果缓存 7 天（key 含 city/query/days/date/hotel/mode）</td></tr>
@@ -532,11 +532,11 @@ li{margin:5px 0}
 <div class="panel">
 <b>三层评测</b>
 <ul>
-<li><b>回归闸门</b>：<code>eval_regression</code> <b>14 用例 / 8 城</b>，离线（mock LLM，秒级）+ <code>--llm</code> 真实全链路双跑，任何 prompt/求解改动必须双绿</li>
+<li><b>回归闸门</b>：<code>eval_regression</code> <b>15 用例 / 9 城</b>，离线（mock LLM，秒级）+ <code>--llm</code> 真实全链路双跑，任何 prompt/求解改动必须双绿</li>
 <li><b>机制单测</b>：忠实模式 4 / 容量预检 4 / 餐窗优先权 11 / <b>跨零点 8</b> / 前端图标 18（node）/ 远郊守门 7 / 跨天重平衡 3 / 单日主题 / 缺口台账</li>
-<li><b>守卫</b>：<code>test_city_registry.py</code> 城市注册表（8 城×4 表）——开城/加城必跑</li>
+<li><b>守卫</b>：<code>test_city_registry.py</code> 城市注册表（9 城×4 表）——开城/加城必跑</li>
 <li><b>稳定性矩阵</b>：<code>stability_signature_rule.py</code> 多种子×多主题（正向必含/负向不误伤/对照城不硬凑）</li>
-<li><b>发布门禁</b>：<code>release_gate.sh</code> 四步（编译→单测→回归→8 城库校验），GitHub Actions push/PR 自动执行</li>
+<li><b>发布门禁</b>：<code>release_gate.sh</code> 四步（编译→单测→回归→9 城库校验），GitHub Actions push/PR 自动执行</li>
 <li><b>全量评测</b>：<code>eval_m7</code> 五城×2 persona×2 方案 → HTML 报告（20/20 零违规，落地率 100%，库缺口清零）</li>
 </ul>
 </div>
@@ -596,7 +596,7 @@ li{margin:5px 0}
 <tr><td>跨城联游增强 <span class="badge b-warn">M12</span></td><td><code>_dedupe_food_windows</code> / <code>_hotel_city_probe</code></td><td>跨城美食窗去重 + 住宿城市归属探测（bigram≥0.6，恒非 None 不能做归属判定）+ 天数住宿倾斜</td></tr>
 <tr><td>多城联游字段契约 <span class="badge b-warn">M15</span></td><td><code>server.plan_multi</code> / <code>_lift_seg_notices</code> / <code>sequencer._build_timeline</code></td><td>聚合层须逐字段对账单城 <code>plan()</code> 契约：透出 <code>hotel</code>、上浮 <code>notices</code> 并按天数偏移重写 <code>day</code>/<code>days</code>（含文案 <code>Day\d+</code>）与 <code>gaps[].day</code>；时间轴插 <code>type=hotel</code> 出发/返回行；前端路线判据用「<b>该天是否含 hotel 行</b>」而非「全局有 hotel」（否则非住宿城被画假长途）</td></tr>
 <tr><td>跨零点闭店归一化 <span class="badge b-warn">M14</span></td><td><code>poi_db.parse_poi</code></td><td><code>close_h ≤ open_h</code> → +24；上游一处归一，全库 2 点触发</td></tr>
-<tr><td>城市注册表守卫 <span class="badge b-warn">M14</span></td><td><code>scripts/test_city_registry.py</code></td><td>8 城 × 4 张映射表 + 前缀识别硬断言；开城/加城必跑</td></tr>
+<tr><td>城市注册表守卫 <span class="badge b-warn">M14</span></td><td><code>scripts/test_city_registry.py</code></td><td>9 城 × 4 张映射表 + 前缀识别硬断言；开城/加城必跑</td></tr>
 <tr><td>空档扫描与披露 <span class="badge b-warn">M15</span></td><td><code>sequencer.scan_gaps</code> / <code>m2_planner._gap_notices</code></td><td>相邻活动间扣除通行后 ≥60min 的空白按 <code>wait_open</code>/<code>wait_meal</code>/<code>free</code> 分类并逐日披露；求解器不惩罚空档 → 至少不静默</td></tr>
 <tr><td>餐窗提前容差 <span class="badge b-warn">M15</span></td><td><code>sequencer.MEAL_EARLY_TOL_H=1.0</code></td><td>餐厅不必等到 12:00/18:00 整点才开吃（10:45 到 11:00 就座）；空档唯一成因，改用 <code>_fmt</code>→<code>_min_fmt</code> 防「960:00」单位错</td></tr>
 <tr><td>点名召回三层 <span class="badge b-warn">M15</span></td><td><code>names_mentioned_in</code> → <code>_inject_named_pois</code> → <code>forced_ids_for</code> / <code>named_lost</code></td><td>召回（确定性注入）→ 必选与对账（口径 <code>named_pois</code>）→ 下游豁免（<code>_is_destination_food</code>）；缺任一层则「点能排却从不出现」</td></tr>

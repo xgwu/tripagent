@@ -8,9 +8,9 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 >
 > 📖 深度文档：[里程碑详情](docs/README-milestones.md) · [项目报告 v3](docs/TripAgent-项目报告.html) · [架构设计](docs/TripAgent-架构设计.html) · [TOPTW 算法报告](docs/TripAgent-TOPTW算法报告.html)
 
-| 8 城市 | 528 POI | 37,315 对交通缓存 | 评测硬违规 | 回归用例 | 端到端耗时 |
+| 9 城市 | 573 POI | 39,295 对交通缓存 | 评测硬违规 | 回归用例 | 端到端耗时 |
 |---|---|---|---|---|---|
-| 沪/京/宁/粤/蓉/杭/汉/苏 | 结构化库（三源核实） | OSRM L1 + 高德 L2 实况 | **0**（五城×双方案 20/20） | **14/14**（8 城全覆盖） | **12.9s**（优化前 23.3s，-45%） |
+| 沪/京/宁/粤/蓉/杭/汉/苏 | 结构化库（三源核实） | OSRM L1 + 高德 L2 实况 | **0**（五城×双方案 20/20） | **15/15**（9 城全覆盖） | **12.9s**（优化前 23.3s，-45%） |
 
 ## 核心链路（M7 经验提案 + M11 忠实执行）
 
@@ -33,7 +33,7 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 
 ## 功能特性
 
-- **8 城 528 POI**（广州 79 / 成都 75 / 苏州 75 / 北京 74 / 上海 69 / 杭州 57 / 武汉 50 / 南京 49），37,315 对真实路网交通缓存（L1 OSRM + L2 高德实况，L3 直线兜底），552 条实拍图缓存（8 城 **100% 覆盖**）
+- **9 城 573 POI**（广州 79 / 成都 75 / 苏州 75 / 北京 74 / 上海 69 / 杭州 57 / 武汉 50 / 南京 49），39,295 对真实路网交通缓存（L1 OSRM + L2 高德实况，L3 直线兜底），597 条实拍图缓存（9 城 **100% 覆盖**）
 - **硬约束体系**：营业时间、闭馆日（日期感知，全库回填）、**跨零点闭店归一化**、餐窗美食（每窗 ≤1，咖啡馆非正餐分流）、返程酒店锚点、主题每日里程预算（骑行/徒步）
 - **节奏档**：慢节奏（老人/轮椅/行动不便/不要太累）全链路宽松化——2–3 点/天、白天为主、真夜间点全清、站数下限 3；傍晚空窗自然留白（不自动补点）
 - **餐窗保障**：正餐 POI 优先占窗、到达距饭点 ≤30min 先吃再逛、游完就地补餐、窗尾宽限与收尾晚餐提前量、**餐窗提前容差**（餐厅不必干等到 12:00/18:00 整点）+ **日内空档逐日披露**（求解器不惩罚空档，至少不静默）
@@ -78,13 +78,13 @@ python main.py "带5岁孩子去杭州玩2天，不要太累，最好有动物�
 ```bash
 python scripts/run_tests.py                      # 全部单测：14 个 Python 单测 + 1 个前端守卫，一次跑完（推荐）
 python scripts/run_tests.py gap named            # 只跑文件名含关键词的
-python scripts/eval_regression.py [--llm]        # 回归评测：14 固化用例 / 8 城，离线 CI / --llm 真实全链路
+python scripts/eval_regression.py [--llm]        # 回归评测：15 固化用例 / 9 城，离线 CI / --llm 真实全链路
 python scripts/probe_perf.py                     # 性能探针：LLM/TOPTW 各环节耗时插桩
-python scripts/release_gate.py                   # 发布门禁：编译→单测→回归→8 城库校验（纯 Python，本机与 CI 同一条命令）
+python scripts/release_gate.py                   # 发布门禁：编译→单测→回归→9 城库校验（纯 Python，本机与 CI 同一条命令）
 python scripts/validate_city.py                  # POI 库全量校验
 
 # 单个专项单测（改对应模块时按需跑）
-python scripts/test_city_registry.py             # 城市注册表守卫（8 城×4 表，开城/加城必跑）
+python scripts/test_city_registry.py             # 城市注册表守卫（9 城×4 表，开城/加城必跑）
 python scripts/test_cross_midnight_close.py      # 跨零点闭店归一化（含死点复现对照）
 python scripts/test_gap_manage.py                # 日内空档治理（含关掉新参数复现旧缺陷的对照）
 python scripts/test_named_inject.py              # 点名召回与必选对账（含目的地型餐饮豁免对照）
@@ -110,7 +110,7 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 | `/api/progress` | GET | 规划进度轮询（五段式分阶段状态） |
 | `/api/replace` | POST | 反馈换点：同主题邻近换点并重排当天时间轴 |
 | `/api/route` | GET | 高德路径规划代理：`mode=riding\|walking&o=lng,lat&d=lng,lat`（磁盘缓存） |
-| `/api/photo` | GET | POI 实拍图（缓存 552 条，8 城 100%，缺失回退瓦片） |
+| `/api/photo` | GET | POI 实拍图（缓存 597 条，9 城 100%，缺失回退瓦片） |
 | `/api/share` | POST / GET | 行程快照保存 / 读取（`GET /api/share/<id>`） |
 | `/api/stats` | GET | 调用量/延迟/补位命中率统计 |
 
@@ -124,7 +124,7 @@ src/          17 文件 4,174 行
               proposal_planner(M7 提案+落地+守门+餐窗对账) / m2_planner(TOPTW 求解编排) / m1_planner(贪婪)
               sequencer(时间轴+硬约束+修复链+餐窗分配+慢节奏档) / toptw(OR-Tools 建模+忠实模式)
               weather(天气感知) / gap_log(POI 缺口台账) / hotel(住宿锚点) / query_days(天数解析) / offline_planner(离线兜底)
-data/         *_pois.json ×8 城 / travel_cache.json(37,315 对) / route_cache.json / photo_cache.json / shares/
+data/         *_pois.json ×9 城 / travel_cache.json(39,295 对) / route_cache.json / photo_cache.json / shares/
 scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
 .github/      ci.yml + gate.yml —— push/PR 自动执行发布门禁
 ```
@@ -139,7 +139,7 @@ scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门�
 | 日均 POI 数（均值） | 8.7 | 9.1 |
 | 端到端耗时 | 10.4s | 12.9s |
 
-## 里程碑（M1–M15）
+## 里程碑（M1–M16）
 
 - **M1** 验证假设：LLM 库内组线，幻觉结构性归零
 - **M2** 求解层：OR-Tools TOPTW（营业硬窗+利润函数）+ 每日文案重生成
@@ -158,10 +158,11 @@ scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门�
 - **M13** 城库扩容与开城广州：苏州 30→75、南京 33→49、广州 0→79，8 城 528 点、交通 37,315 对、图片 100%
 - **M14** 正确性审计与守卫：跨零点闭店归一化（救活两个「死点」）、KTV 新子类（4 家广州 KTV）、城市注册表守卫、缓存改动纯度校验；depot 换位与亲子 gate 下沉主链路
 - **M15** 空档治理与点名召回：日内空档 357→60min（餐窗提前容差 + 等待段补餐 + 空档分类披露）、点名/远郊召回三层修复、19:00 后开门点 horizon 放宽、统一测试 runner 与纯 Python 发布门禁、多城联游住宿锚点可见性（`plan_multi` 字段透出 + 时间轴 hotel 行 + 分段 notice Day 重映射）
+- **M16** 开城盐城（第 9 城，45 POI）：全库 9 城 573 点、交通缓存 39,295 对、实拍图 9 城 100%；开城流水线跑通「采集 → 精修 → OSRM 矩阵 → 照片 → 七处注册 → 九城校验 → LLM 冒烟」
 
 ## Roadmap
 
-- **P0** 行程交互式微调（点选换/删/换时段，复用 reuse 增量重解）· 城市库批量扩充（**下一城已选定西安（第 9 城）**，其余候选深圳/厦门/青岛/长沙）· 预算感知（price 进决策 + 费用明细）
+- **P0** 行程交互式微调（点选换/删/换时段，复用 reuse 增量重解）· 城市库批量扩充（**已开盐城（第 9 城，45 点）；下一城候选西安/深圳/厦门/青岛/长沙**，其余候选深圳/厦门/青岛/长沙）· 预算感知（price 进决策 + 费用明细）
 - **P1** ~~召回层补强~~ ✅ 已完成（M15）· 偏好记忆 · 评测集扩至 30+ 真实查询进发布门禁 · 文案 LLM 缓存 · 热门时段避让 · 观测看板
 - **P2** 跨城交通衔接（高铁段作为日间转移）· 多人协作投票 · DeepSeek 流式输出 · 国际化（en_name）
 
