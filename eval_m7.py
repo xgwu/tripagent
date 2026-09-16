@@ -18,7 +18,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import poi_db, m2_planner, proposal_planner, metrics, llm_client
 
-CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "广州", "盐城"]
+CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "广州", "盐城", "西安", "重庆", "长沙"]
 PERSONAS = [
     {"name": "经典文化", "q": "{c}2天经典深度游，喜欢历史文化、寺庙和博物馆", "days": 2},
     {"name": "亲子休闲", "q": "带5岁孩子去{c}玩2天，不要太累，最好有动物或者科技馆", "days": 2},

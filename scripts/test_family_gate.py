@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """亲子出行「不适合儿童的点」全链过滤 —— 确定性单测（纯离线）。
 
-背景：POI 字段 family_ok=false 标记不适合带小孩去的点（全库 7 个：KTV/酒吧街区/
-题材沉重纪念馆/高强度徒步）。但该字段**此前只有 offline_planner 读**，
+背景：POI 字段 family_ok=false 标记不适合带小孩去的点（全库 11 个：KTV/酒吧街区/
+题材沉重纪念馆/高强度登山徒步/温泉泡汤）。但该字段**此前只有 offline_planner 读**，
 主链路（proposal_planner 提案 → m2_planner 选点 → TOPTW 求解）完全不看，
 LLM 若给亲子 query 提案 KTV，排程链不会拦——实测 LLM 会自觉避开，但那是概率
 不是保证。
@@ -80,12 +80,16 @@ for f in sorted(glob.glob(os.path.join(ROOT, "data", "*_pois.json"))):
 print(f"   全库 {n_total} 点，family_ok=false 共 {len(blocked)} 个：")
 for b in blocked:
     print(f"     {b[0]} {b[1]} {b[2]}（{b[3]}）")
-case("3a 全库点位数与口径一致（573 = 528 + 盐城 45）", n_total == 573, f"实测 {n_total}")
-case("3b family_ok=false 恰为 7 个（新增点位应显式评估该字段）",
-     len(blocked) == 7, f"实测 {len(blocked)}")
-case("3c 全部标记点均为 nightlife/outdoor/culture 高风险类目",
-     all(b[3] in ("nightlife", "outdoor", "culture") for b in blocked),
-     f"类目={sorted({b[3] for b in blocked})}")
+case("3a 全库点位数与口径一致（722 = 573 + 西安 54 + 重庆 48 + 长沙 47）", n_total == 722, f"实测 {n_total}")
+case("3b family_ok=false 恰为 11 个（新增点位应显式评估该字段）",
+     len(blocked) == 11, f"实测 {len(blocked)}")
+# 白名单＝可能承载成人/高强度内容的类目：夜生活、高强度户外、题材沉重纪念馆、
+# 山岳徒步（nature）、温泉泡汤（relax）。断言「无标记点落入 food/购物/亲子等日常类目」，
+# 防止误标把普通点从亲子链里静默剔除（曾误标 XA006 西安碑林博物馆）。
+RISKY_CATS = ("nightlife", "outdoor", "culture", "nature", "relax")
+case("3c 全部标记点均为夜间/高强度/沉重题材类目（nature 登山、relax 泡汤也属此列）",
+     all(b[3] in RISKY_CATS for b in blocked),
+     f"类目={sorted({b[3] for b in blocked})}｜白名单={RISKY_CATS}")
 
 # ---- 用例 4：候选池构造 gate ----
 print("\n== 用例 4：_build_day_pool 过滤（含对照）")
