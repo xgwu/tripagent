@@ -5,6 +5,11 @@
 ## 1. 立项
 
 - 确认目标城市在 `webui/server.py` 的 `CITIES` 列表里（新城市需同步添加）。
+- **注册点共 7 处，`add_city.py` 只自动补 2 处**（`server.CITIES` + `eval_regression.CASES`），
+  其余 5 处必须手工补：`server._ID_PREFIX_CITY` / `server._CITYCODE` /
+  `scripts/expand_travel_cache.CITIES` / `scripts/fetch_poi_photos.CITYCODE` /
+  `eval_m7.CITIES` + `eval_ab.CITIES`。**漏 `_ID_PREFIX_CITY` → `/api/photo` 全城 400**。
+  补完跑 `python scripts/test_city_registry.py`（守卫会逐表核对）。
 - 点位规模：首版 30~60 个，覆盖经典必去 + 亲子 + 博物馆 + 美食/夜市 + 远郊大点。
 
 ## 2. 数据采集（三源核实）
@@ -32,7 +37,7 @@
 
 ```bash
 python scripts/validate_city.py <城市>   # 必须通过（警告可人工确认）
-python scripts/eval_regression.py       # 全量回归必须 13/13
+python scripts/eval_regression.py       # 全量回归必须 18/18（12 城）
 python scripts/test_far_big_regroup.py  # 守门单测
 ```
 

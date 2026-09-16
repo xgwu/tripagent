@@ -52,7 +52,7 @@ pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;pa
 
 <header>
   <h1>TOPTW 算法原理与 TripAgent 应用报告</h1>
-  <div class="sub">覆盖 src/toptw.py 全部实现 · 对应代码 main@d25119e · 2026-09-15（M15）</div>
+  <div class="sub">覆盖 src/toptw.py 全部实现 · 对应代码 main@226c802 · 2026-09-16（M17）</div>
 </header>
 
 <div class="kpis">
@@ -173,7 +173,7 @@ s.t. 路径连通、连续；
                      hi = to_min(close) - dur = -510
                      lo(540) &gt; hi(-510)  →  SetRange 得到空域
 ③ 排序器（sequencer）：任意 t 都满足 t + dur &gt; close_h = 2.0  → 恒报「超出营业时间」</pre>
-<p><b>修法</b>：在解析层统一归一（<code>close_h ≤ open_h</code> 时 +24），而不是在下游三处各打一个补丁。全库 573 点中<b>仅 2 点触发</b>，其余 571 点零影响。</p>
+<p><b>修法</b>：在解析层统一归一（<code>close_h ≤ open_h</code> 时 +24），而不是在下游三处各打一个补丁。全库 722 点中<b>仅 2 点触发</b>，其余 720 点零影响。</p>
 <table>
 <tr><th>放置位置</th><th>改动面</th><th>风险</th></tr>
 <tr><td>下游逐处打补丁（预剔除 / 时间窗 / 排序器）</td><td>3 处以上，且未来新增判据还要再补</td><td>漏一处即复发；各层语义可能不一致</td></tr>
@@ -304,7 +304,7 @@ profit(p):
 <li><s>召回层补强（让「能排但没被提案」的点可落地）</s> <b>✅ M15 已修复</b>：三层修复（确定性注入 → 必选与对账口径 → 目的地型餐饮豁免）后，宝业路宵夜街落地 18:00-19:30、莲花岛落地 11:26-13:26。忠实模式下求解器不再换点，提案层召回质量权重进一步上升，因此这条修在<b>提案层与守门层</b>而非求解器。</li>
 </ul>
 
-<div class="note" style="margin-top:28px">本文档基于 src/toptw.py（221 行）与 src/m2_planner.py 编排层真实代码编写（2026-09-15，M15）· 配套文档：<code>docs/TripAgent-架构设计.html</code>（系统全景与 M7 管线）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）</div>
+<div class="note" style="margin-top:28px">本文档基于 src/toptw.py（221 行）与 src/m2_planner.py 编排层真实代码编写（2026-09-16，M17）· 配套文档：<code>docs/TripAgent-架构设计.html</code>（系统全景与 M7 管线）· <code>docs/TripAgent-项目报告.html</code>（项目全景 v3）</div>
 
 </div>
 <script>

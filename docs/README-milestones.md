@@ -1,8 +1,8 @@
 # TripAgent 里程碑档案（M1–M7 详录 · M8 起见下节与项目报告）
 
-> 📌 本文是**里程碑历史档案**，M1–M7 部分保留原始记录。M8 及之后的完整演进（含 M8.5 性能工程、M9 主题保真、M10 工程化、M11 忠实执行、M12 体验保真、M13 开城广州、M14 正确性审计、M15 空档治理与点名召回 + 多城联游住宿锚点、M16 开城盐城）请以 **[项目报告 v3](TripAgent-项目报告.html)** 为准；架构级说明见 **[架构设计文档](TripAgent-架构设计.html)**（已更新至 M15），求解器原理见 **[TOPTW 算法报告](TripAgent-TOPTW算法报告.html)**。
+> 📌 本文是**里程碑历史档案**，M1–M7 部分保留原始记录。M8 及之后的完整演进（含 M8.5 性能工程、M9 主题保真、M10 工程化、M11 忠实执行、M12 体验保真、M13 开城广州、M14 正确性审计、M15 空档治理与点名召回 + 多城联游住宿锚点、M16 开城盐城、M17 三城齐开（西安/重庆/长沙））请以 **[项目报告 v3](TripAgent-项目报告.html)** 为准；架构级说明见 **[架构设计文档](TripAgent-架构设计.html)**（已更新至 M17），求解器原理见 **[TOPTW 算法报告](TripAgent-TOPTW算法报告.html)**。
 >
-> 当前基线：**9 城 573 POI · 39,295 对交通缓存 · 回归 15/15（9 城全覆盖）· 147 commits**。
+> 当前基线：**12 城 722 POI · 46,575 对交通缓存 · 回归 18/18（12 城全覆盖）· 149 commits**。
 
 对应《TOPTW+LLM 混合方案可行性分析》：
 - **M1**（已完成 ✅）：验证核心假设「LLM 库内组线显著优于标签过滤」——幻觉结构性归零、优化层修复价值被量化。
@@ -28,7 +28,7 @@
 - **健壮化**：extract_days「N日」天数识别修复（44f9db1）；正则未命中时 LLM 结构化抽取兜底（2d5203a）；武汉 POI 34→50（b1695f8）；密钥剥离至 secrets.json（gitignore），config.json 回归 git（7b207aa）。
 - **跨天重平衡（对照 Google 论文 stage-2 局部搜索）**：各日 TOPTW 独立求解后，确定性「移动 POI 到更近日簇」局部搜索——接受条件 0 违规 + 0 修复剔除 + 总里程改善>0.5km，每次移动扣 2km 相似度罚分（尊重 LLM 初稿）；全天大点与 forced 锚点不动，重求解掉点则整体回滚（`m2_planner._crossday_rebalance`，`n_day_moves` 透出，单元测试 `scripts/test_crossday_rebalance.py`）。注：检索型备选经 `_build_day_pool` 本就并入 M7 池（与 alternates 双源），无需额外改动。
 - **前端文案透出**（1287255）：每日 reason 文案（LLM 对齐最终时间轴重生成）渲染到网页 Day 卡、分享 HTML、PNG 长图三处（长图预计算高度纳入文案行数）。
-- **回归评测**（`scripts/eval_regression.py`）：12 固化用例（含上海亲子必含迪士尼两例，**现已扩至 15 用例 / 9 城**），支持离线确定性（CI）与 `--llm` 全链路两种模式；当前离线 12/12、LLM 12/12。
+- **回归评测**（`scripts/eval_regression.py`）：12 固化用例（含上海亲子必含迪士尼两例，**现已扩至 18 用例 / 12 城**），支持离线确定性（CI）与 `--llm` 全链路两种模式；当前离线 12/12、LLM 12/12。
 - **部署**：WebUI 常驻入口 `https://tripagent-planner2-80644.app.workbuddy.host/`（Python 单端口 http 服务）。
 - **M7.5 全量评测（落地验证，2026-09-12 重跑 `eval_m7.py`）**：5 城 × 2 persona × 2 方案，真实 LLM 全链路。结果——
   - **20/20 全部 0 硬违规**（M2/M7 各 10）；
@@ -182,7 +182,7 @@ Windows 注意：`PYTHONIOENCODING=utf-8` 已在脚本内处理 stdout；JSON �
 - **附修**：住宿锚点防线（query 无「住/酒店/民宿/宾馆/客栈」则不采纳 LLM 抽的 hotel，防「都在太湖边」被抽成住宿区域）；移除 `_fill_evenings` 自动补晚间点（用户指令，傍晚空窗自然留白）；前端用餐 🍽 图标（报障 16：`city_meta` 未下发 category 致判据恒为假，改用 timeline `meal` 字段）。
 
 ### M13 城库扩容与开城广州（944e125 → 7222dc3）
-苏州 30→75（骑行/咖啡/美食/环太湖四批，含环太湖沿线缺口 SZ067–075）、南京 33→49（删重复 NJ018/NJ035）、**广州开城 0→79**（culture14/food15/nature11/history8/religion6/shopping6/view5/family5/nightlife8/show1，17 点带 closed_days）。全库 **9 城 573 点**、交通缓存 **39,295 对**（0 None）、照片缓存 9 城 **100% 覆盖**。开城流水线固化：采集 → 精修落盘 → 交通矩阵 → 照片 → 城市注册 → `validate_city.py` → 回归 → LLM 冒烟 → 提交 → 部署 → 线上 fresh 验收。
+苏州 30→75（骑行/咖啡/美食/环太湖四批，含环太湖沿线缺口 SZ067–075）、南京 33→49（删重复 NJ018/NJ035）、**广州开城 0→79**（culture14/food15/nature11/history8/religion6/shopping6/view5/family5/nightlife8/show1，17 点带 closed_days）。全库 **8 城 528 点**、交通缓存 **37,315 对**（0 None）、照片缓存 8 城 **100% 覆盖**。开城流水线固化：采集 → 精修落盘 → 交通矩阵 → 照片 → 城市注册 → `validate_city.py` → 回归 → LLM 冒烟 → 提交 → 部署 → 线上 fresh 验收。
 
 ### M14 正确性审计与守卫（9b176e4 → 7222dc3）
 - **跨零点闭店归一化**：`parse_poi` 中 `close_h ≤ open_h` → `+24`。修复 GZ069 宝业路宵夜街 / NJ021 1912 街区两个**自入库起从未可排**的「死点」（根因：02:00 解成 2.0 < day_start 9.0，被预剔除/时间窗/排序器三重判死）。全库仅 2 点触发，526 点零影响；单测 `scripts/test_cross_midnight_close.py`（8 组，含还原 close_h 的「从模型完全消失」对照）。
@@ -207,6 +207,18 @@ Windows 注意：`PYTHONIOENCODING=utf-8` 已在脚本内处理 stdout；JSON �
 - **注册七处**（`add_city.py` 只自动注册 `CITIES` + `eval_regression.CASES`）：`server.py` 的 `CITIES`/`_ID_PREFIX_CITY`/`_CITYCODE`、`expand_travel_cache.CITIES`、`fetch_poi_photos.CITYCODE`、`eval_regression.CASES`、`eval_m7`/`eval_ab.CITIES`。**漏 `_ID_PREFIX_CITY` → `/api/photo` 全城 400**（即报障 17 根因）。
 - **开城踩坑**：① `closed_days` 必须是「周X」字符串，整数 `[1]` 被判非法；② `validate_city` 距市中心 ≤80km 为硬上限（条子泥湿地 88.5km 剔除）；③ **ID 语义漂移**——先采 80 点后重做 45 点，旧 `YC*` 缓存键会拿错点时间/照片且不报错，须整体清掉 `YC*` 键 + `cities.盐城` 后重建；④ 照片限流会大面积返回空串（非「真的没图」），须**循环重跑至「新取 0」收敛**；⑤ `test_family_gate` 硬编码 528 需同步为 573（改测试不改代码）。
 - **验证**：`validate_city` 通过（5 条远郊警告）· `test_city_registry` 9/9 · `release_gate.py` 四步全绿（15/15 单测、15/15 离线回归、9 城校验）· `eval_regression --llm` 15/15 全链路 0 违规 · 盐城 6 组主题 LLM 冒烟（博物馆 / 湿地看鹿鹤 / 亲子 / 美食 / 深度 / 骑行）全绿。缓存纯度：既有键 **0 改动 / 0 删除**，仅新增 45 键。
+
+### M17 三城齐开：西安 / 重庆 / 长沙（第 10–12 城 · `226c802`）
+
+- **城库**：9 城 573 点 → **12 城 722 点**（西安 54 / 重庆 48 / 长沙 47）；交通缓存 39,295 → **46,575 对**；照片缓存 597 → **746 条**，库内点位 **722/722 = 100% 有图**（magic-bytes 探针，7 轮收敛到「新取 0」）。
+- **逐点精修（沿用盐城教训）**：`add_city.py` 采集结果一律视为「采集快照」——社区底商误采、下辖县市错位、类目错判、`rating` 全 4 + duration/price 全默认值四类污染逐点修；高德点名噪声（停车场/家属院/售票处/酒店/社区）按 `type` 正负过滤（JUNK 扣分 / GOOD 加分 / 名称精确 +100 / 距离降权）。落盘口径对齐既有城：0%「待核实」note、评分分层 3/4/5、真实票价、tags 对齐 `retrieval.KEYWORD_TAGS`。
+- **注册七处**：`server.py` 的 `CITIES`/`_ID_PREFIX_CITY`/`_CITYCODE`、`expand_travel_cache.CITIES`、`fetch_poi_photos.CITYCODE`、`eval_m7`/`eval_ab.CITIES`、`eval_regression.CASES` 全部补齐；`test_city_registry` 12 城 × 7 表全绿。回归用例 15 → **18**（三城各加 1 条经典深度游）。
+- **开城暴露的两处回归（本轮修）**：
+  ① **`family_ok=false` 误标把正常点从亲子链静默剔除**——西安碑林博物馆（XA006）被标 `false`，会从所有亲子行程里消失且无任何报错。改回 `true`；`test_family_gate` 台账同步 722 / 11，3c 白名单纳入 `nature`（登山）/`relax`（泡汤）（原白名单只覆盖 `nightlife/outdoor/culture`）。
+  ② **`build_travel_cache.py` 把 L2 城市（苏州）降级为 L1 直线兜底**——该脚本仅在 `source != "osrm-table-driving"` 时重建，苏州 `source == "amap-driving-l2"` 故被覆盖（75 个 `SZ*` 主键值变动）。已从备份整体回滚 `cities.苏州` 元数据与全部 75 个主键；顺带还原被同一次误跑追加的 `cities.盐城.l2_amap`（该字段只写不读），确保提交为**纯新增**。
+- **缓存纯度**：改动前后 `git show HEAD:<file>` 逐键比对——`minutes` 既有键 **0 改动 / 0 删除**，仅新增 149（XA 54 + CQ 48 + CS 47），7,280 对、0 None；`photo_cache` 仅新增 149 键。
+- **验证**：`validate_city` 三城通过（**警告 0**）· `test_city_registry` 12/12 · `release_gate.py` 四步全绿（15/15 单测 + 18/18 离线回归 + 12 城校验）· `eval_regression --llm` **18/18 全链路 0 违规 / 100% 落地率** · 三城 LLM 冒烟 **15 组多主题**（经典/亲子/美食/深度/慢节奏）全部 0 违规 / 100% 落地 / `faithful_mode=True` / 剔点全部带 reason / 0 空档，另加 6 组既有城对照排除判据假阳性。
+- **教训**：① 验收判据先用**既有城做对照**再下结论——本轮「每天必须有正餐」「剔除必须为 0」两条自造判据都被既有城（北京/成都/杭州）同时触发，证明是判据过严而非新城的缺陷；② 开城时任何**重跑缓存构建脚本**的动作都必须先读该脚本的「重建条件」，否则会静默降级既有城数据。
 
 ## 评测指标
 
@@ -242,7 +254,7 @@ src/baseline.py       旧方案基线：关键词→标签硬过滤 + 评分贪�
 src/metrics.py        评测指标（违规/路网均程/标签覆盖/时段合规/主选保留）
 eval_ab.py            三方 A/B harness（基线/M1/M2）→ HTML 报告
 eval_m7.py            M2 vs M7 五城对比评测
-scripts/eval_regression.py  15 用例固化回归（离线 CI + --llm 全链路）
+scripts/eval_regression.py  18 用例固化回归（离线 CI + --llm 全链路）
 webui/                常驻 WebUI（server.py + index.html，单端口）
 ```
 
