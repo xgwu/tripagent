@@ -3,7 +3,7 @@
 
 路由：
   GET /                 → webui/index.html（前端单页）
-  GET /api/cities       → 5 城元信息（POI 数、闭馆数、坐标）+ LLM 可用性
+  GET /api/cities       → 12 城元信息（POI 数、闭馆数、坐标）+ LLM 可用性
   GET /api/plan         → 规划（city/query/days/date/hotel/mode/llm），包装 m1/m2 链路
 
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）

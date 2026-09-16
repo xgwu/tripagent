@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """M7 A/B 评测：M2（库内直选） vs M7（经验提案→落地→求解）。
 
-5 城 × 2 persona × 2 方案，指标：
+全城 × 2 persona × 2 方案，指标：
 - 落地率（M7 特有）：LLM 提案点成功匹配回库的比例
 - 硬约束违规（修复后）、相邻路网均程、日均 POI 数、耗时
 - POI 库缺口清单（M7 未落地提案 = 数据建设采购清单）
@@ -140,7 +140,7 @@ def main():
     doc = f"""<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8">
 <title>TripAgent M7 A/B 评测</title><style>{CSS}</style></head><body><div class="wrap">
 <h1>{html.escape(args.title)}</h1>
-<p class="note">{llm_note}｜5 城 × {len(PERSONAS)} persona｜M7 = LLM 世界知识自由提案 → 四级落地匹配 → TOPTW 求解</p>
+<p class="note">{llm_note}｜全城 × {len(PERSONAS)} persona｜M7 = LLM 世界知识自由提案 → 四级落地匹配 → TOPTW 求解</p>
 <h2>📊 汇总</h2>
 <table><tr><th>城市</th><th>方案</th><th>硬违规(总)</th><th>路网均程</th><th>日均 POI</th><th>耗时</th></tr>
 {srows}</table>

@@ -2,7 +2,7 @@
 """M5/M6 跨城 A/B 评测：基线（标签硬过滤） vs M1（检索→LLM库内选择） vs M2（TOPTW）。
 
 在 M1 版 eval_ab 基础上扩展：
-- 5 城批量评测（杭/宁/沪/苏/汉），--city 可跑单城
+- 全城批量评测（CITIES 列表），--city 可跑单城
 - --eval-date 启用日期感知（闭馆日硬约束），报告统计「闭馆违规」
 - --hotel 启用 M6 住宿锚点（每城确定性酒店，显式坐标免 API），报告统计「返程违规/最晚收尾/酒店出发腿/跨天重复」
 - Personas 按城市模板化生成（菜系本地化）
@@ -154,7 +154,7 @@ def plan_cell(ev: dict, result: dict, label: str = "", hm: dict | None = None) -
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-llm", action="store_true")
-    ap.add_argument("--city", default=None, help="只跑指定城市（默认全 5 城）")
+    ap.add_argument("--city", default=None, help="只跑指定城市（默认全部 CITIES）")
     ap.add_argument("--eval-date", default=None, help="行程起始日期 YYYY-MM-DD（启用闭馆约束）")
     ap.add_argument("--hotel", action="store_true", help="M6：启用住宿锚点评测（每城确定性酒店）")
     args = ap.parse_args()
