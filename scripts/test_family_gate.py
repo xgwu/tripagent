@@ -80,7 +80,7 @@ for f in sorted(glob.glob(os.path.join(ROOT, "data", "*_pois.json"))):
 print(f"   全库 {n_total} 点，family_ok=false 共 {len(blocked)} 个：")
 for b in blocked:
     print(f"     {b[0]} {b[1]} {b[2]}（{b[3]}）")
-case("3a 全库点位数与口径一致（528）", n_total == 528, f"实测 {n_total}")
+case("3a 全库点位数与口径一致（573 = 528 + 盐城 45）", n_total == 573, f"实测 {n_total}")
 case("3b family_ok=false 恰为 7 个（新增点位应显式评估该字段）",
      len(blocked) == 7, f"实测 {len(blocked)}")
 case("3c 全部标记点均为 nightlife/outdoor/culture 高风险类目",

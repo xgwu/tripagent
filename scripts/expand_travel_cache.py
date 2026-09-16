@@ -20,7 +20,7 @@ from build_travel_cache import (  # noqa: E402
     AMAP_DIRECTION, CITY_FACTOR, MIN_MIN, _cache_path, load_cache, save_cache)
 
 DATA = os.path.join(ROOT, "data")
-CITIES = ["上海", "南京", "杭州", "武汉", "苏州", "成都", "北京", "广州"]
+CITIES = ["上海", "南京", "杭州", "武汉", "苏州", "成都", "北京", "广州", "盐城"]
 NEW_IDS = {
     "上海": ["SH045", "SH046", "SH047", "SH048", "SH049", "SH050", "SH051", "SH052", "SH053", "SH054", "SH055", "SH056", "SH057", "SH058", "SH059", "SH060", "SH061", "SH062", "SH063", "SH064", "SH065", "SH066", "SH067", "SH068"],
     "南京": ["NJ029", "NJ030", "NJ031", "NJ032", "NJ033"],

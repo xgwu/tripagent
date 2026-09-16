@@ -86,8 +86,8 @@ def _llm_cache_put(key: str, result: dict) -> None:
 PHOTO_CACHE_PATH = os.path.join(ROOT, "data", "photo_cache.json")
 _photo_lock = threading.Lock()
 _photo_cache = None
-_ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州", "WH": "武汉", "BJ": "北京", "CD": "成都", "GZ": "广州"}
-_CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027", "北京": "010", "成都": "028", "广州": "020"}
+_ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州", "WH": "武汉", "BJ": "北京", "CD": "成都", "GZ": "广州", "YC": "盐城"}
+_CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027", "北京": "010", "成都": "028", "广州": "020", "盐城": "0515"}
 
 
 def _load_photo_cache() -> dict:
@@ -603,7 +603,7 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     }
 
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
-CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "成都", "北京", "广州"]
+CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "成都", "北京", "广州", "盐城"]
 CITY_META = {}  # 懒加载缓存
 PLAN_LOCK = threading.Lock()  # 访客自带 Key 时临时注入环境变量，加锁防并发串包
 

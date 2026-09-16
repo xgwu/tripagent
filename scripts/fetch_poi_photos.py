@@ -10,7 +10,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027",
-            "成都": "028", "北京": "010", "广州": "020"}  # 新扩城市自动回退用中文城市名查询
+            "成都": "028", "北京": "010", "广州": "020", "盐城": "0515"}  # 新扩城市自动回退用中文城市名查询
 CACHE = os.path.join(ROOT, "data", "photo_cache.json")
 
 
