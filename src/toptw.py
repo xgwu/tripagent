@@ -3,7 +3,8 @@
 
 对应可行性分析 §3.2 的设计：
 - 候选池 = LLM 主选（高利润）+ 多路召回备选（低利润），求解器有权「换点」
-- 利润函数 = 主选标记 × 大权重 + 评分 + LLM 顺位奖励（相似度目标，Google 用 70% 权重）
+- 利润函数 = 主选标记 × 大权重 + 评分 + LLM 顺位奖励（只作用于「留谁」；
+  访问顺序由弧成本与时间窗决定，忠实模式下顺位奖励被 1e6 淹没，见 RANK_BONUS 注释）
 - 硬约束 = 营业时间窗 + 通行时间（L1 矩阵）+ 当日时间上限，由求解器保证可行
 - 超时/不可行 → 自动降级 M1 贪婪链路
 """
@@ -15,11 +16,27 @@ from src import poi_db
 
 MAIN_BONUS = 600           # 主选 POI 的额外利润（M3-1 扫描：300~1000 结果一致，取中位留余量）
 RATING_W = 60              # 每分评分的利润
-RANK_BONUS = 15            # LLM 顺序每前进一名的奖励（相似度目标）
+RANK_BONUS = 15            # LLM 顺位奖励：只影响「留谁」，**不影响访问顺序**
+# ⚠️ 2026-09-17 口径纠正：利润只进 AddDisjunction 的「丢弃罚分」，访问顺序由
+# 弧成本（travel_min）与时间窗决定 —— 即行程内的先后完全是几何/时窗最优，
+# 与 LLM 给的顺序无关。且默认开启的 lock_mains 会给每个主选 +1e6，
+# 使 MAIN_BONUS/RATING_W/RANK_BONUS 三者在主选之间的差异被彻底淹没
+# （600/300/15 vs 1e6），此时 rank 对结果无任何影响。
+# 所以文件头「相似度目标，Google 用 70% 权重」只在 lock_mains=False 且
+# 时间预算真的装不下时才部分生效——别据此以为提案顺序会被尊重。
 SOFT_W = 5.0               # best_time 软时间窗：每偏差 1 分钟的罚分（M3-1 扫描最优：均距/覆盖显著改善）
 SOFT_CAP_MIN = 60          # 软窗罚分封顶：偏差超过该分钟数等效罚分封顶（soft_w×SOFT_CAP_MIN=300），
                            # 再远不允许——旧逻辑线性无上限（晚到 5h 罚 1500 分），求解器宁可让傍晚空着
                            # 也不放 morning 点进晚间，时段空间被白扔；封顶后空窗由日内填空补晚间型点
+WAIT_SLACK_MAX_MIN = 120   # 单点最大等待（slack）——与 m2_planner.GAP_WAIT_MAX_H(2h) 同口径。
+                           # 0 会让「19:00 开门」类点结构性不可行（见 AddDimension 处注释）；
+                           # 无上限则允许荒谬空等，故取有界值。
+                           # 注：不再叠加「总跨度代价」——实测（2026-09-17）跨度计价
+                           # **压不掉空档却会吃掉 POI**：广州 300min 空档在 span=0/1 下
+                           # 完全相同，而苏州 6 点掉到 5 点、span=5 时更是崩到 1 点。
+                           # 原因是这类空档是结构性的（要排 19:00 的点就必然跨到 21:30），
+                           # 跨度代价唯一的「优化」手段就是把夜间点丢掉，正好退回本次要修的
+                           # 缺陷。空档由 sequencer.scan_gaps 披露（M15 既定取舍：披露不惩罚）。
 TIME_LIMIT_S = 2.0         # 单日求解预算
 MEAL_BUFFER_MIN = 120      # M6：排序器会在日中插入午餐+晚餐各 1h，求解器预算预扣，防止过度打包后整体后移溢出
 LATE_POINT_MARGIN_MIN = 60 # 晚间型点（18:00 后开门）预算放宽时预留的收尾/返程余量
@@ -37,7 +54,8 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
               time_limit_s: float = TIME_LIMIT_S,
               main_bonus: float = MAIN_BONUS, soft_w: float = SOFT_W,
               hotel: dict | None = None, forced: set | None = None,
-              mode: str | None = None, lock_mains: bool = False):
+              mode: str | None = None, lock_mains: bool = False,
+              day_no: int | None = None):
     """单日 TOPTW。
 
     candidates: 备选池（parsed POI，含主选与备选）
@@ -58,7 +76,10 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
     day_ids = [i for i in day_ids if i in {p["id"] for p in candidates}]
     rank = {pid: len(day_ids) - k for k, pid in enumerate(day_ids)}  # 越靠前越大
 
-    start_day = poi_db.hhmm_to_h(city["day_start"])
+    # 按天起始时刻覆盖（跨城联游抵达日）：与 sequencer.day_start_of 共用口径，
+    # 否则求解器按 09:00 给预算、排序器按抵达时刻起算 → 多塞的点会被逐个判超时剔除
+    from src.sequencer import day_start_of
+    start_day = poi_db.hhmm_to_h(day_start_of(city, day_no))
     end_day = poi_db.hhmm_to_h(city["day_end"])
     # M6：求解器 horizon 预扣餐块缓冲（排序器实测会插入午餐+晚餐）；不足则保底 4h 活动时间
     day_window = max(240, int((end_day - start_day) * 60))
@@ -142,7 +163,17 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
 
     full_cb = routing.RegisterTransitCallback(full_transit)
     # fix_start=False：出发时间浮动（depot 是真实 POI，营业窗口未必包含 day_start）
-    routing.AddDimension(full_cb, 0, horizon, False, "time")
+    #
+    # ⚠️ 2026-09-17 修复（高严重度）：slack_max 此前是 0，即**禁止在任何节点等待**，
+    # cumul 沿路径刚性递推（cumul[j] == cumul[i] + transit）。后果是「营业窗口本来
+    # 可排」的点变成数学上不可行——实测「上午馆(09-17) + 下午馆(09-17) + 夜市(19-23)」
+    # 三点相邻，slack=0 只落地 2/3（夜市被丢），即使忠实模式给主选 1e6 利润也救不回来，
+    # 因为**利润权重解决不了不可行**。M15 的 LATE_POINT_MARGIN_MIN 放宽 horizon 只治了
+    # 症状；README「遗留」写的「TOPTW 不惩罚空档」也说反了——它是**无法表达**空档。
+    #
+    # 取值：WAIT_SLACK_MAX_MIN 与 m2_planner.GAP_WAIT_MAX_H(2h) 对齐，
+    # 允许合理等待（等开门/等餐点），但不允许「上午排完空等 6 小时到夜market」。
+    routing.AddDimension(full_cb, WAIT_SLACK_MAX_MIN, horizon, False, "time")
     tdim = routing.GetDimensionOrDie("time")
     for idx in range(routing.Size()):
         node = manager.IndexToNode(idx)

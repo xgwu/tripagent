@@ -25,9 +25,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from src import poi_db, m1_planner, llm_client  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
 from src import gap_log  # POI 库缺口台账：规划缺口持久化（旁路，失败不拖垮主链路）
+from src import intercity  # 城际转移段：跨城驾车时长（travel_cache 不建跨城对）
 
 # ---- 直连 opener：本机代理会拦截外网 API，urllib 需显式绕过 ----
 _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+# 合并配置：main() 启动时用 load_config() 覆盖。此处给模块级默认空 dict——
+# 否则 CFG 只在 main() 里由 `global CFG` 创建，任何**不经启动**就调用规划函数的
+# 路径（单测、脚本直接 import plan_multi）都会 NameError。
+CFG: dict = {}
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -152,14 +158,23 @@ def _norm_ll(s: str) -> str:
 
 
 def _amap_route(mode: str, o: str, d: str, key: str) -> dict | None:
-    """高德路径规划：walking(v3) / riding(v4)。返回 {distance_m, duration_s, points}。"""
+    """高德路径规划：walking(v3) / riding(v4) / driving(v3)。
+
+    driving 是 2026-09-17 新增：跨城转移段（如杭州→苏州 153km）此前无法画真实路线
+    —— 前端只有 riding/walking 两档，城际腿只能退化成直线甚至完全不画。
+    返回 {distance_m, duration_s, points}。
+    """
     if mode == "riding":
         url = (f"https://restapi.amap.com/v4/direction/bicycling"
                f"?origin={o}&destination={d}&key={key}")
+    elif mode == "driving":
+        # strategy=0 速度优先，与 intercity 建缓存口径一致
+        url = (f"https://restapi.amap.com/v3/direction/driving"
+               f"?origin={o}&destination={d}&extensions=all&strategy=0&key={key}")
     else:
         url = (f"https://restapi.amap.com/v3/direction/walking"
                f"?origin={o}&destination={d}&key={key}")
-    with _NO_PROXY_OPENER.open(url, timeout=10) as resp:
+    with _NO_PROXY_OPENER.open(url, timeout=15) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     if mode == "riding":
         if data.get("errcode") != 0:
@@ -189,7 +204,7 @@ def _amap_route(mode: str, o: str, d: str, key: str) -> dict | None:
             "points": points}
 
 # 天数提取公共化：实现移至 src/query_days.py（CLI main.py 共用同一实现）
-from src.query_days import extract_days  # noqa: E402
+from src.query_days import extract_days, clamp_days, MAX_DAYS, DEFAULT_DAYS  # noqa: E402
 
 
 # P2-2 多城联游：查询中出现 ≥2 个城市（或「苏杭」类别名）→ 跨城规划
@@ -510,6 +525,186 @@ def _lift_seg_notices(cname: str, off: int, notices: list) -> list:
     return out
 
 
+_CN_D = {"一": 1, "两": 2, "二": 2, "三": 3, "四": 4, "五": 5}
+
+
+def parse_city_days(query: str, cities: list) -> dict:
+    """从需求文字解析「每城各玩几天」。返回 {城市名: 天数}，解析不到的城市不出现。
+
+    2026-09-17 报障：「苏杭3日自驾游，第一天在杭州，晚上9点开车去苏州，然后苏州玩2天」
+    被排成「杭州 2 天 + 苏州 1 天」—— plan_multi 用 divmod 盲分天数，余数给列表里
+    靠前的城市，**完全不读用户明说的每城天数**。用户把话说得这么具体还被忽略，
+    是最伤信任的一类失败。
+
+    支持的表述（确定性正则，零 LLM 成本）：
+      「苏州玩2天」「苏州2天」「在杭州待三天」「杭州1日」
+      「第一天在杭州」→ 杭州至少 1 天（弱信号，仅在无显式天数时用）
+    """
+    out, weak = {}, {}
+    q = query or ""
+    _N = r"([1-9一二两三四五])"
+    # 「上海成都5天自驾」里的「5天」是**总天数**，不是每城天数 —— 城市名紧邻数字时
+    # 必须要求中间有动词（玩/待/留/住/游/逛）或「在…」结构，否则会把总天数
+    # 误当成两座城各自的天数（实测：上海=5 且 成都=5）。
+    _VERB = r"(?:玩|待|留|住|游|逛|安排|停留)"
+    for c in cities:
+        m = (re.search(rf"{re.escape(c)}\s*{_VERB}\s*{_N}\s*[天日]", q)
+             or re.search(rf"在\s*{re.escape(c)}[^，。；;、]{{0,4}}?{_VERB}?\s*{_N}\s*[天日]", q)
+             # 「苏州2天杭州2天」：城市紧邻数字，但同一句里每座城各带一个数字
+             or (re.search(rf"{re.escape(c)}\s*{_N}\s*[天日]", q)
+                 if len(re.findall(rf"{_N}\s*[天日]", q)) >= len(cities) else None))
+        if not m:
+            # 反序表述：「玩2天苏州」
+            m = re.search(rf"{_VERB}\s*{_N}\s*[天日][^，。；;、]{{0,4}}?{re.escape(c)}", q)
+        if m:
+            v = m.group(1)
+            out[c] = int(v) if v.isdigit() else _CN_D.get(v, 0)
+            continue
+        # 弱信号：「第一天在杭州」这类只说明该城占某一天
+        if re.search(rf"第\s*([1-9一二两三四五])\s*[天日][^，。；;、]{{0,4}}?{re.escape(c)}", q):
+            weak[c] = 1
+    for c, v in weak.items():
+        out.setdefault(c, v)
+    return {c: v for c, v in out.items() if v >= 1}
+
+
+def allocate_city_days(cities: list, days: int, wanted: dict) -> list:
+    """按用户诉求分配每城天数；未指定的城市均分剩余；总数守恒到 days。
+
+    冲突处理（诉求总和 ≠ 总天数）由调用方读 alloc 与 wanted 的差异后告知用户。
+    """
+    n = len(cities)
+    alloc = [0] * n
+    named = [(i, c) for i, c in enumerate(cities) if c in wanted]
+    rest = [i for i, c in enumerate(cities) if c not in wanted]
+    for i, c in named:
+        alloc[i] = max(1, int(wanted[c]))
+    used = sum(alloc)
+    if rest:
+        left = max(0, days - used)
+        base, rem = divmod(left, len(rest))
+        for k, i in enumerate(rest):
+            alloc[i] = base + (1 if k < rem else 0)
+    # 总数守恒：超出则从「天数最多且非用户指定」的城市开始扣；仍超则等比压缩指定城
+    def _total():
+        return sum(alloc)
+    guard = 0
+    while _total() > days and guard < 100:
+        guard += 1
+        pool = [i for i in rest if alloc[i] > 1] or [i for i in rest if alloc[i] > 0]
+        if not pool:
+            pool = [i for i, _ in named if alloc[i] > 1]
+        if not pool:
+            break
+        alloc[max(pool, key=lambda i: alloc[i])] -= 1
+    while _total() < days and guard < 200:
+        guard += 1
+        pool = rest or [i for i, _ in named]
+        alloc[min(pool, key=lambda i: alloc[i])] += 1
+    # 每城至少 1 天（0 天的城市等于没去，应由调用方决定是否剔除该城）
+    for i in range(n):
+        if alloc[i] < 1 and _total() < days:
+            alloc[i] = 1
+    return alloc
+
+
+def _night_transfer_hour(query: str, to_city: str) -> float | None:
+    """解析「晚上9点开车去苏州」类夜间转移的出发时刻（小时浮点）；无则 None。
+
+    夜间转移与「抵达日早上开车」是两种不同形态：前者转移发生在出发城当天夜里，
+    抵达日整天可用；后者吃掉抵达日上午。用户明说时间时必须按他说的排。
+    """
+    q = query or ""
+    _H = r"(?:[0-9]{1,2}|十[一二]?|[一二三四五六七八九])"
+    m = re.search(
+        rf"(晚上|夜里|傍晚|下午)?\s*({_H})\s*[点时][^，。；;]{{0,8}}?"
+        rf"(?:开车|自驾|出发|走|去|前往|驱车)[^，。；;]{{0,6}}?{re.escape(to_city)}", q)
+    if not m:
+        m = re.search(
+            rf"(?:开车|自驾|驱车|出发)[^，。；;]{{0,6}}?{re.escape(to_city)}"
+            rf"[^，。；;]{{0,8}}?(晚上|夜里|傍晚|下午)?\s*({_H})\s*[点时]", q)
+    if not m:
+        return None
+    period, _hs = m.group(1) or "", m.group(2)
+    _CNH = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
+            "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12}
+    hh = int(_hs) if _hs.isdigit() else _CNH.get(_hs, -1)
+    if hh < 0:
+        return None
+    if period in ("晚上", "夜里") and hh < 12:
+        hh += 12
+    elif period in ("下午", "傍晚") and hh < 12:
+        hh += 12
+    if not (0 <= hh <= 23):
+        return None
+    # 只有真正处于「夜间」才按夜转处理；上午/白天的时刻仍走抵达日顺延口径
+    return float(hh) if hh >= 17 else None
+
+
+def _weekday_of(date0: str | None, offset_days: int) -> str | None:
+    """date0 起第 offset_days 天的「周X」（与 sequencer 的 weekday 口径一致）。"""
+    if not date0:
+        return None
+    try:
+        d = _date.fromisoformat(date0) + _td(days=offset_days)
+    except (ValueError, TypeError):
+        return None
+    return "周" + "一二三四五六日"[d.weekday()]
+
+
+def _hm(h: float, wrap: bool = False) -> str:
+    """小时浮点 → HH:MM。
+
+    wrap=False：钳位在 24h 内（防「29:42」这类非法时刻）。
+    wrap=True ：跨零点按次日时刻回绕并加「次日」前缀（夜间转移 23:00 出发 +2h）。
+    """
+    h = float(h)
+    if wrap and h >= 24.0:
+        h -= 24.0
+        return f"次日 {int(h):02d}:{int(round((h - int(h)) * 60)):02d}"
+    h = max(0.0, min(23.99, h))
+    return f"{int(h):02d}:{int(round((h - int(h)) * 60)):02d}"
+
+
+def _transfer_day(day_no: int, city_from: str, city_to: str, tr: dict,
+                  city: dict, weekday: str | None,
+                  leg: int = 1, n_legs: int = 1) -> dict:
+    """长途转移日：整天只有一条 transfer 行，不排景点。
+
+    为什么独占一天而不是塞进抵达城的第一天：4 小时以上车程 + 取还车 + 路上用餐，
+    真实可游玩时间已不足半天；若仍按整天规划该城首日，时间轴会与现实脱节
+    （这正是改造前「赤水→兴义 580km/6.7h 被当作不存在」的根因）。
+
+    leg/n_legs：车程超过 DRIVE_DAY_MAX_MIN（10h）时一天开不完，拆成 n_legs 天，
+    本函数产出其中第 leg 天。每天的行驶时长按 min(剩余, 单日上限) 计，
+    时刻一律钳在当日 day_start~day_end 内。
+    """
+    total = float(tr["minutes"])
+    per = total / n_legs if n_legs > 1 else total
+    sh = poi_db.hhmm_to_h(city.get("day_start") or "09:00")
+    eh_cap = poi_db.hhmm_to_h(city.get("day_end") or "21:30")
+    eh = min(sh + per / 60.0, eh_cap)
+    seg = f"（第 {leg}/{n_legs} 段）" if n_legs > 1 else ""
+    return {
+        "day": day_no,
+        "theme": f"{city_from} → {city_to}｜城际转移{seg}",
+        "timeline": [{
+            "type": "transfer", "name": f"自驾 {city_from} → {city_to}{seg}",
+            "start": _hm(sh), "end": _hm(eh),
+            "min": int(round(per)),
+            "km": round(float(tr["km"]) / max(n_legs, 1), 1),
+            "from": city_from, "to": city_to, "source": tr["source"],
+            "leg": leg, "n_legs": n_legs,
+        }],
+        "travel_km": round(float(tr["km"]) / max(n_legs, 1), 1),
+        "travel_h": round(per / 60.0, 2),
+        "violations": [], "repairs": [],
+        "finish": _hm(eh),
+        "gaps": [], "weekday": weekday,
+        "transfer_day": True,
+    }
+
+
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
                use_llm: bool, planner, hotel_text: str | None = None) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
@@ -518,11 +713,30 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     改进 B：此前跨城直接忽略 hotel_text）——用 _hotel_city_probe 探测归属城市，
     命中段传 hotel_text、其余段不传。改进 C：住宿城市天数 +1（从天数最多的其他
     城扣 1，每城至少保留 1 天），使「住西湖国宾馆附近」的杭州段多分到时间。
+
+    城际转移段：段边界按 src/intercity 的三级模型算真实驾车时长。
+      - 长途（≥ LONG_TRANSFER_MIN=240min）：占用抵达城 1 天作为纯转移日
+        （alloc 预扣，该城少排一天景点），时间轴只有一条 type=transfer 行；
+      - 短途（<240min）：不占天，改为在 notices 里给出「出发时刻 = 抵达城首个
+        活动时刻 − 车程」，抵达日的景点安排不变。
     """
     n = min(len(cities), max(days, 1))
     use = cities[:n]
-    base, rem = divmod(days, n)
-    alloc = [base + (1 if i < rem else 0) for i in range(n)]
+    # 天数分配：优先尊重用户明说的每城天数（「苏州玩2天」），其余城市均分剩余。
+    # 旧实现是 divmod 盲分 + 余数给靠前城市，会把「第一天在杭州…苏州玩2天」
+    # 排成「杭州2天+苏州1天」（2026-09-17 报障）。
+    _wanted = parse_city_days(query, use)
+    alloc = allocate_city_days(use, days, _wanted)
+    _alloc_notice = []
+    if _wanted:
+        _got = {c: alloc[i] for i, c in enumerate(use)}
+        _conflict = {c: (v, _got.get(c)) for c, v in _wanted.items() if _got.get(c) != v}
+        if _conflict:
+            _alloc_notice.append({
+                "kind": "city_days_adjusted",
+                "message": "；".join(
+                    f"你要求{c} {w} 天，实际安排 {g} 天" for c, (w, g) in _conflict.items())
+                + f"（总天数 {days} 天的约束下）"})
 
     hotel_city = None
     if hotel_text:
@@ -530,12 +744,41 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             if _hotel_city_probe(cname, hotel_text):
                 hotel_city = i
                 break
-    if hotel_city is not None and n > 1:
+    # 住宿城天数倾斜（改进 C）：仅在用户**没有**明说每城天数时生效——
+    # 用户已给出「苏州玩2天」时，酒店启发式不得推翻它
+    if hotel_city is not None and n > 1 and not _wanted:
         donors = [i for i in range(n) if i != hotel_city and alloc[i] > 1]
         if donors:
             donor = max(donors, key=lambda i: alloc[i])
             alloc[donor] -= 1
             alloc[hotel_city] += 1
+
+    # ---- 城际转移段：先算各段边界车程，长途段预扣抵达城 1 天做纯转移日 ----
+    # 必须在规划前扣天：抵达城拿到的 di 已是「扣掉转移日之后」的天数，
+    # 该城才会按更少的天数排点；事后插入转移日会让景点总量超出真实可用时间。
+    _centers = {}
+    for cname in use:
+        try:
+            _centers[cname] = poi_db.load_city(cname)["center"]
+        except (OSError, KeyError, ValueError):
+            _centers[cname] = None
+    _amap = CFG.get("amap_key") or None
+    transfers = {}      # 段下标 i（≥1） → {"minutes","km","source"}
+    transfer_days = {}  # 段下标 i → True 表示该段前面插一天纯转移日
+    for i in range(1, n):
+        ca, cb = _centers.get(use[i - 1]), _centers.get(use[i])
+        if not ca or not cb:
+            continue
+        tr = intercity.transfer(use[i - 1], ca, use[i], cb, amap_key=_amap)
+        transfers[i] = tr
+        # 需要几个转移日（>10h 车程一天开不完，按单日上限拆）。
+        # 最多只能占到「该段天数 - 1」——至少留 1 天给抵达城，否则这座城
+        # 变成纯路过、一个景点都排不了。占不下的部分在 notice 里明确告知。
+        want = intercity.days_needed(tr["minutes"])
+        if want and alloc[i] > 1:
+            take = min(want, alloc[i] - 1)
+            alloc[i] -= take
+            transfer_days[i] = take
 
     merged_days, merged_pois, merged_gaps, merged_notices = [], {}, [], []
     tot = {"violations": 0, "km": 0.0, "dup": 0, "cands": 0, "lat": 0.0,
@@ -548,6 +791,53 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         if di < 1:
             continue
         city = poi_db.load_city(cname)
+        # ---- 短途转移（<240min，不占天）：抵达日起始时刻顺延到「到达时刻」----
+        # 抵达日的点位必须按真实可用时长来排（否则会按整天打包，再靠一条 notice
+        # 让用户自己 06:57 出发）。city dict 带 day_start_by_day，sequencer 与
+        # toptw 共用 day_start_of() 读取，保证求解预算与时间轴口径一致。
+        _short = (i in transfers and not transfer_days.get(i))
+        _arrive_h = None
+        # 夜间转移：用户明说「晚上9点开车去苏州」——转移发生在**出发城当天夜里**，
+        # 抵达日整天可用，不该顺延。此时把 transfer 行挂到上一天的末尾。
+        _night_h = _night_transfer_hour(query, cname) if _short else None
+        # 必须在本段的天被 append 之前抓住「出发城最后一天」——否则 merged_days[-1]
+        # 拿到的是抵达城自己的最后一天（实测：夜转行被挂到 Day3 而不是 Day1）
+        _depart_day = merged_days[-1] if merged_days else None
+        if _short and _night_h is None:
+            _tr = transfers[i]
+            _dep = poi_db.hhmm_to_h(city.get("day_start") or "09:00")
+            _arrive_h = _dep + float(_tr["minutes"]) / 60.0
+            city = dict(city)
+            city["day_start_by_day"] = {1: _hm(_arrive_h)}  # 段内第 1 天 = 抵达日
+        # ---- 长途转移日：占本段前 take 天，每天一条 transfer 行 ----
+        _take = transfer_days.get(i) or 0
+        if _take:
+            tr = transfers[i]
+            _want = intercity.days_needed(tr["minutes"])
+            _first_td = day_no + 1
+            for _leg in range(1, _take + 1):
+                day_no += 1
+                merged_days.append(_transfer_day(
+                    day_no, use[i - 1], cname, tr, city,
+                    _weekday_of(date0, day_no - 1), leg=_leg, n_legs=_take))
+                if seg_date0:
+                    seg_date0 = seg_date0 + _td(days=1)
+            tot["km"] += float(tr["km"])
+            _days_txt = (f"Day{_first_td}" if _take == 1
+                         else f"Day{_first_td}–Day{day_no}")
+            _msg = (f"{_days_txt} 为城际转移日：{use[i - 1]} → {cname} "
+                    f"驾车约 {intercity.duration_text(tr['minutes'])}"
+                    f"（{tr['km']:.0f}km），期间不安排景点")
+            if _want > _take:
+                # 想占 _want 天但只挤出 _take 天：必须说清，不能让用户以为开得完
+                _msg += (f"；按单日最多 {intercity.DRIVE_DAY_MAX_MIN // 60} 小时驾驶计，"
+                         f"这段实际需要 {_want} 天，当前行程只挤出 {_take} 天")
+            if intercity.needs_rail_advice(tr["minutes"]):
+                _msg += "。该距离已超出合理自驾范围，建议改乘高铁/飞机（跨城公共交通衔接尚未接入规划）"
+            merged_notices.append({
+                "kind": "intercity_transfer", "day": _first_td, "city": cname,
+                "days": list(range(_first_td, day_no + 1)), "message": _msg,
+            })
         d0 = seg_date0.isoformat() if seg_date0 else None
         seg_hotel = hotel_text if (hotel_text and hotel_city == i) else None
         r = planner.plan(city, query, di, use_llm=use_llm, date0=d0,
@@ -556,11 +846,70 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             hotel_out = r["hotel"]  # 住宿城市段的解析结果（名称/经纬度/解析来源）
         it = r["itinerary"]
         _seg_start = day_no + 1                 # 本段第一天在全局的 day 号
+        _seg_first_day = None
         for d in it["days"]:
             day_no += 1
             d["day"] = day_no
             d["theme"] = f"{cname}｜{d.get('theme') or cname}"
             merged_days.append(d)
+            if _seg_first_day is None:
+                _seg_first_day = d
+        # ---- 短途转移（<240min，未占天）：抵达日时间轴**首行**插入 transfer 行 ----
+        # 该天的点位已按顺延后的起始时刻求解（见上方 day_start_by_day），
+        # 所以这里插入的行与后续时刻是一致的，不是事后硬塞。
+        if _short and _night_h is not None and _depart_day is not None:
+            # 夜间转移：挂到出发城最后一天末尾，抵达日整天可用
+            tr = transfers[i]
+            _prev_day = _depart_day
+            _end_h = _night_h + float(tr["minutes"]) / 60.0
+            (_prev_day.setdefault("timeline", [])).append({
+                "type": "transfer", "name": f"自驾 {use[i - 1]} → {cname}（夜间转移）",
+                "start": _hm(_night_h), "end": _hm(_end_h, wrap=True),
+                "min": int(round(float(tr["minutes"]))),
+                "km": round(float(tr["km"]), 1),
+                "from": use[i - 1], "to": cname, "source": tr["source"],
+                "leg": 1, "n_legs": 1, "night": True,
+            })
+            _prev_day["travel_km"] = round(
+                float(_prev_day.get("travel_km") or 0) + float(tr["km"]), 1)
+            _prev_day["night_transfer"] = True
+            merged_notices.append({
+                "kind": "intercity_transfer", "city": cname,
+                "day": _prev_day["day"],
+                "message": (f"Day{_prev_day['day']} 夜间从 {use[i - 1]} 驾车到 {cname}"
+                            f"：{_hm(_night_h)} 出发、约 "
+                            f"{intercity.duration_text(tr['minutes'])}"
+                            f"（{tr['km']:.0f}km）后抵达"
+                            + ("，次日凌晨到达，注意休息" if _end_h >= 24 else "")
+                            + f"；Day{_prev_day['day'] + 1} 起在 {cname} 全天游玩"),
+            })
+            tot["km"] += float(tr["km"])
+        elif _short and _seg_first_day:
+            tr = transfers[i]
+            _dep_s = city.get("day_start") or "09:00"
+            (_seg_first_day.setdefault("timeline", [])).insert(0, {
+                "type": "transfer", "name": f"自驾 {use[i - 1]} → {cname}",
+                "start": _dep_s, "end": _hm(_arrive_h),
+                "min": int(round(float(tr["minutes"]))),
+                "km": round(float(tr["km"]), 1),
+                "from": use[i - 1], "to": cname, "source": tr["source"],
+                "leg": 1, "n_legs": 1,
+            })
+            _seg_first_day["travel_km"] = round(
+                float(_seg_first_day.get("travel_km") or 0) + float(tr["km"]), 1)
+            _seg_first_day["travel_h"] = round(
+                float(_seg_first_day.get("travel_h") or 0)
+                + float(tr["minutes"]) / 60.0, 2)
+            _seg_first_day["arrive_transfer"] = True
+            merged_notices.append({
+                "kind": "intercity_transfer", "city": cname,
+                "day": _seg_first_day["day"],
+                "message": (f"Day{_seg_first_day['day']} 从 {use[i - 1]} 驾车到 {cname}"
+                            f"约 {intercity.duration_text(tr['minutes'])}"
+                            f"（{tr['km']:.0f}km）：{_dep_s} 出发、"
+                            f"{_hm(_arrive_h)} 抵达，当天景点从抵达后开始安排"),
+            })
+            tot["km"] += float(tr["km"])
         meta = city_meta(cname)
         merged_pois.update(meta["pois"])
         g = r.get("grounding") or {}
@@ -743,7 +1092,7 @@ class Handler(BaseHTTPRequestHandler):
             mode = q.get("mode", "walking")
             o, d = _norm_ll(q.get("o") or ""), _norm_ll(q.get("d") or "")
             key = CFG.get("amap_key", "")
-            if mode not in ("walking", "riding") or not o or not d:
+            if mode not in ("walking", "riding", "driving") or not o or not d:
                 return self._json({"ok": False, "error": "参数错误（mode/o/d）"}, code=400)
             if not key:
                 return self._json({"ok": False, "error": "服务端未配置高德 Key"}, code=400)
@@ -875,8 +1224,11 @@ class Handler(BaseHTTPRequestHandler):
                     query = f"{cname}2天经典深度游"
                 # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
                 if len(multi) >= 2:
-                    d = extract_days(query) or (nl or {}).get("days") or 2
-                    days = max(1, min(5, d))
+                    d = extract_days(query) or (nl or {}).get("days")
+                    days, _clamped, _want = clamp_days(d)
+                    _days_notice = ([{"kind": "days_clamped", "message":
+                                      f"需求是 {_want} 天，当前单次规划上限 {MAX_DAYS} 天，"
+                                      f"已按 {MAX_DAYS} 天安排"}] if _clamped else [])
                     use_llm_m = q.get("llm", "1") == "1" and llm_client.llm_available()
                     try:
                         from src import proposal_planner as _pp
@@ -901,6 +1253,8 @@ class Handler(BaseHTTPRequestHandler):
                             merged_meta["n_pois"] += m["n_pois"]
                             merged_meta["n_closed"] += m["n_closed"]
                         stats_latency(r.get("latency_s", 0))
+                        if _days_notice:  # 天数被上限截断须显式告知，不能静默改需求
+                            r["notices"] = _days_notice + (r.get("notices") or [])
                         # 缺口台账：跨城合并后的各城缺口一并落账
                         if gap_log.append_gap_record(None, multi, query, days,
                                                      "m7_multi", r.get("grounding")):
@@ -917,16 +1271,24 @@ class Handler(BaseHTTPRequestHandler):
                 city = poi_db.load_city(cname)
                 # 天数优先从需求文字里识别（「3天」「两日」…）；显式 days 参数仅作兼容保留；都没有则默认 2 天
                 days_param = (q.get("days") or "").strip()
+                _clamped, _want = False, None
                 if days_param:
-                    days, days_src = max(1, min(5, int(days_param))), "param"
+                    days, days_src = max(1, min(MAX_DAYS, int(days_param))), "param"
                 else:
                     d = extract_days(query)
                     if d:
-                        days, days_src = d, "query"
+                        # 2026-09-17：此前这里直接 days=d **没有 clamp**（多城路径反而
+                        # clamp 了），「8天」会把 8 一路传进求解层
+                        days, _clamped, _want = clamp_days(d)
+                        days_src = "query"
                     elif (nl or {}).get("days"):
-                        days, days_src = nl["days"], "llm"
+                        days, _clamped, _want = clamp_days(nl["days"])
+                        days_src = "llm"
                     else:
-                        days, days_src = 2, "default"
+                        days, days_src = DEFAULT_DAYS, "default"
+                _days_notice = ([{"kind": "days_clamped", "message":
+                                  f"需求是 {_want} 天，当前单次规划上限 {MAX_DAYS} 天，"
+                                  f"已按 {MAX_DAYS} 天安排"}] if _clamped else [])
                 # P4：日期/住宿优先显式参数，缺省时从需求文字提取（正则 miss 再用 LLM 兜底）
                 date0 = q.get("date") or extract_date(query) or (nl or {}).get("date0")
                 # 住宿意图防线：NL LLM 抽取会把行程范围/主题描述（「都在太湖边」）误判为
@@ -966,6 +1328,8 @@ class Handler(BaseHTTPRequestHandler):
                         if gap_log.append_gap_record(cname, None, query, days, mode,
                                                      cached.get("grounding")):
                             stats_bump("plan_with_gaps")
+                        if _days_notice:  # 缓存命中也要带上天数截断提示
+                            cached["notices"] = _days_notice + (cached.get("notices") or [])
                         return self._json({"ok": True, "city_meta": city_meta(cname), "result": cached,
                                            "days_source": days_src,
                                            "parsed": {"city": cname, "date0": date0,
@@ -1007,6 +1371,8 @@ class Handler(BaseHTTPRequestHandler):
                 if gap_log.append_gap_record(cname, None, query, days, mode,
                                              r.get("grounding")):
                     stats_bump("plan_with_gaps")
+                if _days_notice:  # 天数被上限截断须显式告知
+                    r["notices"] = _days_notice + (r.get("notices") or [])
                 return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
                                    "days_source": days_src,
                                    "parsed": {"city": cname, "date0": date0,
