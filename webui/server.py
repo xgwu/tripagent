@@ -764,13 +764,21 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             _centers[cname] = None
     _amap = CFG.get("amap_key") or None
     transfers = {}      # 段下标 i（≥1） → {"minutes","km","source"}
-    transfer_days = {}  # 段下标 i → True 表示该段前面插一天纯转移日
+    transfer_days = {}  # 段下标 i → 该段前面插几天纯转移日
+    night_from = {}     # 段下标 i → 该城最后一天须在 HH（小时浮点）前收尾（夜间转移）
     for i in range(1, n):
         ca, cb = _centers.get(use[i - 1]), _centers.get(use[i])
         if not ca or not cb:
             continue
         tr = intercity.transfer(use[i - 1], ca, use[i], cb, amap_key=_amap)
         transfers[i] = tr
+        # 夜间转移必须**在出发城那一段规划之前**就确定：它要给出发城最后一天
+        # 设 day_end（提前收尾到出发时刻）。若等到处理抵达段时才发现，出发段
+        # 早已按 21:30 排完，末个景点会与出发时刻重叠（实测苏堤春晓 20:00-21:30
+        # 撞上 21:00 出发）。
+        _nh = _night_transfer_hour(query, use[i])
+        if _nh is not None and not intercity.is_long_transfer(tr["minutes"]):
+            night_from[i - 1] = _nh   # 键是**出发城**的段下标
         # 需要几个转移日（>10h 车程一天开不完，按单日上限拆）。
         # 最多只能占到「该段天数 - 1」——至少留 1 天给抵达城，否则这座城
         # 变成纯路过、一个景点都排不了。占不下的部分在 notice 里明确告知。
@@ -799,7 +807,12 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         _arrive_h = None
         # 夜间转移：用户明说「晚上9点开车去苏州」——转移发生在**出发城当天夜里**，
         # 抵达日整天可用，不该顺延。此时把 transfer 行挂到上一天的末尾。
-        _night_h = _night_transfer_hour(query, cname) if _short else None
+        _night_h = night_from.get(i - 1) if _short else None
+        # 本城最后一天当晚要开去下一城 → 该天提前收尾到出发时刻，
+        # 让求解器与排序器都按缩短后的时长排点（day_end_by_day 由两者共用读取）
+        if i in night_from:
+            city = dict(city)
+            city["day_end_by_day"] = {di: _hm(night_from[i])}
         # 必须在本段的天被 append 之前抓住「出发城最后一天」——否则 merged_days[-1]
         # 拿到的是抵达城自己的最后一天（实测：夜转行被挂到 Day3 而不是 Day1）
         _depart_day = merged_days[-1] if merged_days else None

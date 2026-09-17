@@ -78,9 +78,11 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
 
     # 按天起始时刻覆盖（跨城联游抵达日）：与 sequencer.day_start_of 共用口径，
     # 否则求解器按 09:00 给预算、排序器按抵达时刻起算 → 多塞的点会被逐个判超时剔除
-    from src.sequencer import day_start_of
+    from src.sequencer import day_start_of, day_end_of
     start_day = poi_db.hhmm_to_h(day_start_of(city, day_no))
-    end_day = poi_db.hhmm_to_h(city["day_end"])
+    # day_end 同样支持按天覆盖：夜间转移日的可用时间提前到出发时刻，
+    # 否则求解器按 21:30 给预算、排到 21:30 的点会与 21:00 出发撞车
+    end_day = poi_db.hhmm_to_h(day_end_of(city, day_no))
     # M6：求解器 horizon 预扣餐块缓冲（排序器实测会插入午餐+晚餐）；不足则保底 4h 活动时间
     day_window = max(240, int((end_day - start_day) * 60))
     horizon = max(240, day_window - MEAL_BUFFER_MIN)

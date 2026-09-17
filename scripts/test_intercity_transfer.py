@@ -24,7 +24,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
-from src import poi_db, sequencer, intercity, m1_planner  # noqa: E402
+from src import poi_db, sequencer, intercity, m1_planner, m2_planner  # noqa: E402
 from webui import server as sv  # noqa: E402
 
 # 编码须在 import 之后（server.py 导入期也会调整 stdout；先自建 wrapper 会被 GC 关闭 buffer）
@@ -396,6 +396,32 @@ try:
     case("9k notice 说明夜间转移与次日全天游玩",
          _n5 and "夜间" in _n5[0]["message"] and "全天" in _n5[0]["message"],
          _n5[0]["message"] if _n5 else "")
+
+    # ---- 夜间转移日必须提前收尾：末个安排不得越过出发时刻 ----
+    # 2026-09-17 实测缺陷：夜转行是当天求解完之后追加的，求解器不知道要为
+    # 21:00 出发留时间，于是排出「苏堤春晓 20:00-21:30」撞上 21:00 出发。
+    # 修复：出发城最后一天设 day_end_by_day（提前到出发时刻），
+    # sequencer 与 toptw 共用 day_end_of() 读取。
+    print("\n== 用例 10：夜间转移日提前收尾（day_end_by_day）")
+    case("10a day_end_of 支持按天覆盖",
+         sequencer.day_end_of({"day_end": "21:30",
+                               "day_end_by_day": {2: "21:00"}}, 2) == "21:00"
+         and sequencer.day_end_of({"day_end": "21:30",
+                                   "day_end_by_day": {2: "21:00"}}, 1) == "21:30")
+    case("10b 无覆盖时回落 city.day_end",
+         sequencer.day_end_of({"day_end": "21:30"}, 1) == "21:30")
+    _dep_day = next((d for d in d5 if d.get("night_transfer")), None)
+    if _dep_day:
+        _rows = [s for s in _dep_day["timeline"]
+                 if s.get("type") in ("poi", "meal")]
+        _tf = [s for s in _dep_day["timeline"] if s.get("type") == "transfer"][0]
+        _late = [s for s in _rows if s.get("end", "") > _tf["start"]]
+        case("10c 出发城当天没有安排越过出发时刻", not _late,
+             f"出发 {_tf['start']}，越界项={[(s['name'], s['start'], s['end']) for s in _late]}")
+        case("10d 求解器与排序器同口径（_day_horizon 认按天覆盖）",
+             m2_planner._day_horizon({"day_start": "09:00", "day_end": "21:30",
+                                      "day_end_by_day": {1: "21:00"}}, 1)
+             < m2_planner._day_horizon({"day_start": "09:00", "day_end": "21:30"}, 1))
 finally:
     intercity.transfer = _orig_tr2
     sv._hotel_city_probe = _orig_pr2
