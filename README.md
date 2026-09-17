@@ -88,6 +88,11 @@ python webui/server.py 8765
 # 4. 打开 http://127.0.0.1:8765
 ```
 
+> 首跑说明：`travel_cache.json`（路网时长矩阵）与 `photo_cache.json`（实拍图）
+> 不随仓库分发。缺失时全链路自动降级（L3 直线兜底 / 图片回退瓦片），服务正常；
+> 需要完整精度可按需重建：`python scripts/build_travel_cache.py <城市>` 与
+> `python scripts/backfill_poi_photos.py <城市>`（需自备高德 key，构建结果仅本地生效）。
+
 CLI 单次规划（注意：CLI 从环境变量读密钥，`webui/server.py` 会自动注入 secrets.json）：
 
 ```bash
@@ -148,7 +153,7 @@ src/          18 文件 4,620 行
               sequencer(时间轴+硬约束+修复链+餐窗分配+慢节奏档) / toptw(OR-Tools 建模+忠实模式)
               intercity(城际转移段: 三级驾车时长模型+转移日/夜间转移) / weather(天气感知)
               gap_log(POI 缺口台账) / hotel(住宿锚点) / query_days(天数解析) / offline_planner(离线兜底)
-data/         *_pois.json ×12 城 / travel_cache.json(46,575 对) / intercity_cache.json / route_cache.json / photo_cache.json / shares/
+data/         *_pois.json ×12 城（随仓库分发）/ travel_cache.json(46,575 对) / intercity_cache.json / route_cache.json / photo_cache.json（运行时缓存，不随仓库分发）
 scripts/      44 个运维与测试脚本 6,010 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
 .github/      ci.yml + gate.yml —— push/PR 自动执行发布门禁
 ```
