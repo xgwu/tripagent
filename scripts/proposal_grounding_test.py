@@ -36,6 +36,15 @@ def main():
         from src.config import load_config
         os.environ.setdefault("DEEPSEEK_API_KEY", load_config().get("deepseek_api_key", ""))
 
+    def _render_prompt(city_name, days, query, all_pois):
+        """与主链路同口径渲染提案 prompt（v10 规则按需注入，select_rules 是单一事实来源）。"""
+        rules, n_stops, _hits = proposal_planner.select_rules(query, all_pois)
+        return proposal_planner.PROPOSE_PROMPT.format(
+            city=city_name, days=days, query=query,
+            date_line="", weather_line="",
+            rules="\n".join(rules), n_stops=n_stops,
+            library_hint=proposal_planner._library_hint(all_pois))
+
     rows = []
     for city_name, query, days, anchor_id in CASES:
         city = poi_db.load_city(city_name)
@@ -43,10 +52,7 @@ def main():
         for rnd in range(1, args.rounds + 1):
             raw = proposal_planner.llm_client.chat(
                 [{"role": "system", "content": proposal_planner.PROPOSE_SYSTEM},
-                 {"role": "user", "content": proposal_planner.PROPOSE_PROMPT.format(
-                     city=city_name, days=days, query=query,
-                     date_line="", weather_line="",
-                     library_hint=proposal_planner._library_hint(all_pois))}],
+                 {"role": "user", "content": _render_prompt(city_name, days, query, all_pois)}],
                 temperature=0.2, seed=42 + rnd)
             proposal = proposal_planner.llm_client.parse_json_safe(raw)
             day_map, _themes, st = proposal_planner._ground(proposal, city, all_pois, days)

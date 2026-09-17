@@ -21,7 +21,7 @@
 
 用法：python scripts/test_audit_fixes_20260917.py
 """
-import os, sys
+import os, re, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -186,6 +186,57 @@ _ssrc = open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
 case("6h server 单城路径已接 clamp_days（旧实现完全没 clamp）",
      "days, _clamped, _want = clamp_days(d)" in _ssrc)
 case("6i 截断会作为 notice 透出给用户", '"kind": "days_clamped"' in _ssrc)
+
+# ==================== 缺陷 7：prompt 规则堆积（v10 按需注入） ====================
+# v9 把 14 条规则不分场景全量堆进 prompt，其中多条互相打架且靠散文声明优先级：
+#   · 贯穿偏好规则 显式覆盖 跨天片区分散规则
+#   · 慢节奏规则 声明豁免 傍晚密度规则
+# v10 改为常开硬规则 + 条件规则按需注入，冲突从根源消失。
+print("\n== 缺陷 7（中）：prompt 规则按需注入（v10）")
+_ver = re.search(r'PROPOSE_PROMPT_VER = "v(\d+)"', inspect.getsource(pp))
+case("7a 版本号已升到 v10+", _ver and int(_ver.group(1)) >= 10,
+     f"v{_ver.group(1) if _ver else '?'}")
+
+_r_plain, _ns_plain, _h_plain = pp.select_rules("上海2天经典深度游", None, None)
+_r_slow, _ns_slow, _h_slow = pp.select_rules("上海2天，不要太累", None, None)
+_r_fam, _ns_fam, _h_fam = pp.select_rules("带5岁孩子去上海玩2天", None, None)
+_r_lake, _, _h_lake = pp.select_rules("苏州2天，最好临湖", None, None)
+_r_anchor, _, _h_anchor = pp.select_rules("上海3日亲子游", None, "迪士尼附近")
+
+case("7b 普通查询只注入常开规则 + 傍晚密度", _h_plain == [], str(_h_plain))
+case("7c 慢节奏与傍晚密度互斥（v9 靠散文豁免，v10 直接不注入）",
+     pp._RULE_SLOW in _r_slow and pp._RULE_EVENING not in _r_slow
+     and pp._RULE_EVENING in _r_plain)
+case("7d 亲子查询注入亲子 + 招牌体验",
+     pp._RULE_FAMILY in _r_fam and pp._RULE_SIGNATURE in _r_fam
+     and pp._RULE_FAMILY not in _r_plain)
+case("7e 贯穿偏好仅在含「湖」时注入",
+     pp._RULE_LAKE in _r_lake and pp._RULE_LAKE not in _r_plain)
+case("7f 住宿锚点规则仅在有 hotel_text 时注入",
+     pp._RULE_ANCHOR in _r_anchor and pp._RULE_ANCHOR not in _r_fam)
+case("7g 每日停留点数随档位变化（慢节奏 2-3 / 亲子 4-5 / 默认 4-6）",
+     _ns_slow.startswith("2-3") and _ns_fam.startswith("4-5")
+     and _ns_plain.startswith("4-6"),
+     f"slow={_ns_slow} family={_ns_fam} plain={_ns_plain}")
+case("7h 常开硬规则在所有档位都在（正餐/备选/全天大点等）",
+     all(r in _r_plain and r in _r_slow and r in _r_fam for r in pp.BASE_RULES),
+     f"BASE_RULES {len(pp.BASE_RULES)} 条")
+
+# 体积：普通查询应显著小于 v9 的全量 2849 字符
+_body = pp.PROPOSE_PROMPT.format(city="上海", days=2, query="上海2天经典深度游",
+                                 date_line="", weather_line="", n_stops=_ns_plain,
+                                 rules="\n".join(_r_plain), library_hint="")
+case("7i 普通查询 prompt 显著瘦身（v9 全量约 2849 字符）",
+     len(_body) < 2000, f"v10={len(_body)} 字符")
+
+# 判据复用既有实现，不新造正则（两套判据必然漂移是本项目老坑）
+_ppsrc = inspect.getsource(pp.select_rules)
+case("7j 判据复用 sequencer 现成正则，未新造",
+     "sequencer.SLOW_PACE_RE" in _ppsrc and "sequencer.is_family_query" in _ppsrc
+     and "re.compile" not in _ppsrc)
+# 缓存键必须含规则集，否则不同规则组合会命中同一条缓存
+case("7k 提案缓存键纳入命中的条件规则",
+     "sorted(_rule_hits)" in inspect.getsource(pp))
 
 print(f"\n{'❌ 失败 ' + str(len(FAIL)) + ' 项：' + '；'.join(FAIL) if FAIL else '🟢 全部通过'}")
 sys.exit(1 if FAIL else 0)

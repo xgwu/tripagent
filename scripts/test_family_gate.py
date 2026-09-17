@@ -32,7 +32,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 import glob  # noqa: E402
 
-from src import m2_planner, poi_db, toptw  # noqa: E402
+from src import m2_planner, poi_db, toptw, proposal_planner  # noqa: E402
 
 FAIL = []
 
@@ -169,9 +169,17 @@ case("7d proposal_planner 有主选亲子移除 + 补强池过滤",
      f"is_family_ok {src_pp.count('is_family_ok')} 处")
 import re
 _ver_m = re.search(r'PROPOSE_PROMPT_VER = "v(\d+)"', src_pp)
-case("7e 提案 prompt 含亲子规则且版本号已递增",
-     "亲子规则（针对带娃" in src_pp and _ver_m is not None and int(_ver_m.group(1)) >= 8,
-     f"VER=v{_ver_m.group(1) if _ver_m else '?'}（亲子规则引入于 v8，此后只许增）")
+# v10 起规则按需注入（不再全量堆进 PROPOSE_PROMPT），故改为断言**行为**：
+# 亲子查询必须真的注入亲子规则，非亲子查询必须不注入 —— 比查源码子串更强。
+_r_fam, _, _hits_fam = proposal_planner.select_rules("带5岁孩子去上海玩2天", None, None)
+_r_plain, _, _ = proposal_planner.select_rules("上海2天经典深度游", None, None)
+case("7e 亲子查询注入亲子规则、普通查询不注入，且版本号已递增",
+     proposal_planner._RULE_FAMILY in _r_fam
+     and proposal_planner._RULE_FAMILY not in _r_plain
+     and _ver_m is not None and int(_ver_m.group(1)) >= 8,
+     f"VER=v{_ver_m.group(1) if _ver_m else '?'}，命中={_hits_fam}（亲子规则引入于 v8，此后只许增）")
+case("7e2 亲子查询同时注入招牌体验规则（迪士尼类招牌不丢）",
+     proposal_planner._RULE_SIGNATURE in _r_fam)
 case("7f proposal_planner 的 _is_family_query 已委托统一判据",
      "return m2_planner.is_family_query(query)" in src_pp)
 

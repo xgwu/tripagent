@@ -69,6 +69,23 @@ def day_start_of(city: dict, day_no: int | None) -> str:
     return (city or {}).get("day_start") or "09:00"
 
 
+def day_end_of(city: dict, day_no: int | None) -> str:
+    """该天的结束时刻（HH:MM）。
+
+    默认取 city["day_end"]；若 city 带 `day_end_by_day = {day_no: "HH:MM"}`
+    则该天用覆盖值 —— 跨城联游「当晚 21:00 开车去下一城」时，出发城最后一天的
+    可用时间必须提前到出发时刻，否则求解器会一直排到 21:30，末个景点与
+    出发时刻重叠（2026-09-17 实测：苏堤春晓 20:00-21:30 撞上 21:00 出发）。
+    与 day_start_of 成对使用，sequencer 与 toptw 必须共用。
+    """
+    ov = (city or {}).get("day_end_by_day") or {}
+    if day_no is not None:
+        v = ov.get(day_no) or ov.get(str(day_no))
+        if v:
+            return v
+    return (city or {}).get("day_end") or "21:30"
+
+
 def is_full_day(p: dict) -> bool:
     """全天大点判定：duration_h ≥ 8（远郊主题乐园等，单程即接近/突破每日里程预算）。"""
     try:
@@ -214,7 +231,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
     # 按天起始时刻覆盖（跨城联游的抵达日）：城际驾驶占掉上午时，这一天的可用时间
     # 从「抵达时刻」而非 day_start 起算，否则会按整天打包点位、时间轴与现实脱节。
     day_start = poi_db.hhmm_to_h(day_start_of(city, day_no))
-    day_end = poi_db.hhmm_to_h(city["day_end"])
+    day_end = poi_db.hhmm_to_h(day_end_of(city, day_no))
     t = day_start
     timeline, travel_km, travel_h = [], 0.0, 0.0
     violations, repairs = [], 0
@@ -340,7 +357,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                                        "reason": f'到达{_fmt(start)}+{p["dur"]}h超出营业时间({p["open"]}-{p["close"]})'})
                 if start + p["dur"] > day_end:
                     violations.append({"poi": p["name"], "day": day_no,
-                                       "reason": f'超出当日活动时间上限 {city["day_end"]}'})
+                                       "reason": f'超出当日活动时间上限 {_fmt(day_end)}'})
                 used_meals.add(key)  # 一个餐窗最多一个美食 POI，普通餐块也不再插
                 timeline.append({"type": "poi", "id": p["id"], "name": p["name"],
                                  "start": _fmt(start), "end": _fmt(start + p["dur"]),
@@ -385,7 +402,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                                "reason": f'到达{_fmt(t)}+{p["dur"]}h超出营业时间({p["open"]}-{p["close"]})'})
         if t + p["dur"] > day_end:
             violations.append({"poi": p["name"], "day": day_no,
-                               "reason": f'超出当日活动时间上限 {city["day_end"]}'})
+                               "reason": f'超出当日活动时间上限 {_fmt(day_end)}'})
         timeline.append({"type": "poi", "id": p["id"], "name": p["name"],
                          "start": _fmt(t), "end": _fmt(t + p["dur"]),
                          "arrive": _fmt(arrive)})
@@ -423,7 +440,7 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
                          "start": _fmt(t - th), "end": _fmt(t)})
         if t > day_end + 1e-9:
             violations.append({"poi": "返程", "day": day_no,
-                               "reason": f'返回酒店时刻{_fmt(t)}超出当日活动时间上限 {city["day_end"]}'})
+                               "reason": f'返回酒店时刻{_fmt(t)}超出当日活动时间上限 {_fmt(day_end)}'})
         # 出发行（2026-09-15 报障 18）：此前「从酒店出发」只体现为时间轴首行的一个
         # 无源 hop（↳ 驾车 15 分钟），酒店名全程不出现——多城联游时前端更是完全看不到
         # 酒店（plan_multi 不返回 hotel 键，徽标/地图标记一起丢）。显式插入起点行，

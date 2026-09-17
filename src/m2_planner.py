@@ -243,13 +243,15 @@ MIN_IMPROVE_KM = 0.5    # 接受移动所需的最小总里程改善
 MAX_REBALANCE_SWEEPS = 2
 
 
-def _day_horizon(city: dict) -> int:
+def _day_horizon(city: dict, day_no: int | None = None) -> int:
     """TOPTW 同口径的每日时间预算（分钟）：日长 - 餐块预扣，保底 240。
 
     挪点容量预检必须与求解器同一口径，否则预检放行、TOPTW 仍剔（报障 14）。
+    day_no：跨城联游按天覆盖起止时刻（抵达日顺延 / 夜间转移日提前收尾）时必须传，
+    否则预检仍按整天算，把点挪进一个实际装不下的天。
     """
-    start_day = poi_db.hhmm_to_h(city["day_start"])
-    end_day = poi_db.hhmm_to_h(city["day_end"])
+    start_day = poi_db.hhmm_to_h(sequencer.day_start_of(city, day_no))
+    end_day = poi_db.hhmm_to_h(sequencer.day_end_of(city, day_no))
     return max(240, int((end_day - start_day) * 60) - toptw.MEAL_BUFFER_MIN)
 
 
@@ -287,7 +289,9 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
     # horizon 就不挪——挪完重解必被「主选锁定仍装不下」成片剔除（骑行 Day2 塞 8 点剔 5 实证）。
     # 注：单日主题（"其中一天骑行"）天此处按全局口径近似，预检偏松由 TOPTW 兜底
     _t_mode = sequencer.travel_mode(query or "")
-    _horizon = _day_horizon(city)
+    # 按天算 horizon：跨城联游下各天的可用时长可能不同（抵达日顺延、夜间转移日
+    # 提前收尾），用全局值会把点挪进一个实际装不下的天
+    _horizon_of = {d: _day_horizon(city, d) for d in days}
 
     def metric(dm):
         itin = sequencer.build_itinerary(dm, city, all_pois, date0=date0, hotel=hotel,
@@ -314,7 +318,8 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
                     cand = {k: list(v) for k, v in day_map.items()}
                     cand[i].remove(pid)
                     cand[j].append(pid)
-                    if _day_load(cand[j], all_pois, _t_mode) > _horizon:
+                    if _day_load(cand[j], all_pois, _t_mode) > _horizon_of.get(
+                            j, _day_horizon(city, j)):
                         continue  # 目标天装不下 → 不挪（TOPTW 剔点比里程差更伤）
                     km, v2, nd2 = metric(cand)
                     if v2 == 0 and nd2 == 0 and km + MOVE_PENALTY_KM < best_km - MIN_IMPROVE_KM:
