@@ -191,7 +191,10 @@ try:
     rs = sv.plan_multi(["苏州", "杭州"], "苏杭3天联游", 3, None, use_llm=False,
                        planner=_StubPlanner())
     _ns = rs.get("notices") or []
-    case("5g plan_multi 透出 notices（此前整块缺失）", len(_ns) == 2,
+    # 断言「两段的段内 notice 都被透出」而不是 notices 总数——2026-09-17 起
+    # plan_multi 还会追加 kind=intercity_transfer 的城际转移提示，按总数断言会误报。
+    _seg = [x for x in _ns if x.get("type") == "day_gap"]
+    case("5g plan_multi 透出两段的段内 notices（此前整块缺失）", len(_seg) == 2,
          str([x.get("message") for x in _ns]))
     case("5h 后段（杭州）的段内 Day1 被重写为 Day3",
          any((x.get("message") or "").startswith("Day3 来自杭州") for x in _ns),

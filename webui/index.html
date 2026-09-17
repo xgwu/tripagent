@@ -115,7 +115,7 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 
 <script>
 const DAY_COLORS=["#1a5fb4","#1d7a4c","#b7791f","#c0392b","#6b46c1"];
-const ICON={poi:"📍",meal:"🍽",hotel:"🏨"};
+const ICON={poi:"📍",meal:"🍽",hotel:"🏨",transfer:"🚗"};
 let CITY={};let LAST=null; // 最近一次规划结果（导出行程单用）
 const $=id=>document.getElementById(id);
 
@@ -449,7 +449,26 @@ async function drawRealRoutes(map,meta,r,token){
   if(!CITY.amap_key)return;
   const mode=routeMode(r.query);
   const legs=[];
-  for(const d of (r.itinerary.days||[])){
+  // 城际转移腿：时间轴里有 type=transfer 的天，把「上一天最后一个点 → 本天第一个点」
+  // 用 driving 真实路网画出来（跨城 150km+ 用 walking 画会得到荒谬折线）。
+  // 多城模式下 meta.pois 是各城合并集，两端坐标都取得到。
+  const days=r.itinerary.days||[];
+  for(let k=0;k<days.length;k++){
+    const d=days[k];
+    if(!(d.timeline||[]).some(x=>x.type==="transfer"))continue;
+    const prevPois=[];
+    for(let j=k-1;j>=0;j--){
+      const ps=(days[j].timeline||[]).filter(x=>x.type==="poi"&&meta.pois[x.id]);
+      if(ps.length){prevPois.push(ps[ps.length-1]);break;}
+    }
+    const nextPoi=(d.timeline||[]).find(x=>x.type==="poi"&&meta.pois[x.id]);
+    if(prevPois.length&&nextPoi){
+      const a=meta.pois[prevPois[0].id],b=meta.pois[nextPoi.id];
+      legs.push({day:d.day,color:"#6b46c1",mode:"driving",
+                 pts:[[a.lng,a.lat],[b.lng,b.lat]],intercity:true});
+    }
+  }
+  for(const d of days){
     const color=DAY_COLORS[(d.day-1)%DAY_COLORS.length];
     // 仅当「该天确实以酒店为出发/返回锚点」时才画酒店腿：多城联游的酒店只属于住宿城，
     // 若对所有天都补酒店腿，苏州天会被画出「苏州→杭州西湖→苏州」的假长途路线。
@@ -461,17 +480,22 @@ async function drawRealRoutes(map,meta,r,token){
     if(r.hotel&&hasHotel&&pts.length>1)pts.push([r.hotel.lng,r.hotel.lat]);
     if(pts.length>1)legs.push({day:d.day,color,pts});
   }
-  await Promise.all(legs.map(async({day,color,pts})=>{
+  await Promise.all(legs.map(async({day,color,pts,mode:legMode,intercity})=>{
+    const m=legMode||mode;
     for(let i=0;i<pts.length-1;i++){
       let poly=null;
       try{
-        const res=await fetch(`/api/route?mode=${mode}&o=${pts[i].join(",")}&d=${pts[i+1].join(",")}`);
+        const res=await fetch(`/api/route?mode=${m}&o=${pts[i].join(",")}&d=${pts[i+1].join(",")}`);
         const dd=await res.json();
         if(dd.ok&&dd.points&&dd.points.length>1)poly=dd.points;
       }catch(e){/* 回退直线 */}
       if(token!==MAP_TOKEN)return; // 快速连续规划时放弃过期渲染
-      if(poly){
-        const line=new AMap.Polyline({path:poly,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,strokeStyle:"dashed",strokeDasharray:[10,6],bubble:true});
+      // 城际腿即使拿不到路网也要画直线——否则用户完全看不到「今天跨了一座城」
+      const path=poly||(intercity?[pts[i],pts[i+1]]:null);
+      if(path){
+        const line=new AMap.Polyline(intercity
+          ?{path,strokeColor:color,strokeWeight:6,strokeOpacity:.85,strokeStyle:"solid",bubble:true}
+          :{path,strokeColor:color,strokeWeight:4.5,strokeOpacity:.9,strokeStyle:"dashed",strokeDasharray:[10,6],bubble:true});
         map.add(line);
         (DAY_LINES[day]=DAY_LINES[day]||[]).push(line);
         if(DAY_VIS[day]===false)line.hide(); // 渲染期间用户已关闭该天

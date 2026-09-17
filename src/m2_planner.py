@@ -190,6 +190,7 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
                                   time_limit_s=time_limit_s,
                                   main_bonus=main_bonus, soft_w=soft_w,
                                   hotel=hotel, mode=m, lock_mains=_faithful,
+                                  day_no=d,   # 抵达日起始时刻覆盖需按天生效
                                   forced={i for i in day_map[d]
                                           if i in (forced_ids or set())})
 

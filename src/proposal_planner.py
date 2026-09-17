@@ -118,6 +118,7 @@ REVISE_PROMPT = """原需求：{query}
 - 「无法落地」：该地点在 POI 库中不存在，须替换为同类/同区域的真实地点（优先参考下方清单）或删除，不要保留原名。
 - 「被约束剔除」：附有剔除原因（如里程预算、时间窗冲突），替换为与当天其他点更近、更兼容的点，或删除该点。
 - 「片区重复」：该点与相邻一天的某个点同在一片区（附距离），把它换成其他片区的同类点，使各天片区互不重叠；配套（咖啡店等）跟随当天新片区选且必须顺路（位于相邻主选之间或紧邻某主选 1.5 公里内）。
+- 「与前面某天重复」：同一个地点被排进了多天。保留它第一次出现的那天，把重复的这天换成同主题、不同片区的其他地点——绝不要简单删掉导致那天点数不足。
 - 其余地点、主题、顺序尽量原样保留；不要增加新的无法落地的地点。
 
 参考清单——以下{city}地点带完整数据（坐标/开放时间/适玩时长），排入即可直接落地：
@@ -190,34 +191,84 @@ def _library_hint(all_pois: dict) -> str:
                      for cat, names in sorted(groups.items()))
 
 
-def _ground_one(name: str, all_pois: dict, by_name: list) -> tuple:
-    """单点落地：返回 (poi_id|None, method)。四级：精确→包含→模糊。"""
-    key = _norm(name)
-    if not key:
-        return None, "empty"
-    for p in by_name:  # 精确
-        if _norm(p["name"]) == key:
-            return p["id"], "exact"
-    cands = []
-    # 包含（双向，取评分高者）；分店归一化变体一并参与（同品牌跨分店）
+# 包含匹配的最低覆盖率：库内名长度 / 提案名长度。低于此值说明「库内名只是提案名的
+# 一小截」，属于短名劫持（「拙政园」吃掉「拙政园与狮子林」），应交给拆分或 LLM 匹配。
+CONTAIN_COVER_MIN = 0.55
+# 并列连接词：LLM 常把两个地点塞进一个 stop（「拙政园与狮子林」「灵隐寺和飞来峰」）
+_CONJ_RE = re.compile(r"[、，,]|与|和|＋|\+|及")
+
+
+def _contain_candidates(name: str, by_name: list) -> list:
+    """包含匹配候选：返回 [(覆盖率, 库内名长度, poi)]，按覆盖率降序。
+
+    覆盖率 = 库内名长度 / 提案名长度（双向包含时取两者较长者作分母），
+    用它替代旧实现的「按 rating 取胜」——rating 与匹配质量无关，
+    高分短名会劫持长提案名（2026-09-17 实测：外滩 吃掉「外滩历史建筑群」）。
+    """
+    out = []
     for nm in [name] + _branch_variants(name):
         kn = _norm(nm)
         if not kn:
             continue
         for p in by_name:
             pn = _norm(p["name"])
-            if len(pn) >= 2 and (pn in kn or kn in pn):
-                cands.append(p)
-    if cands:
-        return max(cands, key=lambda p: p["rating"])["id"], "contain"
+            if len(pn) < 2:
+                continue
+            if pn in kn or kn in pn:
+                cover = min(len(pn), len(kn)) / max(len(pn), len(kn))
+                out.append((cover, len(pn), p))
+    out.sort(key=lambda x: (-x[0], -x[1], x[2]["id"]))
+    return out
+
+
+def _ground_one(name: str, all_pois: dict, by_name: list) -> tuple:
+    """单点落地：返回 (poi_id|None, method, extra_ids)。
+
+    四级：精确 → 包含（按覆盖率）→ 并列拆分 → 模糊。
+
+    extra_ids：提案把多个地点写进同一个 stop 时（「拙政园与狮子林」），
+    除主匹配外**额外**落地到的库内 id 列表 —— 旧实现会静默丢掉后半个地点。
+    """
+    key = _norm(name)
+    if not key:
+        return None, "empty", []
+    for p in by_name:  # 1. 精确
+        if _norm(p["name"]) == key:
+            return p["id"], "exact", []
+
+    # 2. 包含：按覆盖率取胜，且必须达到 CONTAIN_COVER_MIN
+    cands = _contain_candidates(name, by_name)
+    if cands and cands[0][0] >= CONTAIN_COVER_MIN:
+        return cands[0][2]["id"], f"contain({cands[0][0]:.2f})", []
+
+    # 3. 并列拆分：覆盖率不足往往是「一个 stop 写了两个地点」。逐段独立落地，
+    #    首段作主匹配、其余进 extra_ids，避免后半个地点被静默丢弃。
+    parts = [x.strip() for x in _CONJ_RE.split(name) if len(_norm(x)) >= 2]
+    if len(parts) >= 2:
+        hits = []
+        for part in parts:
+            pk = _norm(part)
+            hit = next((p for p in by_name if _norm(p["name"]) == pk), None)
+            if hit is None:
+                pc = _contain_candidates(part, by_name)
+                hit = pc[0][2] if (pc and pc[0][0] >= CONTAIN_COVER_MIN) else None
+            if hit is not None and hit["id"] not in [h["id"] for h in hits]:
+                hits.append(hit)
+        if hits:
+            return hits[0]["id"], f"split({len(hits)})", [h["id"] for h in hits[1:]]
+
+    # 4. 模糊
     best, ratio = None, 0.0
-    for p in by_name:  # 模糊
+    for p in by_name:
         r = difflib.SequenceMatcher(None, key, _norm(p["name"])).ratio()
         if r > ratio:
             best, ratio = p, r
     if best is not None and ratio >= 0.62:
-        return best["id"], f"fuzzy({ratio:.2f})"
-    return None, "unmatched"
+        return best["id"], f"fuzzy({ratio:.2f})", []
+    # 5. 覆盖率不足的包含匹配作为最后兜底（好过完全不落地），但标注低覆盖
+    if cands:
+        return cands[0][2]["id"], f"contain_low({cands[0][0]:.2f})", []
+    return None, "unmatched", []
 
 
 def _llm_match(unmatched: list, all_pois: dict, exclude_ids: set | None = None) -> dict:
@@ -265,18 +316,24 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
     day_map, themes, seen = {}, {}, set()
     stats = {"n_proposed": 0, "exact": 0, "contain": 0, "fuzzy": 0, "llm": 0,
              "unmatched": 0, "dup_skipped": 0, "gaps": [],
-             "n_alt": 0, "n_alt_hit": 0}
+             "n_alt": 0, "n_alt_hit": 0, "n_split_extra": 0, "dups": []}
     pending = []  # (day, name) 待 LLM 批量匹配
     pre = {}
+    extra = {}    # (day, name) -> [额外 poi_id]（一个 stop 写了多个地点时）
     alt_map = {}  # day -> [poi_id]
     for d in proposal.get("days", []):
         for s in d.get("stops", []):
             stats["n_proposed"] += 1
-            pid, method = _ground_one(s.get("name", ""), all_pois, by_name)
+            pid, method, extra_ids = _ground_one(s.get("name", ""), all_pois, by_name)
             if pid:
                 pre[(d.get("day"), s.get("name"))] = (pid, method)
-                stats["exact" if method == "exact" else
-                      ("contain" if method == "contain" else "fuzzy")] += 1
+                if extra_ids:
+                    extra[(d.get("day"), s.get("name"))] = extra_ids
+                    stats["n_split_extra"] += len(extra_ids)
+                _m0 = method.split("(")[0]
+                stats["exact" if _m0 == "exact" else
+                      ("contain" if _m0 in ("contain", "contain_low", "split")
+                       else "fuzzy")] += 1
             else:
                 pending.append({"day": d.get("day"), "name": s.get("name", ""),
                                 "note": s.get("note", "")})
@@ -285,9 +342,11 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
             if not isinstance(s, dict) or not s.get("name"):
                 continue
             stats["n_alt"] += 1
-            pid, _m = _ground_one(s.get("name", ""), all_pois, by_name)
+            pid, _m, _ex = _ground_one(s.get("name", ""), all_pois, by_name)
             if pid:
                 alt_map.setdefault(d.get("day"), []).append(pid)
+                for _e in _ex:  # 并列备选一并纳入（同为可选性质）
+                    alt_map.setdefault(d.get("day"), []).append(_e)
                 stats["n_alt_hit"] += 1
             else:
                 pending.append({"day": d.get("day"), "name": s.get("name", ""),
@@ -310,15 +369,29 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
         dd = d.get("day")
         if not isinstance(dd, int) or not (1 <= dd <= days):
             continue
-        ids, dropped_local = [], []
+        ids = []
         for s in d.get("stops", []):
-            hit = pre.get((dd, s.get("name")))
-            if not hit or hit[0] in seen:
-                if hit:  # 命中但跨天重复
-                    stats["dup_skipped"] += 1
+            nm = s.get("name")
+            hit = pre.get((dd, nm))
+            if not hit:
+                continue
+            if hit[0] in seen:
+                # 跨天重复：LLM 把同一个点排进了两天。旧实现只 +1 计数就静默丢弃 ——
+                # 既不进 gaps、也不降落地率（grounding_rate 只除 unmatched），
+                # 于是「落地率 100% 但实际少了点」，闭环也不会触发修正。
+                # 现在记入 dups 台账并在下方计入落地率分母的损失项。
+                stats["dup_skipped"] += 1
+                stats["dups"].append({"name": nm, "day": dd,
+                                      "poi_id": hit[0],
+                                      "note": s.get("note", "")})
                 continue
             seen.add(hit[0])
             ids.append(hit[0])
+            # 并列拆分出的额外地点：跟随同一天，同样参与跨天去重
+            for _e in extra.get((dd, nm)) or []:
+                if _e not in seen:
+                    seen.add(_e)
+                    ids.append(_e)
         if ids:
             day_map[dd] = ids
             themes[dd] = {"theme": d.get("theme", ""), "reason": d.get("reason", "")}
@@ -328,17 +401,23 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
         if not alt_map[dd]:
             del alt_map[dd]
     stats["alt_map"] = alt_map
-    # 去掉 stop 级重复计数口径：gaps 只保留真正的未落地提案
-    stats["grounding_rate"] = (round((stats["n_proposed"] - stats["unmatched"]) /
+    # 落地率口径（2026-09-17 修正）：分子须同时扣掉「未落地」与「跨天重复被丢」。
+    # 旧口径只扣 unmatched，于是 LLM 把同一个点排进两天时，落地率仍显示 100%，
+    # 而行程里实际少了一个点，闭环（GROUNDING_RATE_MIN=0.85）也不会被触发。
+    _lost = stats["unmatched"] + stats["dup_skipped"]
+    stats["grounding_rate"] = (round((stats["n_proposed"] - _lost) /
                                      max(stats["n_proposed"], 1), 3))
     return day_map, themes, stats
 
 
 def _revise_proposal(city: dict, query: str, days: int, proposal: dict,
-                     gaps: list, drops: list, hint: str) -> dict | None:
-    """闭环反馈：把未落地 gaps + 约束剔除 drops 打包回 LLM，要一版修正提案。
+                     gaps: list, drops: list, hint: str,
+                     dups: list | None = None) -> dict | None:
+    """闭环反馈：把未落地 gaps + 约束剔除 drops + 跨天重复 dups 打包回 LLM，要一版修正提案。
 
-    gaps: [{"name","note","day"}]；drops: [{"name","reason","day"}]
+    gaps: [{"name","note","day"}]；drops: [{"name","reason","day"}]；
+    dups: [{"name","day","poi_id"}] —— 同一个点被排进多天，后出现的那天会被丢弃，
+          必须让 LLM 换成别的点（否则那天凭空少一个点，且旧口径下落地率仍显示 100%）。
     LLM 不可用/解析失败返回 None（调用方保留原案）。
     """
     issues = []
@@ -346,6 +425,9 @@ def _revise_proposal(city: dict, query: str, days: int, proposal: dict,
         issues.append(f'- 「{g["name"]}」（Day {g.get("day", "?")}）无法落地——POI 库中不存在')
     for d in drops:
         issues.append(f'- 「{d["name"]}」（Day {d.get("day", "?")}）被约束剔除——{d.get("reason", "")}')
+    for u in (dups or []):
+        issues.append(f'- 「{u["name"]}」（Day {u.get("day", "?")}）与前面某天重复——'
+                      f'同一地点只能出现在一天，请把这天换成同主题的其他地点')
     if not issues:
         return None
     try:
@@ -884,9 +966,11 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         grounding["slow_proposal_truncated"] = _prop_truncated
     rounds_used = 0
     while (rounds_used < MAX_REVISE_ROUNDS
-           and (grounding["gaps"] or grounding["grounding_rate"] < GROUNDING_RATE_MIN)):
+           and (grounding["gaps"] or grounding.get("dups")
+                or grounding["grounding_rate"] < GROUNDING_RATE_MIN)):
         revised = _revise_proposal(city, query, days, proposal,
-                                   grounding["gaps"], [], hint)
+                                   grounding["gaps"], [], hint,
+                                   dups=grounding.get("dups"))
         if revised is None:
             break  # LLM 不可用/解析失败，保留原案走离线补强
         dm2, th2, g2 = _ground(revised, city, all_pois, days)

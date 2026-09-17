@@ -53,6 +53,22 @@ def is_family_query(query: str | None) -> bool:
     return bool(query and FAMILY_RE.search(query))
 
 
+def day_start_of(city: dict, day_no: int | None) -> str:
+    """该天的起始时刻（HH:MM）。
+
+    默认取 city["day_start"]；若 city 带 `day_start_by_day = {day_no: "HH:MM"}`
+    则该天用覆盖值 —— 跨城联游的抵达日被城际驾驶占掉上午时用它顺延。
+    sequencer 与 toptw 必须共用本函数，否则「排序器按 11:03 起算、求解器仍按
+    09:00 给预算」会让求解器多塞点，排序器再逐个判超时剔除（无谓抖动）。
+    """
+    ov = (city or {}).get("day_start_by_day") or {}
+    if day_no is not None:
+        v = ov.get(day_no) or ov.get(str(day_no))
+        if v:
+            return v
+    return (city or {}).get("day_start") or "09:00"
+
+
 def is_full_day(p: dict) -> bool:
     """全天大点判定：duration_h ≥ 8（远郊主题乐园等，单程即接近/突破每日里程预算）。"""
     try:
@@ -64,9 +80,15 @@ def is_full_day(p: dict) -> bool:
 # 优先级从上到下（一个查询命中多个主题时取最严格匹配项之前先按此序）
 # 注：family（亲子）不设里程上限——远郊大点与片区错配由提案层 _far_big_point_regroup 守门，
 #     守门层剔点会误伤亲子行程的必要远点（如极地海洋公园/野生动物世界）
+# driving（自驾）排在最后：与骑行/徒步同时出现时让位给后两者（更严格、更具体）。
+# 400km/天 对同城行程恒不触发（市内单日里程 30~80km），它的实际作用域是**含城际
+# 转移段的天**——跨城联游把 intercity 里程计入当天 travel_km 后，该预算才成为
+# 「一天最多开多远」的硬闸，超预算触发 _cap_km_repair 剔远点。
 THEME_PROFILES = [
     ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 15.0),
     ("hiking", re.compile(r"徒步|暴走|city\s*walk|遛弯", re.IGNORECASE), 8.0),
+    ("driving", re.compile(r"自驾|自己开车|开车去|租车|驾车|road\s*trip|driving",
+                           re.IGNORECASE), 400.0),
 ]
 
 
@@ -99,9 +121,13 @@ def travel_mode(query: str | None) -> str | None:
     """主题 → 通行时间模型（poi_db.travel_hours 的 mode 参数）。
 
     cycling/hiking 有专属速度模型（骑行/步行）；family 等仍按车驾混合口径。
+    driving 也在白名单内，但 poi_db.travel_hours 对它**不设专属分支**——自驾的
+    同城通行时间本来就等于默认口径（travel_cache 存的就是 OSRM/高德驾车时长），
+    传 "driving" 与传 None 的时长完全一致；放进白名单只为让 _hop_label 能把
+    段标签写成「自驾」而不是「车程」。
     """
     theme = detect_theme(query)
-    return theme if theme in ("cycling", "hiking") else None
+    return theme if theme in ("cycling", "hiking", "driving") else None
 
 
 _CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE)
@@ -110,7 +136,8 @@ _CYCLE_RE = re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORE
 # 主题关键词与「一天」同句出现 → 主题只作用于承载天，其余天保持默认车驾口径。
 # 否则整单骑行口径会把非主题日的 1.2~6km 接驳也标成「骑行」（苏州 3 天案例）。
 _DAY_SCOPED_RE = re.compile(
-    r"一[天日][^，。;；！!？?]{0,8}(骑行|骑车|单车|自行车|徒步|暴走|city\s*walk)",
+    r"一[天日][^，。;；！!？?]{0,8}"
+    r"(骑行|骑车|单车|自行车|徒步|暴走|city\s*walk|自驾|租车|驾车)",
     re.IGNORECASE)
 
 # 自然锚点特征：tag 命中或名称含自然地理词 —— 单日主题承载天按命中数打分挑选
@@ -184,7 +211,9 @@ def _build_timeline(pois: list, city: dict, day_no: int, weekday: str | None = N
     午餐时段永远是正餐，咖啡只作为逛点间隙的休憩。
     """
     meals = city["meal_slots"]
-    day_start = poi_db.hhmm_to_h(city["day_start"])
+    # 按天起始时刻覆盖（跨城联游的抵达日）：城际驾驶占掉上午时，这一天的可用时间
+    # 从「抵达时刻」而非 day_start 起算，否则会按整天打包点位、时间轴与现实脱节。
+    day_start = poi_db.hhmm_to_h(day_start_of(city, day_no))
     day_end = poi_db.hhmm_to_h(city["day_end"])
     t = day_start
     timeline, travel_km, travel_h = [], 0.0, 0.0
@@ -424,7 +453,9 @@ def scan_gaps(timeline: list, by_id: dict | None = None) -> list:
     gaps = []
     prev_end, prev_name, pending = None, "", 0
     for e in timeline:
-        if e.get("type") == "hop":
+        # transfer（城际转移段）与 hop 同类：都是「在路上」的时间，不是空档。
+        # 未登记的 type 会被整行跳过（既不计时也不作时间锚点），空档披露随之失真。
+        if e.get("type") in ("hop", "transfer"):
             pending += int(e.get("min") or 0)
             continue
         if e.get("type") not in ("poi", "meal", "hotel"):
@@ -475,12 +506,14 @@ def _fmt(h: float) -> str:
 def _hop_label(km: float, th: float, mode: str | None = None) -> str:
     """通行段标签（随出行方式切换）：
     默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / 1.2~8km 骑行 / >8km 车程；
-    徒步：<3km 步行，否则车程。"""
+    徒步：<3km 步行，否则车程；自驾：<1.2km 步行，否则自驾（时长口径同默认）。"""
     if mode == "cycling":
         mode_s = "步行" if km < poi_db.HOP_WALK_KM else \
             ("骑行" if km <= poi_db.CYCLE_MAX_KM else "车程")
     elif mode == "hiking":
         mode_s = "步行" if km < poi_db.WALK_MODE_MAX_KM else "车程"
+    elif mode == "driving":
+        mode_s = "步行" if km < poi_db.HOP_WALK_KM else "自驾"
     else:
         mode_s = "步行" if km < poi_db.HOP_WALK_KM else "车程"
     return f"{mode_s} {int(round(th * 60))} 分钟 · {km:.1f}km"
@@ -695,7 +728,8 @@ def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
     约束感知：每次剔点只接受「里程收敛且不引入新违规」的候选（按最远腿降序逐个试剔）；
     剔谁都违规则停止——硬约束优先于里程预算，宁可超预算也不产出违规行程。
     """
-    label = {"cycling": "骑行", "hiking": "徒步", "family": "亲子"}.get(theme, "骑行")
+    label = {"cycling": "骑行", "hiking": "徒步", "family": "亲子",
+             "driving": "自驾"}.get(theme, "骑行")
     pois = list(day_pois)
     dropped = []
     while len(pois) > 2:

@@ -135,11 +135,25 @@ def collect(city: str, key: str, opener, per_kw: int) -> list:
 
 
 def _rating(p: dict) -> float:
-    c = p.get("cost") or ""
-    m = re.search(r"(\d)", str(p.get("biz_ext", {}).get("rating") or ""))
-    if m:
-        return float(m.group(1))
-    return 4.0
+    """高德 biz_ext.rating（如 "4.7"）→ 评分。
+
+    ⚠️ 2026-09-17 修复：旧实现是 `re.search(r"(\\d)", ...)` **只取首位数字**，
+    于是 4.7 与 4.0 都变成 4.0。后果不是「评分不准」而是**选点近乎随机**：
+    `sanitize` 用 `sort(key=(-rating, name))` 取前 80，绝大多数点评分都被压成 4.0
+    后，排序退化成按名字的 Unicode 序 —— 12 城探测全部撞满 80 上限，
+    被丢掉的 30~70 个点实际是「名字排在后面」的点，与质量无关。
+    现在解析完整浮点值；同时删掉此前赋值后从未使用的 `cost` 死代码。
+    """
+    raw = str(p.get("biz_ext", {}).get("rating") or "").strip()
+    m = re.search(r"\d+(?:\.\d+)?", raw)
+    if not m:
+        return 4.0
+    try:
+        v = float(m.group(0))
+    except ValueError:
+        return 4.0
+    # 高德评分域为 0~5；越界值（脏数据）按缺省处理，避免污染排序与 rating 字段
+    return v if 0.0 < v <= 5.0 else 4.0
 
 
 # 名称脏数据过滤：高德类目词（如「地标」「步行街」）会命中公司/商户等非景点
@@ -181,7 +195,10 @@ def build_city_file(city: str, center: dict, pois: list, dry: bool) -> str:
             "duration_h": CATEGORY_DEFAULTS[p["category"]]["duration_h"],
             "open": CATEGORY_DEFAULTS[p["category"]]["open"],
             "close": CATEGORY_DEFAULTS[p["category"]]["close"],
-            "best_time": "any", "price": 0, "rating": int(p["rating"]) or 4,
+            # SOP（docs/city-pipeline.md）要求 rating 归一化为 {3,4,5}：
+            # 四舍五入而非 int() 截断（旧实现把 4.7 截成 4），并钳在 3~5
+            "best_time": "any", "price": 0,
+            "rating": max(3, min(5, int(round(p["rating"])) or 4)),
             "area": "central", "family_ok": CATEGORY_DEFAULTS[p["category"]]["family_ok"],
             "note": (f"坐标/名称来自高德采集{('，@' + p['addr']) if p['addr'] else ''}；"
                      "营业时间与闭馆日待人工核实"),
