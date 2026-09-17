@@ -4,19 +4,38 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 
 通用大模型的旅行「品味」很好，但直接生成的行程不可行：地点幻觉、营业时间冲突、跨天重复、里程不现实。TripAgent 让 LLM 凭世界知识决定「去哪、为什么去」，本地结构化 POI 库 + 运筹优化保证行程**物理可行**（真实路网时间、营业窗口、闭馆日、餐窗、里程预算）且**结构最优**（TOPTW 排序与可行性）。防幻觉不靠限制提案，而靠落地匹配——未落地的提案自动成为「POI 库缺口采购清单」，反向驱动数据扩容。LLM 不可用时全链路确定性降级，服务永不中断。
 
-> 🌐 **线上运行中**：https://tripagent-planner2-80644.app.workbuddy.host/
+> 🌐 **线上运行中**：https://tripagent-planner2.app.workbuddy.host/
 >
 > 📖 深度文档：[里程碑详情](docs/README-milestones.md) · [项目报告 v3](docs/TripAgent-项目报告.html) · [架构设计](docs/TripAgent-架构设计.html) · [TOPTW 算法报告](docs/TripAgent-TOPTW算法报告.html)
 
 | 12 城市 | 722 POI | 46,575 对交通缓存 | 评测硬违规 | 回归用例 | 端到端耗时 |
 |---|---|---|---|---|---|
-| 沪/京/宁/粤/蓉/杭/汉/苏/盐/西安/重庆/长沙 | 结构化库（三源核实） | OSRM L1 + 高德 L2 实况 | **0**（12 城 × 多主题 21 组冒烟） | **18/18**（12 城全覆盖） | **12.9s**（优化前 23.3s，-45%） |
+| 沪/京/宁/穗/蓉/杭/汉/苏/盐/西安/重庆/长沙 | 结构化库（三源核实） | OSRM L1 + 高德 L2 实况 | **0**（12 城 × 多主题 21 组冒烟） | **18/18**（12 城全覆盖） | **12.9s**（优化前 23.3s，-45%） |
+
+## 支持城市（12 城 · 722 POI）
+
+| 城市 | POI | 库内结构（类目 Top） | 一句话画像 |
+|---|---|---|---|
+| 广州 | 79 | food 15 · culture 14 · nature 11 | 岭南文化 + 美食之都，唯一含 KTV 子类的城市 |
+| 成都 | 75 | nature 18 · culture 15 · history 12 | 休闲之都：熊猫、公园茶馆、川菜 |
+| 苏州 | 75 | culture 21 · food 12 · nightlife 10 | 园林之城，环太湖骑行沿线点最全 |
+| 北京 | 74 | culture 15 · history 14 · nature 13 | 皇城古迹 + 博物馆密度之王 |
+| 上海 | 69 | food 19 · photo 8 · culture 8 | 都会地标 + 弄堂梧桐区，餐饮库最厚 |
+| 杭州 | 57 | culture 17 · nature 15 | 西湖环线 + 茶文化，亲子动物点齐备（动物园/野生动物世界） |
+| 武汉 | 50 | culture 10 · family 8 · food 7 | 江城两江四岸，黄鹤楼 + 东湖绿道 |
+| 西安 | 54 | food 14 · culture 10 · religion 8 | 千年古都：城墙、回坊、碑林 |
+| 南京 | 49 | culture 15 · history 8 | 六朝古都 + 1912 街区夜生活 |
+| 重庆 | 48 | photo 8 · history 8 · food 8 | 8D 山城夜景 + 火锅 |
+| 长沙 | 47 | food 10 · history 9 | 娱乐之都 + 夜经济 |
+| 盐城 | 45 | nature 14 · food 10 | 湿地生态（丹顶鹤/麋鹿）+ 淮扬风味 |
+
+> 每个点均含：GCJ-02 坐标、营业时段（含闭馆日）、适玩时长、类目标签、实拍图。新城市需求欢迎提 issue / 参照 [扩城 SOP](scripts/onboard_city.sh) 自行开城。
 
 ## 核心链路（M7 经验提案 + M11 忠实执行）
 
 ```
 需求文本 → 0·多轮澄清（LLM 保守判断需求缺失，至多追问一问，选项卡片交互）
-        → A·世界知识提案（LLM 自由生成多日行程：主选 + note + alternates + 招牌/片区/餐窗规则，prompt v9）
+        → A·世界知识提案（LLM 自由生成多日行程：主选 + note + alternates + 招牌/片区/餐窗规则，prompt v10 常开硬规则+条件规则按需注入）
         → B·落地匹配（四级回库：精确 → 分支变体 → 包含/模糊 difflib≥0.62 → LLM 辅助；失败记入库缺口台账）
         → C·TOPTW 求解（OR-Tools 逐日：营业时间窗 + 酒店锚点 + 闭馆硬过滤；忠实模式池=主选，只排序）
         → D·闭环与文案（跨天重平衡 → alt 净零换位 → 缺口/剔除回传 LLM 修正 ≤2 轮 → 文案对齐最终时间轴）
@@ -58,7 +77,7 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 # 1. 依赖（唯一可选第三方依赖为 ortools）
 pip install -r requirements.txt
 
-# 2. 配置密钥：复制 secrets.example.json 为 secrets.json 并填入真实值（secrets.json 不进 git）
+# 2. 配置密钥：复制 secrets.json.example 为 secrets.json 并填入真实值（secrets.json 不进 git）
 #    deepseek_api_key / amap_key（Web 服务）/ amap_js_key（前端 JSAPI）
 #    业务配置（模型名、功能开关等）放 config.json，随 git 提交
 #    开关：anchor_hard_guarantee（住宿锚点硬保障，默认 false）/ toptw_faithful_mode（忠实执行，默认 true）
@@ -123,13 +142,14 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 ## 架构
 
 ```
-webui/        单页前端（零框架，729 行）+ 纯 stdlib HTTP 服务（1,131 行，QuickBindServer）
-src/          17 文件 4,174 行
+webui/        单页前端（零框架，753 行）+ 纯 stdlib HTTP 服务（1,512 行，QuickBindServer）
+src/          18 文件 4,620 行
               proposal_planner(M7 提案+落地+守门+餐窗对账) / m2_planner(TOPTW 求解编排) / m1_planner(贪婪)
               sequencer(时间轴+硬约束+修复链+餐窗分配+慢节奏档) / toptw(OR-Tools 建模+忠实模式)
-              weather(天气感知) / gap_log(POI 缺口台账) / hotel(住宿锚点) / query_days(天数解析) / offline_planner(离线兜底)
-data/         *_pois.json ×12 城 / travel_cache.json(46,575 对) / route_cache.json / photo_cache.json / shares/
-scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
+              intercity(城际转移段: 三级驾车时长模型+转移日/夜间转移) / weather(天气感知)
+              gap_log(POI 缺口台账) / hotel(住宿锚点) / query_days(天数解析) / offline_planner(离线兜底)
+data/         *_pois.json ×12 城 / travel_cache.json(46,575 对) / intercity_cache.json / route_cache.json / photo_cache.json / shares/
+scripts/      44 个运维与测试脚本 6,010 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
 .github/      ci.yml + gate.yml —— push/PR 自动执行发布门禁
 ```
 
@@ -164,6 +184,7 @@ scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门�
 - **M15** 空档治理与点名召回：日内空档 357→60min（餐窗提前容差 + 等待段补餐 + 空档分类披露）、点名/远郊召回三层修复、19:00 后开门点 horizon 放宽、统一测试 runner 与纯 Python 发布门禁、多城联游住宿锚点可见性（`plan_multi` 字段透出 + 时间轴 hotel 行 + 分段 notice Day 重映射）
 - **M16** 开城盐城（第 9 城，45 POI）：全库 9 城 573 点、交通缓存 39,295 对、实拍图 9 城 100%；开城流水线跑通「采集 → 精修 → OSRM 矩阵 → 照片 → 七处注册 → 九城校验 → LLM 冒烟」
 - **M17** 三城齐开（西安 54 / 重庆 48 / 长沙 47）：全库 **12 城 722 点**、交通缓存 **46,575 对**、库内点位实拍图 **722/722 = 100%**；回归用例 15→18；LLM 冒烟 21 组（12 城 × 多主题）全部 0 违规 / 100% 落地 / 忠实模式；开城中修掉「`family_ok=false` 误标把正常点从亲子链静默剔除」（西安碑林博物馆）与「`build_travel_cache.py` 把 L2 城市（苏州）降级为 L1 直线兜底」两处数据/工程回归
+- **M18** 城际转移与 prompt v10（首次 feature branch + PR 工作流，PR #1/#2）：新增 `src/intercity.py`——跨城驾车时长三级模型（磁盘缓存 → 高德 driving → 直线兜底）、≥4h 独占转移日、夜间转移挂出发城当天末尾、抵达日顺延；新增**自驾主题**（400km/日预算）；提案 prompt 升 v10（7 条常开硬规则 + 6 条条件规则按需注入，冲突从根源消失，普通查询 prompt 2849→1567 字符）+ 夜间转移日提前收尾；经 PR 合入修复设计审查发现的 6 个缺陷
 
 ## Roadmap
 
