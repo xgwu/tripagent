@@ -191,3 +191,9 @@ scripts/      40 个运维与测试脚本 5,231 行（扩城/扩库/校验/门�
 ## 免责
 
 行程时间为估算，出发前请再次确认景点当日开放情况。高德/OSRM/DeepSeek/open-meteo 服务条款适用其各自平台。
+
+## 开源协议
+
+- **代码**（`src/`、`webui/`、`scripts/`）：按 [AGPL-3.0](./LICENSE) 授权——修改后对外提供网络服务同样必须开源，欢迎贡献回馈
+- **POI 策展数据**（`data/*_pois.json`）：按 [CC BY-NC 4.0](./LICENSE-DATA.md) 单独授权——署名可自由使用与分享，**商业使用需另行许可**
+- 运行需自备 API key：高德开放平台（POI/路线）、DeepSeek（LLM），`secrets.json` 不随仓库分发（参照 `secrets.json.example` 配置）
