@@ -16,5 +16,23 @@
   "km": 335.5,
   "source": "amap-driving",
   "pair": "上海→盐城"
+ },
+ "安顺|贵阳": {
+  "minutes": 73.2,
+  "km": 88.0,
+  "source": "amap-driving",
+  "pair": "贵阳→安顺"
+ },
+ "安顺|黄果树": {
+  "minutes": 46.0,
+  "km": 46.2,
+  "source": "amap-driving",
+  "pair": "安顺→黄果树"
+ },
+ "西江千户苗寨|黄果树": {
+  "minutes": 258.0,
+  "km": 335.4,
+  "source": "amap-driving",
+  "pair": "黄果树→西江千户苗寨"
  }
 }
