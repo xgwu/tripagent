@@ -51,6 +51,10 @@ def validate_city(cname: str) -> tuple[int, int]:
     center = db["center"]
     errs, warns = [], []
     ids = set()
+    # 城市级字段：province 是目的地解析层区分「省/区域」的唯一口径
+    # （2026-09-21：「贵州5日自驾游」需靠它展开成受支持目的地）
+    if not (db.get("province") or "").strip():
+        errs.append("城市级字段 province 缺失（目的地解析层依赖它区分省/区域）")
     prefix = "".join(w[0].lower() for w in ["placeholder"])  # 占位，id 前缀不做强校验
     for p in pois:
         pid = p.get("id", "?")

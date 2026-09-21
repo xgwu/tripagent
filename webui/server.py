@@ -230,6 +230,162 @@ def detect_multi_city(query: str) -> list:
     return found if len(found) >= 2 else []
 
 
+# ---- 目的地解析（2026-09-21）：把「区域/省份」也解析成受支持的目的地 ----
+# 背景：原先只有两个出口——精确命中白名单，否则回落 DEFAULT_CITY。于是
+#   ① 「贵州5日自驾游」→ 400 暂不支持（用户可见，但功能缺失）
+#   ② 「川西4日游」  → **静默排成上海**（更糟：不报错、还标 from_query=true）
+# 解析层把「目的地」与「城市名」解耦：省级/区域需求交给 LLM 从受支持清单里挑，
+# 挑不出就明确报错，绝不回落默认城市。
+_DEST_META: list | None = None
+
+
+def dest_meta() -> list:
+    """[(city, province, n_pois)]，按 CITIES 顺序；只取三个字段，不加载整城 POI。"""
+    global _DEST_META
+    if _DEST_META is None:
+        out = []
+        for c in CITIES:
+            try:
+                with open(os.path.join(ROOT, "data", f"{c}_pois.json"),
+                          encoding="utf-8") as f:
+                    d = json.load(f)
+                out.append((c, (d.get("province") or "").strip(), len(d.get("pois") or [])))
+            except (OSError, ValueError):
+                out.append((c, "", 0))
+        _DEST_META = out
+    return _DEST_META
+
+
+# 离线路径的「地名」判据：出现这些后缀/大区词却解析不出目的地 → 明确报错，
+# 绝不回落默认城市（实测「川西4日游」曾被静默排成上海）
+_PLACE_SUFFIX_RE = re.compile(r"[\u4e00-\u9fa5]{2,6}(?:省|自治区|自治州|地区)")
+_REGION_WORDS = ("黔东南", "黔西南", "黔南", "黔北", "川西", "川南", "川北",
+                 "江南", "华东", "华南", "华中", "华北", "西北", "西南", "东北",
+                 "中原", "岭南", "闽南", "湘西", "赣南", "皖南", "苏北", "苏南",
+                 "浙南", "浙北", "塞北", "坝上", "滇西")
+
+
+def look_place_like(query: str) -> str:
+    """需求里提到的「地名片段」（但我们解析不出受支持目的地）。没有则返回 ""。"""
+    q = query or ""
+    m = _PLACE_SUFFIX_RE.search(q)
+    if m:
+        return m.group(0)
+    for w in _REGION_WORDS:
+        if w in q:
+            return w
+    return ""
+
+
+def _dest_capacity() -> dict:
+    """{city: n_pois} —— 降级路径按库容挑目的地时用。"""
+    return {c: n for c, _p, n in dest_meta()}
+
+
+# 大区词 → 所属省：仅用于「不支持该区域」的报错里给替代建议（川西 → 四川 → 成都）
+_REGION_PROVINCE = {"川西": "四川", "川南": "四川", "川北": "四川",
+                    "黔东南": "贵州", "黔西南": "贵州", "黔南": "贵州", "黔北": "贵州",
+                    "苏北": "江苏", "苏南": "江苏", "浙南": "浙江", "浙北": "浙江",
+                    "湘西": "湖南"}
+
+
+def suggest_for_region(unsupported: str) -> list:
+    """该地名若属于我们已覆盖的省份，返回该省受支持目的地（用于报错里的替代建议）。"""
+    u = unsupported or ""
+    if not u:
+        return []
+    prov = _REGION_PROVINCE.get(u, "")
+    if not prov:
+        for p in {p for _c, p, _n in dest_meta() if p}:
+            if p in u or u in p:
+                prov = p
+                break
+    if not prov:
+        return []
+    return [c for c, p, _n in dest_meta() if p == prov][:6]
+
+
+def resolve_destinations(query: str, nl: dict | None, days: int) -> dict:
+    """把需求解析成受支持目的地列表。返回 {dests, method, unsupported}。
+
+    四级（越靠前越确定）：
+      ① explicit —— 需求里直接写了受支持城市/景区名（子串命中，不花 LLM）
+      ② llm      —— LLM 从受支持清单里挑（含省份/区域需求，如「贵州5日自驾」）
+      ③ province —— LLM 不可用：按需求里出现的省份机械展开（降级，会出 notice）
+      ④ none     —— 解析不出，由调用方决定报错还是用默认城市
+    """
+    found = detect_cities(query)
+    if found:
+        return {"dests": found, "method": "explicit", "unsupported": ""}
+    nl = nl or {}
+    cap = max(1, min(int(days or DEFAULT_DAYS), MAX_DAYS))
+    picked = [c for c in (nl.get("destinations") or []) if c in CITIES]
+    if not picked:  # 兼容既有字段（P5 起就有，不能丢）
+        picked = [c for c in (nl.get("multi_cities") or []) if c in CITIES]
+    seen, uniq = set(), []
+    for c in picked:
+        if c not in seen:
+            seen.add(c)
+            uniq.append(c)
+    if uniq:
+        return {"dests": uniq[:cap], "method": "llm", "unsupported": ""}
+    provs = {p for _c, p, _n in dest_meta() if p}
+    hit = [p for p in sorted(provs, key=len, reverse=True) if p in (query or "")]
+    if hit:
+        cap_n = _dest_capacity()
+        want = [c for c, p, _n in dest_meta() if p in hit]
+        want.sort(key=lambda c: -cap_n.get(c, 0))
+        # 降级路径宁少勿滥：LLM 能考虑城际驾车时间挑 2~4 个，机械展开没这个判断力，
+        # 取库容最大的前几个（至少 1 个），并靠 notice 明确告知这是降级结果
+        return {"dests": want[:max(1, min(cap, 3))], "method": "province", "unsupported": ""}
+    return {"dests": [], "method": "none",
+            "unsupported": (nl.get("unsupported_region") or "").strip()
+            or look_place_like(query)}
+
+
+def plan_route_decision(query: str, nl: dict | None, days: int,
+                        city_param: str = "") -> dict:
+    """「这次规划去哪里」的决策——集中成一个**纯函数**，便于单测。
+
+    返回 {multi, cname, notice, error}：multi 非空（≥2）走跳城；cname 有效走单城；
+    error 非空时调用方直接 400。
+
+    ⚠️ 为什么必须集中：解析分支（显式 / LLM / 省份降级 / 报错）与「单城校验」耦合在
+    HTTP handler 里时，多城路径会把 cname 留成空串，随后被 `cname not in CITIES`
+    误判成 400「未能识别」——2026-09-21 实测「苏杭3日游」（别名多城）整条链路被打回，
+    「贵州5日自驾游」同样中招。抽成纯函数后这类接线错能被单测拦住。
+    """
+    _unknown = (f"未能识别目的地城市（当前支持：{'、'.join(CITIES)}）。"
+                "试试在需求里写明，如「杭州3天…」")
+    city_param = (city_param or "").strip()
+    if city_param and city_param not in CITIES:
+        return {"multi": [], "cname": "", "notice": [], "error": _unknown}
+    if city_param:   # 显式 ?city= 参数优先，但查询本身是多城时仍走跳城（既有行为）
+        return {"multi": detect_multi_city(query), "cname": city_param,
+                "notice": [], "error": None}
+    res = resolve_destinations(query, nl, days)
+    dests = res["dests"]
+    notice = []
+    if res["method"] == "province":
+        notice.append({
+            "kind": "destinations_degraded",
+            "message": (f"LLM 未给出目的地，已按省份机械展开为{'、'.join(dests)}"
+                        "（仅按库容挑，未考虑行程动线），可自行指定想去的地方")})
+    if len(dests) >= 2:
+        return {"multi": dests, "cname": "", "notice": notice, "error": None}
+    if len(dests) == 1:
+        return {"multi": [], "cname": dests[0], "notice": notice, "error": None}
+    if res["unsupported"]:
+        _alt = suggest_for_region(res["unsupported"])
+        _tip = (f"；我们支持同在{_REGION_PROVINCE.get(res['unsupported'], '该省')}的"
+                f"{'、'.join(_alt)}" if _alt else "")
+        return {"multi": [], "cname": "", "notice": notice,
+                "error": (f"暂不支持目的地「{res['unsupported']}」{_tip}。"
+                          f"当前支持：{'、'.join(CITIES)}")}
+    # 需求里完全未提地名 → 保持既有默认城市行为（不得扩展到「提了但解析不出」的情形）
+    return {"multi": [], "cname": DEFAULT_CITY, "notice": notice, "error": None}
+
+
 # P4 纯自然语言交互：目的地城市/出发日期/住宿锚点均可从需求文字提取
 DEFAULT_CITY = "上海"
 _WEEKDAY = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
@@ -348,16 +504,23 @@ def _llm_preflight(query: str) -> dict | None:
     from src import llm_client
     if not (query or "").strip() or not llm_client.llm_available():
         return None
-    qkey = "P:" + hashlib.sha1(query.encode("utf-8")).hexdigest()
+    # 缓存键带 schema 版本：2026-09-21 前置解析新增 destinations/unsupported_region
+    # 两个字段。不升版本的话，旧结构（无这两个字段）会被直接复用 →
+    # 「贵州5日自驾游」仍走老路径报 400（实测踩过）。输出结构变更必须升版本。
+    qkey = "P2:" + hashlib.sha1(query.encode("utf-8")).hexdigest()
     hit = _nl_cache_get(qkey)
     if hit is not None:
         return hit or None
     today = _date.today().isoformat()
+    # 受支持目的地清单（带省份）——LLM 只能从这里挑，库内没有的目的地排不了
+    _dlist = "、".join(f"{c}（{p}）" if p else c for c, p, _n in dest_meta())
     sys_p = (
         "你是旅行行程助手的前置分析器，对用户需求一次完成「参数抽取」和「澄清判断」，"
         '只输出 JSON：{"city": "目的地城市名或null", "days": 行程天数整数或null, '
         '"date0": "出发日期YYYY-MM-DD或null", "hotel": "住宿酒店名或区域名或null", '
         '"multi_cities": ["多城联游时的城市列表或null"], '
+        '"destinations": ["从下方受支持清单里挑出的目的地，按行程先后排序；挑不出填 null"], '
+        '"unsupported_region": "需求提到但我们未覆盖的地名（如 川西），没有就 null", '
         '"need": 是否需要追问布尔值, "question": "一句话追问或null", '
         '"options": ["选项1", "选项2"]}。\n'
         "抽取规则：相对日期（明天/下周六/月底/国庆等）以今天为基准换算；"
@@ -372,6 +535,15 @@ def _llm_preflight(query: str) -> dict | None:
         "不问的：目的地城市（未提及会用默认城市）、预算、交通方式、住宿（未提及就不排酒店）、"
         "具体日期（未提及就按近期规划）。只问最关键的一个问题，选项 2~4 个、每个不超过 12 字；"
         "不追问时 question/options 填 null。\n"
+        f"受支持目的地清单（destinations 只能从这里选，不得编造）：{_dlist}\n"
+        "目的地选择规则（destinations 字段）：\n"
+        "- 用户提到省/大区（贵州、江南、黔东南…）而不是具体城市 → 从清单里挑出 2~4 个，"
+        "按行程先后排序；要考虑城际驾车时间，不要贪多\n"
+        "- 行政区同名但实际相距很远的不算同一趟（如「川西」不能用「成都」代替，"
+        "应填 unsupported_region）\n"
+        "- 清单里没有该区域的任何目的地 → destinations 填 null，并把该地名填进 "
+        "unsupported_region\n"
+        "- 用户已点名具体城市/景区时，destinations 与 city 保持一致\n"
         f"今天是 {today}。"
     )
     try:
@@ -394,6 +566,15 @@ def _llm_preflight(query: str) -> dict | None:
             mc = [x for x in mc if isinstance(x, str) and x.strip() in CITIES]
             if len(mc) >= 2:
                 nl["multi_cities"] = mc
+        ds = obj.get("destinations")
+        if isinstance(ds, list):
+            ds = [x.strip() for x in ds
+                  if isinstance(x, str) and x.strip() in CITIES]
+            if ds:
+                nl["destinations"] = ds[:MAX_DAYS]
+        ur = obj.get("unsupported_region")
+        if isinstance(ur, str) and ur.strip() and ur.strip() not in CITIES:
+            nl["unsupported_region"] = ur.strip()[:12]
         d = obj.get("days")
         if isinstance(d, int) and 1 <= d <= 5:
             nl["days"] = d
@@ -1117,6 +1298,8 @@ def city_meta(name: str) -> dict:
         city = poi_db.load_city(name)
         CITY_META[name] = {
             "name": name,
+            # province 透出给前端：区域（省）也作为一等入口展示/分组
+            "province": (city.get("province") or "").strip(),
             "n_pois": len(city["pois"]),
             "n_closed": sum(1 for p in city["pois"] if p.get("closed_days")),
             "pois": {p["id"]: {"id": p["id"], "name": p["name"], "lat": p["lat"], "lng": p["lng"],
@@ -1272,25 +1455,14 @@ class Handler(BaseHTTPRequestHandler):
                 query = q.get("query") or ""
                 # ---- P5 NL 提取健壮化：正则未命中时 LLM 结构化抽取兜底（llm=0 离线路径不触发） ----
                 nl = llm_extract(query) if (q.get("llm", "1") == "1" and query) else None
-                # ---- P4 纯自然语言：城市可从需求文字识别，未提及用默认城市 ----
-                multi = detect_multi_city(query)
-                if not multi and nl and nl.get("multi_cities"):
-                    multi = nl["multi_cities"]
-                cname = (q.get("city") or "").strip()
-                found = detect_cities(query) if not cname else []
-                if not cname:
-                    cname = found[0] if found else (nl or {}).get("city") or DEFAULT_CITY
-                    if not found and cname == DEFAULT_CITY and (nl or {}).get("city_raw") \
-                            and nl["city_raw"] not in CITIES:
-                        return self._json({"ok": False,
-                                           "error": f"暂不支持目的地「{nl['city_raw']}」"
-                                                    f"（当前支持：{'、'.join(CITIES)}），"
-                                                    "可换支持城市或直接说「上海/杭州…3天」"},
-                                          code=400)
-                if cname not in CITIES:
-                    return self._json({"ok": False,
-                                       "error": f"未能识别目的地城市（当前支持：{'、'.join(CITIES)}）。试试在需求里写明，如「杭州3天…」"},
-                                      code=400)
+                # ---- 目的地解析（2026-09-21）：显式城市 → LLM 挑子集 → 省份降级 → 明确报错 ----
+                _d_hint = extract_days(query) or (nl or {}).get("days") or DEFAULT_DAYS
+                _days_r, _c_r, _w_r = clamp_days(_d_hint)
+                _dec = plan_route_decision(query, nl, _days_r, q.get("city") or "")
+                if _dec["error"]:
+                    return self._json({"ok": False, "error": _dec["error"]}, code=400)
+                multi, cname = _dec["multi"], _dec["cname"]
+                _resolve_notice = _dec["notice"]
                 if not query:
                     query = f"{cname}2天经典深度游"
                 # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
@@ -1325,7 +1497,7 @@ class Handler(BaseHTTPRequestHandler):
                             merged_meta["n_closed"] += m["n_closed"]
                         stats_latency(r.get("latency_s", 0))
                         if _days_notice:  # 天数被上限截断须显式告知，不能静默改需求
-                            r["notices"] = _days_notice + (r.get("notices") or [])
+                            r["notices"] = _days_notice + _resolve_notice + (r.get("notices") or [])
                         # 缺口台账：跨城合并后的各城缺口一并落账
                         if gap_log.append_gap_record(None, multi, query, days,
                                                      "m7_multi", r.get("grounding")):
@@ -1443,7 +1615,7 @@ class Handler(BaseHTTPRequestHandler):
                                              r.get("grounding")):
                     stats_bump("plan_with_gaps")
                 if _days_notice:  # 天数被上限截断须显式告知
-                    r["notices"] = _days_notice + (r.get("notices") or [])
+                    r["notices"] = _days_notice + _resolve_notice + (r.get("notices") or [])
                 return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
                                    "days_source": days_src,
                                    "parsed": {"city": cname, "date0": date0,

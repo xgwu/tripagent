@@ -1,5 +1,6 @@
 {
   "city": "苏州",
+  "province": "江苏",
   "center": {
     "lat": 31.313,
     "lng": 120.624
