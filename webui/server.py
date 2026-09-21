@@ -93,9 +93,9 @@ PHOTO_CACHE_PATH = os.path.join(ROOT, "data", "photo_cache.json")
 _photo_lock = threading.Lock()
 _photo_cache = None
 _ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州", "WH": "武汉", "BJ": "北京", "CD": "成都", "GZ": "广州", "YC": "盐城",
-                   "XA": "西安", "CQ": "重庆", "CS": "长沙"}
+                   "XA": "西安", "CQ": "重庆", "CS": "长沙", "GY": "贵阳", "HG": "黄果树", "XY": "兴义", "WF": "万峰林", "XQ": "小七孔", "LP": "六盘水", "KL": "凯里", "ZG": "镇远古城", "ZY": "遵义", "XJ": "西江千户苗寨", "CH": "赤水", "AS": "安顺", "TR": "铜仁", "FJ": "梵净山", "TY": "中国天眼", "ZJ": "织金洞", "DY": "都匀", "ZX": "肇兴侗寨", "BL": "百里杜鹃"}
 _CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027", "北京": "010", "成都": "028", "广州": "020", "盐城": "0515",
-             "西安": "029", "重庆": "023", "长沙": "0731"}
+             "西安": "029", "重庆": "023", "长沙": "0731", "贵阳": "0851", "黄果树": "0853", "兴义": "0859", "万峰林": "0859", "小七孔": "0854", "六盘水": "0858", "凯里": "0855", "镇远古城": "0855", "遵义": "0852", "西江千户苗寨": "0855", "赤水": "0852", "安顺": "0853", "铜仁": "0856", "梵净山": "0856", "中国天眼": "0854", "织金洞": "0857", "都匀": "0854", "肇兴侗寨": "0855", "百里杜鹃": "0857"}
 
 
 def _load_photo_cache() -> dict:
@@ -705,6 +705,51 @@ def _transfer_day(day_no: int, city_from: str, city_to: str, tr: dict,
     }
 
 
+NEAR_MERGE_KM = 25.0   # 中心相距小于此值的目的地视为同一片区域 → 合并为一次规划
+
+
+def merge_near_destinations(cities: list, km: float = NEAR_MERGE_KM) -> tuple:
+    """把中心过近的目的地合并（保留景点更多的一方）。返回 (kept, merged)。
+
+    为什么需要（2026-09-17 方案B 开城的副作用）：景区与市区各自独立成城，且
+    **允许 POI 重叠**——万峰林的招牌点同时也是兴义的招牌点（id 前缀不同：XY/WF）。
+    用户同时点名「兴义万峰林」会走多城路径，逐城规划时同一片景区被走两遍
+    （实测 Day1/Day3 重复万峰林景区、八卦田、上下纳灰村）。
+
+    阈值 25km 只覆盖这两对「其实是一地」的目的地：
+      兴义↔万峰林 9.6km、凯里↔西江千户苗寨 20.7km → 合并；
+      安顺↔黄果树 40km、铜仁↔梵净山 49km → 不合并（真两地，且半径
+      28/20km 下彼此库内并无对方点位）。
+    取不出中心的城市一律保留：宁可多跑一城，不可静默丢城。
+    """
+    info = {}
+    for c in cities:
+        try:
+            _c = poi_db.load_city(c)
+            info[c] = (_c.get("center"), len(_c.get("pois") or []))
+        except (OSError, KeyError, ValueError):
+            info[c] = (None, 0)
+    kept, merged = [], []
+    for c in cities:
+        cen, n_pois = info[c]
+        near = None
+        if cen:
+            for k in kept:
+                kc = info[k][0]
+                if kc and poi_db.haversine_km(cen["lat"], cen["lng"],
+                                              kc["lat"], kc["lng"]) < km:
+                    near = k
+                    break
+        if near is None:
+            kept.append(c)
+        elif n_pois > info[near][1]:     # 本次提及的库更大 → 用它替换，位置不变
+            kept[kept.index(near)] = c
+            merged.append((c, near))
+        else:
+            merged.append((near, c))
+    return kept, merged
+
+
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
                use_llm: bool, planner, hotel_text: str | None = None) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
@@ -722,12 +767,21 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     """
     n = min(len(cities), max(days, 1))
     use = cities[:n]
+    # 近邻目的地合并：必须在天数分配之前——否则会给即将被合并掉的城市先分好天，
+    # 合并后那些天无处安放（「兴义万峰林3日游」会变成只排 2 天）。
+    use, _merged_near = merge_near_destinations(use)
+    n = len(use)
     # 天数分配：优先尊重用户明说的每城天数（「苏州玩2天」），其余城市均分剩余。
     # 旧实现是 divmod 盲分 + 余数给靠前城市，会把「第一天在杭州…苏州玩2天」
     # 排成「杭州2天+苏州1天」（2026-09-17 报障）。
     _wanted = parse_city_days(query, use)
     alloc = allocate_city_days(use, days, _wanted)
     _alloc_notice = []
+    for _keep, _drop in _merged_near:
+        _alloc_notice.append({
+            "kind": "city_merged_near",
+            "message": (f"「{_keep}」与「{_drop}」在同一片区域内，已合并为一次规划"
+                        f"（按景点更全的「{_keep}」安排），避免同一景区被走两遍")})
     if _wanted:
         _got = {c: alloc[i] for i, c in enumerate(use)}
         _conflict = {c: (v, _got.get(c)) for c, v in _wanted.items() if _got.get(c) != v}
@@ -788,7 +842,11 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             alloc[i] -= take
             transfer_days[i] = take
 
-    merged_days, merged_pois, merged_gaps, merged_notices = [], {}, [], []
+    merged_days, merged_pois, merged_gaps = [], {}, []
+    # 分配期通知（近邻目的地合并 / 每城天数被调整）必须并进来：
+    # 此前 _alloc_notice 只有构建、没有消费点，用户永远收不到
+    # 「你要求苏州 2 天，实际安排 1 天」这类提示（静默改需求）。
+    merged_notices = list(_alloc_notice)
     tot = {"violations": 0, "km": 0.0, "dup": 0, "cands": 0, "lat": 0.0,
            "proposed": 0, "unmatched": 0, "rate_w": 0.0}
     seg_date0 = _date.fromisoformat(date0) if date0 else None
@@ -967,7 +1025,7 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     }
 
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
-CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "成都", "北京", "广州", "盐城", "西安", "重庆", "长沙"]
+CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "成都", "北京", "广州", "盐城", "西安", "重庆", "长沙", "贵阳", "黄果树", "兴义", "万峰林", "小七孔", "六盘水", "凯里", "镇远古城", "遵义", "西江千户苗寨", "赤水", "安顺", "铜仁", "梵净山", "中国天眼", "织金洞", "都匀", "肇兴侗寨", "百里杜鹃"]
 CITY_META = {}  # 懒加载缓存
 PLAN_LOCK = threading.Lock()  # 访客自带 Key 时临时注入环境变量，加锁防并发串包
 

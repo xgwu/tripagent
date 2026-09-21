@@ -1,0 +1,201 @@
+{
+ "city": "肇兴侗寨",
+ "center": {
+  "lat": 25.904854,
+  "lng": 109.174909
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "ZX001",
+   "name": "肇兴侗寨",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.904854,
+   "lng": 109.174909,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 13 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZX002",
+   "name": "堂安侗寨",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.898854,
+   "lng": 109.215627,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 217 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZX003",
+   "name": "堂安梯田",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.900141,
+   "lng": 109.214237,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 224 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZX004",
+   "name": "黄岗侗寨景区",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "省级景点"
+   ],
+   "lat": 25.916394,
+   "lng": 108.977734,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 340 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZX005",
+   "name": "义团鼓楼",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.907102,
+   "lng": 109.18246,
+   "duration_h": 1.5,
+   "open": "10:30",
+   "close": "21:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 741 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZX006",
+   "name": "智团鼓楼",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.906362,
+   "lng": 109.180683,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 777 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZX007",
+   "name": "厦格村",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.899809,
+   "lng": 109.20793,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 785 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间为 view 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "ZX008",
+   "name": "地坪风雨桥",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.761986,
+   "lng": 109.241959,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 846 位（黎平）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  }
+ ]
+}

@@ -693,8 +693,15 @@ def _inject_named_pois(day_map: dict, all_pois: dict, query: str, grounding: dic
     TOPTW 池（「能排但从不被选」）。落地后必须兜底，与住宿锚点硬保障同构。
 
     与住宿锚点的区别：**不受 anchor_hard_guarantee 开关控制**——住宿锚点是顺带约定，
-    用户点名是硬需求。注入目标天 = 几何最近的那天（同片区顺路）；注入位置 = 当天队尾
-    （晚间型点排收尾更自然；忠实模式 TOPTW 只排序不选点，插入位置仅影响 rank 利润）。
+    用户点名是硬需求。注入目标天 = 几何最近的那天（同片区顺路）。
+
+    注入位置按窗口分流（2026-09-21 修复）：真夜间点（酒吧/夜市/夜间演出）排队尾
+    ——收尾更自然；**其余一律排队首**。
+    原来一律排队尾，对闭窗早的点是致命的：实测「织金洞1日游」（用户点名织金洞，
+    09:00-16:30、时长 2.5h）排队尾 → 求解器把它排到第三位、14:17 才到 → 排序器判
+    「超出营业时间(09:00-16:30)」直接剔除，行程里根本没有用户指名的地方
+    （虽有 named_lost 提示，但用户的硬需求并未被满足）。排队首则最早占位，
+    早窗点不再被后续点位挤到闭窗前。
     返回 [(poi, day)]，供后续「是否真排进最终行程」的对账披露。
 
     ⚠️ 两个字段分工（2026-09-15 二次修正，踩过的坑）：
@@ -717,11 +724,16 @@ def _inject_named_pois(day_map: dict, all_pois: dict, query: str, grounding: dic
         if p["id"] in used:
             continue
         d = _nearest_day(day_map, all_pois, p)
-        day_map[d] = list(day_map.get(d, [])) + [p["id"]]
+        ids = list(day_map.get(d, []))
+        night = poi_db.is_night_only(p)
+        # 真夜间点排队尾（收尾自然），其余排队首（早窗点不被挤到闭窗前）
+        day_map[d] = (ids + [p["id"]]) if night else ([p["id"]] + ids)
         used.add(p["id"])
         injected.append((p, d))
         notes.append({"id": p["id"], "name": p["name"], "day": d,
-                      "reason": "需求点名点位，确定性注入（不依赖 LLM 是否采纳）"})
+                      "reason": ("需求点名点位，确定性注入"
+                                 f"（{'队尾·晚间型' if night else '队首·早窗优先'}，"
+                                 "不依赖 LLM 是否采纳）")})
     if notes:
         grounding["named_injected"] = notes
     return injected

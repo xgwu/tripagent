@@ -1,0 +1,377 @@
+{
+ "city": "小七孔",
+ "center": {
+  "lat": 25.254238,
+  "lng": 107.707433
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "XQ001",
+   "name": "荔波小七孔景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 25.254238,
+   "lng": 107.707433,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 3 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ002",
+   "name": "荔波大七孔景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.282087,
+   "lng": 107.748389,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 32 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ003",
+   "name": "瑶山古寨",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.229863,
+   "lng": 107.770682,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 83 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "XQ004",
+   "name": "小七孔景区-卧龙潭",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.262351,
+   "lng": 107.686689,
+   "duration_h": 1.5,
+   "open": "07:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 135 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ005",
+   "name": "鸳鸯湖",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.244261,
+   "lng": 107.677358,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 158 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ006",
+   "name": "小七孔桥",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.248531,
+   "lng": 107.745789,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 160 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间为 view 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "XQ007",
+   "name": "六十八级跌水瀑布",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.249716,
+   "lng": 107.739345,
+   "duration_h": 2.5,
+   "open": "07:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 178 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ008",
+   "name": "卧龙谷漂流",
+   "category": "sport",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.26193,
+   "lng": 107.687152,
+   "duration_h": 2.0,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 290 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ009",
+   "name": "天钟洞",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.237694,
+   "lng": 107.683099,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 296 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ010",
+   "name": "梦柳布依风情小镇",
+   "category": "history",
+   "tags": [
+    "商务住宅",
+    "住宅区",
+    "住宅区"
+   ],
+   "lat": 25.27724,
+   "lng": 107.762273,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 326 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间为 history 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "XQ011",
+   "name": "大七孔景区-天生桥",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.284721,
+   "lng": 107.744723,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 389 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ012",
+   "name": "水上森林上段",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.25122,
+   "lng": 107.713629,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 426 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ013",
+   "name": "小七孔世遗探险部落",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.302095,
+   "lng": 107.704375,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 506 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间为 view 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "XQ014",
+   "name": "龟背山",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.250363,
+   "lng": 107.725483,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 732 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ015",
+   "name": "荔波联山湾",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.354263,
+   "lng": 107.72862,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "16:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 891 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "XQ016",
+   "name": "断桥飞瀑",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.251628,
+   "lng": 107.73463,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 945 位（荔波）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  }
+ ]
+}

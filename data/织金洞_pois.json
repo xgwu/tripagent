@@ -1,0 +1,223 @@
+{
+ "city": "织金洞",
+ "center": {
+  "lat": 26.770713,
+  "lng": 105.883499
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "ZJ001",
+   "name": "织金洞",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 26.770713,
+   "lng": 105.883499,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "16:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 4 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ002",
+   "name": "织金大峡谷",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.773035,
+   "lng": 105.882345,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 37 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ003",
+   "name": "乌江源百里画廊",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.764081,
+   "lng": 105.924844,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 123 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ004",
+   "name": "平远古镇",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.657168,
+   "lng": 105.780543,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 167 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ005",
+   "name": "织金洞国家重点风景名胜区-一线三槽恐龙湖景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.769304,
+   "lng": 105.87594,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 317 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ006",
+   "name": "织金古城",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.662309,
+   "lng": 105.77146,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 350 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ007",
+   "name": "织金洞地质博物馆",
+   "category": "museum",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 26.770727,
+   "lng": 105.883482,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 500 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ008",
+   "name": "佛祖普度众生",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.764091,
+   "lng": 105.896423,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 584 位（织金）；坐标/类目来自高德 2026-09-17；营业时间为 view 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "ZJ009",
+   "name": "织金财神庙",
+   "category": "religion",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "寺庙道观"
+   ],
+   "lat": 26.664213,
+   "lng": 105.771795,
+   "duration_h": 1.0,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 768 位（织金）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  }
+ ]
+}

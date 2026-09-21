@@ -1,0 +1,267 @@
+{
+ "city": "赤水",
+ "center": {
+  "lat": 28.364325,
+  "lng": 105.744041
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "CH001",
+   "name": "赤水丹霞旅游区·大瀑布",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 28.364325,
+   "lng": 105.744041,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 18 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH002",
+   "name": "四洞沟景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 28.459832,
+   "lng": 105.648587,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 59 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH003",
+   "name": "赤水丹霞",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 28.376133,
+   "lng": 105.746799,
+   "duration_h": 1.5,
+   "open": "08:30",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 68 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH004",
+   "name": "丙安古镇",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 28.468512,
+   "lng": 105.824602,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "18:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 106 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH005",
+   "name": "大同古镇",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 28.503894,
+   "lng": 105.681196,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 302 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH006",
+   "name": "中洞美人梳瀑布",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 28.374914,
+   "lng": 105.746008,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 565 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH007",
+   "name": "丙安红一军团陈列馆",
+   "category": "museum",
+   "tags": [
+    "科教文化服务",
+    "展览馆",
+    "展览馆"
+   ],
+   "lat": 28.469525,
+   "lng": 105.825193,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 604 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间为 museum 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "CH008",
+   "name": "赤水白马溪景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 28.439198,
+   "lng": 105.750945,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 653 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH009",
+   "name": "转石奇观景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "观景点"
+   ],
+   "lat": 28.447446,
+   "lng": 105.767593,
+   "duration_h": 1.5,
+   "open": "07:00",
+   "close": "20:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 844 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH010",
+   "name": "赤水国家级风景名胜区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 28.423363,
+   "lng": 105.821068,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 884 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "CH011",
+   "name": "恐龙岛水上乐园",
+   "category": "family",
+   "tags": [
+    "体育休闲服务",
+    "休闲场所",
+    "水上活动中心"
+   ],
+   "lat": 28.517913,
+   "lng": 105.70454,
+   "duration_h": 2.5,
+   "open": "14:00",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 951 位（赤水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  }
+ ]
+}

@@ -1,0 +1,663 @@
+{
+ "city": "黄果树",
+ "center": {
+  "lat": 25.988968,
+  "lng": 105.669351
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "HG001",
+   "name": "黄果树景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点|风景名胜"
+   ],
+   "lat": 25.988968,
+   "lng": 105.669351,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 1 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG002",
+   "name": "黄果树大瀑布夜游",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 25.980028,
+   "lng": 105.67258,
+   "duration_h": 2.5,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 36 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG003",
+   "name": "贵州九仙旅游景区",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.910055,
+   "lng": 105.53597,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 53 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG004",
+   "name": "黄果树坝陵河大桥",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.960516,
+   "lng": 105.639503,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 57 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "HG005",
+   "name": "飞越黄果树-360极限飞球",
+   "category": "sport",
+   "tags": [
+    "体育休闲服务",
+    "体育休闲服务场所",
+    "体育休闲服务场所"
+   ],
+   "lat": 26.001331,
+   "lng": 105.686711,
+   "duration_h": 2.0,
+   "open": "08:30",
+   "close": "20:30",
+   "best_time": "any",
+   "price": 46,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 64 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG006",
+   "name": "天星桥",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.942088,
+   "lng": 105.676293,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 67 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG007",
+   "name": "高荡千年布依古寨文化旅游景区",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.073477,
+   "lng": 105.692254,
+   "duration_h": 1.5,
+   "open": "08:30",
+   "close": "18:30",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 5,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 70 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG008",
+   "name": "陡坡塘瀑布",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.997548,
+   "lng": 105.676892,
+   "duration_h": 2.5,
+   "open": "07:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 74 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG009",
+   "name": "黄果树瀑布景区-水帘洞",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.988711,
+   "lng": 105.669319,
+   "duration_h": 2.5,
+   "open": "06:30",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 85 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG010",
+   "name": "黄果树景区天星桥区域-银链坠潭瀑布",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.93766,
+   "lng": 105.675494,
+   "duration_h": 2.5,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 107 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG011",
+   "name": "黄果树×B.Duck小黄鸭多彩漂流乐园",
+   "category": "family",
+   "tags": [
+    "体育休闲服务",
+    "休闲场所",
+    "水上活动中心"
+   ],
+   "lat": 25.933359,
+   "lng": 105.67528,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 128 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG012",
+   "name": "夜郎洞",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.088558,
+   "lng": 105.626707,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 176 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG013",
+   "name": "六枝龙井生态温泉度假区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.118026,
+   "lng": 105.571804,
+   "duration_h": 2.5,
+   "open": "10:00",
+   "close": "22:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 225 位（六盘水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG014",
+   "name": "大瀑布",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点|风景名胜"
+   ],
+   "lat": 25.985328,
+   "lng": 105.667547,
+   "duration_h": 2.5,
+   "open": "07:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 259 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG015",
+   "name": "黄果树国家湿地公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.001686,
+   "lng": 105.673821,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 283 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG016",
+   "name": "贵州省坝陵河桥梁博物馆",
+   "category": "museum",
+   "tags": [
+    "科教文化服务",
+    "科教文化场所",
+    "科教文化场所"
+   ],
+   "lat": 25.960562,
+   "lng": 105.639505,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 312 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG017",
+   "name": "数生步",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.947068,
+   "lng": 105.679163,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 313 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG018",
+   "name": "石头寨景区",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.020198,
+   "lng": 105.675636,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 320 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG019",
+   "name": "黄果树坝陵河大桥蹦极",
+   "category": "nature",
+   "tags": [
+    "体育休闲服务",
+    "体育休闲服务场所",
+    "体育休闲服务场所"
+   ],
+   "lat": 25.959802,
+   "lng": 105.63825,
+   "duration_h": 2.5,
+   "open": "09:30",
+   "close": "17:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 419 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG020",
+   "name": "滑石哨景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.974351,
+   "lng": 105.67286,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 449 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG021",
+   "name": "黄果树碑林公园",
+   "category": "park",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 25.986154,
+   "lng": 105.664654,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 469 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG022",
+   "name": "桥上桥上桥",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.942163,
+   "lng": 105.677276,
+   "duration_h": 1.5,
+   "open": "07:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 503 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG023",
+   "name": "滴水滩瀑布景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.977206,
+   "lng": 105.617788,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 655 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG024",
+   "name": "天主堂",
+   "category": "religion",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "教堂"
+   ],
+   "lat": 25.989636,
+   "lng": 105.666251,
+   "duration_h": 1.0,
+   "open": "07:30",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 658 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG025",
+   "name": "黄果树神龙洞",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.008474,
+   "lng": 105.658657,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 669 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG026",
+   "name": "黄果树大扶梯-上站",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.983586,
+   "lng": 105.66759,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 710 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG027",
+   "name": "贵州木城丽水景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.869162,
+   "lng": 105.676799,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 790 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG028",
+   "name": "黄果树望桥观瀑营地",
+   "category": "relax",
+   "tags": [
+    "体育休闲服务",
+    "体育休闲服务场所",
+    "体育休闲服务场所"
+   ],
+   "lat": 25.983774,
+   "lng": 105.622175,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 825 位（关岭）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "HG029",
+   "name": "大瀑布景区-5号观瀑台",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.988492,
+   "lng": 105.668881,
+   "duration_h": 2.5,
+   "open": "07:00",
+   "close": "18:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 938 位（镇宁）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  }
+ ]
+}

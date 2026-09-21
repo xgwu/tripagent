@@ -1,0 +1,463 @@
+{
+ "city": "都匀",
+ "center": {
+  "lat": 26.259456,
+  "lng": 107.518628
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "DY001",
+   "name": "都匀秦汉影视城",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 26.243645,
+   "lng": 107.618472,
+   "duration_h": 1.5,
+   "open": "17:00",
+   "close": "18:30",
+   "best_time": "evening",
+   "price": 0,
+   "rating": 5,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 30 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY002",
+   "name": "杉木湖景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园|风景名胜"
+   ],
+   "lat": 26.221993,
+   "lng": 107.592761,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 112 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY003",
+   "name": "都匀绿博园",
+   "category": "park",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园|科教文化服务"
+   ],
+   "lat": 26.262821,
+   "lng": 107.547414,
+   "duration_h": 1.5,
+   "open": "08:30",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 137 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY004",
+   "name": "斗篷山景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.367794,
+   "lng": 107.36898,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 189 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY005",
+   "name": "螺蛳壳景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.238514,
+   "lng": 107.395044,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 286 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY006",
+   "name": "南沙洲公园",
+   "category": "park",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 26.248243,
+   "lng": 107.518228,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 443 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY007",
+   "name": "百子桥",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.253928,
+   "lng": 107.515721,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 472 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY008",
+   "name": "青云湖森林公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.242533,
+   "lng": 107.531052,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "21:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 498 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY009",
+   "name": "文峰园-文峰塔",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.251303,
+   "lng": 107.520216,
+   "duration_h": 1.5,
+   "open": "06:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 532 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY010",
+   "name": "西山大桥",
+   "category": "nature",
+   "tags": [
+    "地名地址信息",
+    "交通地名",
+    "桥"
+   ],
+   "lat": 26.258371,
+   "lng": 107.512277,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 553 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "DY011",
+   "name": "毛尖小镇",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 26.232237,
+   "lng": 107.612144,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 569 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY012",
+   "name": "斗篷山温泉",
+   "category": "nature",
+   "tags": [
+    "体育休闲服务",
+    "体育休闲服务场所",
+    "体育休闲服务场所"
+   ],
+   "lat": 26.335121,
+   "lng": 107.507815,
+   "duration_h": 2.5,
+   "open": "11:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 234,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 598 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY013",
+   "name": "都匀茶博园",
+   "category": "museum",
+   "tags": [
+    "科教文化服务",
+    "展览馆",
+    "展览馆"
+   ],
+   "lat": 26.23328,
+   "lng": 107.608898,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "22:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 656 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY014",
+   "name": "都匀三线建设博物馆",
+   "category": "museum",
+   "tags": [
+    "科教文化服务",
+    "科教文化场所",
+    "科教文化场所"
+   ],
+   "lat": 26.304326,
+   "lng": 107.509621,
+   "duration_h": 2.0,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 5,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 675 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY015",
+   "name": "东山公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 26.263482,
+   "lng": 107.527261,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 682 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY016",
+   "name": "三江堰湿地公园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "公园广场",
+    "公园"
+   ],
+   "lat": 26.334864,
+   "lng": 107.514875,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "north",
+   "family_ok": true,
+   "note": "热度榜第 716 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY017",
+   "name": "剑江",
+   "category": "nature",
+   "tags": [
+    "地名地址信息",
+    "自然地名",
+    "河流"
+   ],
+   "lat": 26.247656,
+   "lng": 107.529625,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 734 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "DY018",
+   "name": "巨升影视旅游小镇",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 26.266542,
+   "lng": 107.601974,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 866 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY019",
+   "name": "黔南州博物馆",
+   "category": "museum",
+   "tags": [
+    "科教文化服务",
+    "博物馆",
+    "博物馆"
+   ],
+   "lat": 26.227547,
+   "lng": 107.593762,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "16:30",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "east",
+   "family_ok": true,
+   "note": "热度榜第 955 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "DY020",
+   "name": "榔木寨",
+   "category": "view",
+   "tags": [
+    "待补充"
+   ],
+   "lat": 26.067054,
+   "lng": 107.666798,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 976 位（都匀）；坐标/类目来自高德 2026-09-17；营业时间为 view 类目默认值，**待人工核实**",
+   "closed_days": []
+  }
+ ]
+}

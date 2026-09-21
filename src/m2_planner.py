@@ -213,6 +213,18 @@ def _solve_all_days(city: dict, query: str, day_map: dict, all_pois: dict, cands
     for d in sorted(results):
         ordered, dropped, ok = results[d]
         if ok and ordered:
+            # 点名点（非夜间）确定性前置。求解器的模型里**没有餐块**——它按
+            # SetRange(lo, close-dur) 算出到达可行（织金洞 13:17），而排序器会插入
+            # 午/晚餐（各 1h），到点变 14:17 > 16:30−2.5h，于是点名点被判「超出营业
+            # 时间」直接剔除（实测织金洞/梵净山均中）。前置到队首后从 day_start 起算，
+            # 闭窗早的点必然落在窗内；被挤掉的改由利润更低的 LLM 主选承担
+            # ——用户点名是硬需求，就该丢 LLM 提的点而不是丢它。
+            _here = {i for i in day_map[d] if i in (forced_ids or set())}
+            _early = [i for i in ordered
+                      if i in _here and not poi_db.is_night_only(all_pois[i])]
+            if _early:
+                _es = set(_early)
+                ordered = _early + [i for i in ordered if i not in _es]
             final_day_map[d] = ordered
             solved_days[d] = True
             kept = set(ordered)
@@ -295,7 +307,7 @@ def _crossday_rebalance(day_map: dict, city: dict, all_pois: dict, date0: str | 
 
     def metric(dm):
         itin = sequencer.build_itinerary(dm, city, all_pois, date0=date0, hotel=hotel,
-                                         query=query)
+                                         query=query, required=forced)
         return (itin["total_travel_km"], itin["total_violations"], len(itin["dropped_pois"]))
 
     best_km, viol, n_drop = metric(day_map)
@@ -721,7 +733,8 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
 
 
     llm_raw_violations = m1_planner._count_violations_before_repair(final_day_map, city, all_pois, date0, hotel)
-    itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0, hotel=hotel, query=query)
+    itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0, hotel=hotel,
+                                     query=query, required=forced_ids)
     # 求解成功的日子理论上 0 违规；记录实际（含餐块偏移后的）违规
     n_viol_after_solver = sum(len(d["violations"]) for d in itin["days"] if solved_days.get(d["day"]))
 
@@ -747,7 +760,8 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             if day_map3:
                 day_map2, subs = day_map3, subs + subs3
         if day_map2:
-            itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel, query=query)
+            itin2 = sequencer.build_itinerary(day_map2, city, all_pois, date0=date0, hotel=hotel,
+                                              query=query, required=forced_ids)
             if itin2["total_violations"] == 0:
                 itin2["substitutes"] = subs
                 itin = itin2
@@ -764,7 +778,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
         protect={p["id"] for p in poi_db.names_mentioned_in(query or "", all_pois.values())})
     if food_fixes:
         itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
-                                         hotel=hotel, query=query)
+                                         hotel=hotel, query=query, required=forced_ids)
 
     # ---- 阶段3.45：中间断档治理（确定性，0 LLM 成本）----
     # 晚开点（夜游/夜市 open 晚）排在序列前部 → sequencer 早到空跳至开门时刻，
@@ -776,7 +790,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
                                                 date0, hotel, query, t_mode)
     if gap_fixes:
         itin = sequencer.build_itinerary(final_day_map, city, all_pois, date0=date0,
-                                         hotel=hotel, query=query)
+                                         hotel=hotel, query=query, required=forced_ids)
 
     # ---- 阶段4：文案重生成（对齐最终时间轴）----
     reasons_regen = False
