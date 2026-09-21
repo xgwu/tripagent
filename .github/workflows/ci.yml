@@ -19,21 +19,33 @@ jobs:
       - name: 安装 ortools（TOPTW 求解器；失败则自动降级 M1，不阻塞）
         run: pip install ortools || echo "::warning::ortools 安装失败，回退 M1 链路"
 
-      - name: 数据完整性检查（六城 POI 文件 + 交通缓存存在且可解析）
+      - name: 数据完整性检查（全部城 POI 文件 + 交通缓存存在且可解析）
         run: |
           python - <<'EOF'
           import json, glob
+          # 断言口径（2026-09-21 调整）：原为「每城 ≥20 点」，那是「所有城都是地级市」
+          # 年代的假设——方案 B 起景区与市区平级各自成城，景区天然更小
+          # （百里杜鹃 6 / 肇兴侗寨 8 / 织金洞 9 / 赤水 11）。
+          # 改为「每城下限 + 全库总量下限」：每城下限仍能拦住被截断成空壳的文件，
+          # 总量下限是原检查没有的、更强的整体完整性断言。
+          MIN_PER_CITY, MIN_TOTAL, MIN_FILES, MIN_PAIRS = 5, 1000, 25, 50000
           files = sorted(glob.glob("data/*_pois.json"))
-          assert len(files) >= 6, f"城市 POI 文件不足：{files}"
+          assert len(files) >= MIN_FILES, f"城市 POI 文件不足：{len(files)} < {MIN_FILES}"
+          total = 0
           for f in files:
               d = json.load(open(f, encoding="utf-8"))
               n = len(d["pois"])
-              assert n >= 20, f"{f} POI 过少：{n}"
-              print(f"{d['city']}: {n} POI ✓")
+              assert n >= MIN_PER_CITY, f"{f} POI 过少：{n} < {MIN_PER_CITY}"
+              total += n
+          assert total >= MIN_TOTAL, f"全库 POI 总量过少：{total} < {MIN_TOTAL}"
+          print(f"{len(files)} 城 {total} POI ✓")
+          # 交通缓存现随仓库分发（2026-09-21 决定）。原版只 print 不断言，
+          # 而该文件一度被移出版库 → 后续所有 main 的 CI 均红（2026-09-17~09-21）。
           tc = json.load(open("data/travel_cache.json", encoding="utf-8"))
-          total = sum(len(v) for v in tc["minutes"].values())
-          print(f"travel_cache: {total} 对 ✓")
+          pairs = sum(len(v) for v in tc["minutes"].values())
+          assert pairs >= MIN_PAIRS, f"交通缓存过少：{pairs} 对 < {MIN_PAIRS}"
+          print(f"travel_cache: {pairs} 对 ✓")
           EOF
 
-      - name: 基准回归（10 例跨城 0 违规断言，非 0 退出码即失败）
+      - name: 基准回归（31 例固化用例 0 违规断言，非 0 退出码即失败）
         run: python scripts/eval_regression.py
