@@ -8,11 +8,11 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 >
 > 📖 深度文档：[里程碑详情](docs/README-milestones.md) · [项目报告 v3](docs/TripAgent-项目报告.html) · [架构设计](docs/TripAgent-架构设计.html) · [TOPTW 算法报告](docs/TripAgent-TOPTW算法报告.html)
 
-| 12 城市 | 722 POI | 46,575 对交通缓存 | 评测硬违规 | 回归用例 | 端到端耗时 |
+| 31 城市 | 1193 POI | 62,793 对交通缓存 | 评测硬违规 | 回归用例 | 端到端耗时 |
 |---|---|---|---|---|---|
-| 沪/京/宁/穗/蓉/杭/汉/苏/盐/西安/重庆/长沙 | 结构化库（三源核实） | OSRM L1 + 高德 L2 实况 | **0**（12 城 × 多主题 21 组冒烟） | **18/18**（12 城全覆盖） | **12.9s**（优化前 23.3s，-45%） |
+| 沪/京/宁/穗/蓉/杭/汉/苏/盐/西安/重庆/长沙 + 贵州 19 个目的地 | 结构化库（三源核实） | OSRM L1 + 高德 L2 实况 | **0**（31 城 × 多主题冒烟） | **31/31**（31 城全覆盖） | **12.9s**（优化前 23.3s，-45%） |
 
-## 支持城市（12 城 · 722 POI）
+## 支持城市（31 城 · 1193 POI）
 
 | 城市 | POI | 库内结构（类目 Top） | 一句话画像 |
 |---|---|---|---|
@@ -28,6 +28,32 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 | 重庆 | 48 | photo 8 · history 8 · food 8 | 8D 山城夜景 + 火锅 |
 | 长沙 | 47 | food 10 · history 9 | 娱乐之都 + 夜经济 |
 | 盐城 | 45 | nature 14 · food 10 | 湿地生态（丹顶鹤/麋鹿）+ 淮扬风味 |
+
+### 贵州 19 个目的地（2026-09-21 开城）
+
+方案 B：半径缩至 28km（市区）/ 20km（景区），**景区与市区平级各自成城**——景区是用户会直接按名字搜的目的地（如「西江千户苗寨2日游」）。仅此六成的贵州在 60km 半径下最大两点间距达 106–114km（现有城市 42–82km），远郊守门会整体失效。
+
+| 城市 | POI | 库内结构（类目 Top） | 一句话画像 |
+|---|---|---|---|
+| 贵阳 | 79 | nature 30 · view 11 · family 9 | 贵州省会：甲秀楼、黔灵山、天河潭 |
+| 遵义 | 34 | nature 6 · view 5 · history 4 | 红色文化：遵义会议会址、海龙屯土司遗址 |
+| 六盘水 | 31 | nature 17 · park 5 · view 2 | 避暑凉都：梅花山、野玉海 |
+| 安顺 | 32 | nature 12 · view 8 · history 5 | 屯堡文化 + 龙宫 |
+| 凯里 | 31 | nature 10 · view 6 · museum 5 | 黔东南州府：苗侗风情园、下司古镇 |
+| 都匀 | 20 | nature 8 · view 7 · museum 3 | 黔南州府：秦汉影视城、杉木湖、绿博园 |
+| 兴义 | 43 | nature 19 · view 6 · park 5 | 黔西南州府：马岭河峡谷 |
+| 铜仁 | 21 | nature 9 · history 5 · view 3 | 中南门古城、九龙洞 |
+| 黄果树 | 29 | nature 13 · view 7 · family 2 | 跳县招牌景区：大瀑布、天星桥、陡坡塘 |
+| 织金洞 | 9 | nature 4 · history 2 · museum 1 | 世界地质公园溶洞 + 织金古城 |
+| 西江千户苗寨 | 16 | nature 8 · museum 3 · history 2 | 世界最大苗族聚居村寨（含郎德苗寨） |
+| 小七孔 | 16 | view 7 · nature 7 · sport 1 | 荔波喀斯特：小七孔桥、卧龙潭 |
+| 梵净山 | 16 | nature 9 · view 5 · history 1 | 弥勒道场 + 红云金顶（含亚木沟、寨沙侗寨） |
+| 镇远古城 | 20 | nature 7 · view 7 · museum 3 | 㵲阳河畔千年古城：青龙洞、石屏山 |
+| 百里杜鹃 | 6 | view 4 · nature 1 · relax 1 | 春季杜鹃花海（点位最少的景区目的地） |
+| 中国天眼 | 16 | view 8 · nature 4 · family 3 | 平塘 FAST 科普：天文小镇、南仁东纪念馆 |
+| 赤水 | 11 | nature 4 · view 3 · history 2 | 丹霞世界遗产：赤水大瀑布、四洞沟 |
+| 肇兴侗寨 | 8 | view 4 · history 3 · nature 1 | 侗族鼓楼群 + 堂安梯田 |
+| 万峰林 | 33 | nature 12 · view 6 · history 3 | 喀斯特峰林 + 马岭河峡谷 |
 
 > 每个点均含：GCJ-02 坐标、营业时段（含闭馆日）、适玩时长、类目标签、实拍图。新城市需求欢迎提 issue / 参照 [扩城 SOP](scripts/onboard_city.sh) 自行开城。
 
@@ -52,7 +78,7 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 
 ## 功能特性
 
-- **12 城 722 POI**（广州 79 / 成都 75 / 苏州 75 / 北京 74 / 上海 69 / 杭州 57 / 武汉 50 / 南京 49 / 西安 54 / 重庆 48 / 长沙 47 / 盐城 45），46,575 对真实路网交通缓存（L1 OSRM + L2 高德实况，L3 直线兜底），库内点位实拍图 **722/722 = 100% 覆盖**
+- **31 城 1193 POI**（贵阳/广州各 79 / 成都/苏州各 75 / 北京 74 / 上海 69 / 杭州 57 / 西安 54 / 武汉 50 / 南京 49 / 重庆 48 / 长沙 47 / 盐城 45 / 兴义 43 / 遵义 34 / 万峰林 33 / 安顺 32 / 六盘水、凯里各 31 / 黄果树 29 / 铜仁 21 / 都匀、镇远古城各 20 / 小七孔、梵净山、西江千户苗寨、中国天眼各 16 / 赤水 11 / 织金洞 9 / 肇兴侗寨 8 / 百里杜鹃 6），62,793 对真实路网交通缓存（L1 OSRM + L2 高德实况，L3 直线兜底），库内点位实拍图 **1174/1193 = 98.4% 覆盖**
 - **硬约束体系**：营业时间、闭馆日（日期感知，全库回填）、**跨零点闭店归一化**、餐窗美食（每窗 ≤1，咖啡馆非正餐分流）、返程酒店锚点、主题每日里程预算（骑行/徒步/自驾）
 - **节奏档**：慢节奏（老人/轮椅/行动不便/不要太累）全链路宽松化——2–3 点/天、白天为主、真夜间点全清、站数下限 3；傍晚空窗自然留白（不自动补点）
 - **餐窗保障**：正餐 POI 优先占窗、到达距饭点 ≤30min 先吃再逛、游完就地补餐、窗尾宽限与收尾晚餐提前量、**餐窗提前容差**（餐厅不必干等到 12:00/18:00 整点）+ **日内空档逐日披露**（求解器不惩罚空档，至少不静默）
@@ -102,23 +128,26 @@ python main.py "带5岁孩子去杭州玩2天，不要太累，最好有动物�
 ## 工程化命令
 
 ```bash
-python scripts/run_tests.py                      # 全部单测：14 个 Python 单测 + 1 个前端守卫，一次跑完（推荐）
+python scripts/run_tests.py                      # 全部单测：17 个 Python 单测 + 1 个前端守卫，一次跑完（推荐）
 python scripts/run_tests.py gap named            # 只跑文件名含关键词的
-python scripts/eval_regression.py [--llm]        # 回归评测：18 固化用例 / 12 城，离线 CI / --llm 真实全链路
+python scripts/eval_regression.py [--llm]        # 回归评测：31 固化用例 / 31 城，离线 CI / --llm 真实全链路
 python scripts/probe_perf.py                     # 性能探针：LLM/TOPTW 各环节耗时插桩
-python scripts/release_gate.py                   # 发布门禁：编译→单测→回归→12 城库校验（纯 Python，本机与 CI 同一条命令）
+python scripts/release_gate.py                   # 发布门禁：编译→单测→回归→31 城库校验（纯 Python，本机与 CI 同一条命令）
 python scripts/validate_city.py                  # POI 库全量校验
 
 # 单个专项单测（改对应模块时按需跑）
-python scripts/test_city_registry.py             # 城市注册表守卫（12 城×7 表，开城/加城必跑）
+python scripts/test_city_registry.py             # 城市注册表守卫（31 城×7 表，开城/加城必跑）
 python scripts/test_cross_midnight_close.py      # 跨零点闭店归一化（含死点复现对照）
 python scripts/test_gap_manage.py                # 日内空档治理（含关掉新参数复现旧缺陷的对照）
 python scripts/test_named_inject.py              # 点名召回与必选对账（含目的地型餐饮豁免对照）
+python scripts/test_named_guard_and_merge.py     # 近邻目的地合并 + 修复链不得丢点名点（含复现旧缺陷对照）
 python scripts/test_multi_hotel.py               # 多城联游住宿锚点字段契约（时间轴 hotel 行 / plan_multi 透出 / notice Day 重映射）
 python scripts/test_faithful_mode.py             # 忠实执行模式
 node scripts/test_webui_food_mark.js             # 前端用餐图标（18 项）
 
 # 开城 / 扩库
+python scripts/onboard_from_poilist.py           # 按外部热度名单选点 + 高德补字段（贵州 19 目的地所用）
+python scripts/register_city.py                  # 新城市注册到 8 个编辑点（4 文件，纯文本 splice、幂等）
 scripts/onboard_city.sh new 广州 --prefix GZ      # 新城市 onboarding（六步流水线）
 scripts/onboard_city.sh expand 上海               # 已有城市扩库回填（四步）
 python scripts/fill_travel_cache_gaps.py 广州     # 既有城补新增点的交通对（纯增量，只写缺失键）
@@ -136,7 +165,7 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 | `/api/progress` | GET | 规划进度轮询（五段式分阶段状态） |
 | `/api/replace` | POST | 反馈换点：同主题邻近换点并重排当天时间轴 |
 | `/api/route` | GET | 高德路径规划代理：`mode=riding\|walking\|driving&o=lng,lat&d=lng,lat`（磁盘缓存；`driving` 用于城际转移腿） |
-| `/api/photo` | GET | POI 实拍图（缓存 746 条，12 城 100%，缺失回退瓦片） |
+| `/api/photo` | GET | POI 实拍图（缓存 1198 条，31 城 98.4%，缺失回退瓦片） |
 | `/api/share` | POST / GET | 行程快照保存 / 读取（`GET /api/share/<id>`） |
 | `/api/stats` | GET | 调用量/延迟/补位命中率统计 |
 
@@ -147,14 +176,14 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 ## 架构
 
 ```
-webui/        单页前端（零框架，753 行）+ 纯 stdlib HTTP 服务（1,512 行，QuickBindServer）
-src/          18 文件 4,620 行
+webui/        单页前端（零框架，753 行）+ 纯 stdlib HTTP 服务（1,570 行，QuickBindServer）
+src/          18 文件 4,667 行
               proposal_planner(M7 提案+落地+守门+餐窗对账) / m2_planner(TOPTW 求解编排) / m1_planner(贪婪)
               sequencer(时间轴+硬约束+修复链+餐窗分配+慢节奏档) / toptw(OR-Tools 建模+忠实模式)
               intercity(城际转移段: 三级驾车时长模型+转移日/夜间转移) / weather(天气感知)
               gap_log(POI 缺口台账) / hotel(住宿锚点) / query_days(天数解析) / offline_planner(离线兜底)
-data/         *_pois.json ×12 城（随仓库分发）/ travel_cache.json(46,575 对) / intercity_cache.json / route_cache.json / photo_cache.json（运行时缓存，不随仓库分发）
-scripts/      44 个运维与测试脚本 6,010 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
+data/         *_pois.json ×31 城（随仓库分发）/ travel_cache.json(62,793 对) / photo_cache.json(1198 条) / intercity_cache.json / route_cache.json（均随仓库分发）
+scripts/      47 个运维与测试脚本 6,688 行（扩城/扩库/校验/门禁/探针/回归/守卫/缓存补缺/统一测试 runner）
 .github/      ci.yml + gate.yml —— push/PR 自动执行发布门禁
 ```
 
@@ -168,7 +197,7 @@ scripts/      44 个运维与测试脚本 6,010 行（扩城/扩库/校验/门�
 | 日均 POI 数（均值） | 8.7 | 9.1 |
 | 端到端耗时 | 10.4s | 12.9s |
 
-## 里程碑（M1–M17）
+## 里程碑（M1–M19）
 
 - **M1** 验证假设：LLM 库内组线，幻觉结构性归零
 - **M2** 求解层：OR-Tools TOPTW（营业硬窗+利润函数）+ 每日文案重生成
@@ -190,10 +219,11 @@ scripts/      44 个运维与测试脚本 6,010 行（扩城/扩库/校验/门�
 - **M16** 开城盐城（第 9 城，45 POI）：全库 9 城 573 点、交通缓存 39,295 对、实拍图 9 城 100%；开城流水线跑通「采集 → 精修 → OSRM 矩阵 → 照片 → 七处注册 → 九城校验 → LLM 冒烟」
 - **M17** 三城齐开（西安 54 / 重庆 48 / 长沙 47）：全库 **12 城 722 点**、交通缓存 **46,575 对**、库内点位实拍图 **722/722 = 100%**；回归用例 15→18；LLM 冒烟 21 组（12 城 × 多主题）全部 0 违规 / 100% 落地 / 忠实模式；开城中修掉「`family_ok=false` 误标把正常点从亲子链静默剔除」（西安碑林博物馆）与「`build_travel_cache.py` 把 L2 城市（苏州）降级为 L1 直线兜底」两处数据/工程回归
 - **M18** 城际转移与 prompt v10（首次 feature branch + PR 工作流，PR #1/#2）：新增 `src/intercity.py`——跨城驾车时长三级模型（磁盘缓存 → 高德 driving → 直线兜底）、≥4h 独占转移日、夜间转移挂出发城当天末尾、抵达日顺延；新增**自驾主题**（400km/日预算）；提案 prompt 升 v10（7 条常开硬规则 + 6 条条件规则按需注入，冲突从根源消失，普通查询 prompt 2849→1567 字符）+ 夜间转移日提前收尾；经 PR 合入修复设计审查发现的 6 个缺陷
+- **M19** 贵州 19 个目的地开城（方案 B）+ 两处链路缺陷修复（PR #3）：全库 **12 城 722 点 → 31 城 1193 点**、交通缓存 46,575 → **62,793 对**、实拍图 746 → **1198 条**（覆盖 1174/1193 = 98.4%）；半径缩至 28km/20km 让「一城」回归市区尺度，**景区与市区平级各自成城**（黄果树/织金洞/西江千户苗寨/小七孔/梵净山/镇远古城/百里杜鹃/中国天眼/赤水/肇兴侗寨/万峰林 共 11 个），既有 12 城数据经逐条比对**零改动**（纯增量）；新增 `onboard_from_poilist.py`（按外部热度名单选点 + 高德补字段，取代撞满 cap 的类目泛搜）与 `register_city.py`（8 个编辑点）；回归用例 18 → **31**（贵州 13 例带招牌点必含断言）；修复「近邻目的地跨城重复游玩」、「`_alloc_notice` 死代码致分配期通知从未到达用户」、「**点名点被修复链丢弃**」（根因在 `order_day._greedy` 不看闭园时间 + `_repair_by_drop` 不问必选点，实测 3/10 → 0/10）；LLM 全链路回归 **31/31**
 
 ## Roadmap
 
-- **P0** 行程交互式微调（点选换/删/换时段，复用 reuse 增量重解）· 城市库批量扩充（**已开盐城（第 9 城）+ 西安/重庆/长沙（第 10–12 城），全库 12 城 722 点；下一城候选深圳/厦门/青岛/天津/昆明**）· 预算感知（price 进决策 + 费用明细）
+- **P0** 行程交互式微调（点选换/删/换时段，复用 reuse 增量重解）· 城市库批量扩充（**已开 31 城 1193 点：含贵州 19 个目的地 = 8 市区 + 11 景区；下一城候选深圳/厦门/青岛/天津/昆明**）· 预算感知（price 进决策 + 费用明细）
 - **P1** ~~召回层补强~~ ✅ 已完成（M15）· 偏好记忆 · 评测集扩至 30+ 真实查询进发布门禁 · 文案 LLM 缓存 · 热门时段避让 · 观测看板
 - **P2** 跨城交通衔接（**自驾段已实现**：`src/intercity.py` 真实驾车时长 + 转移日 / 夜间转移 / 抵达日顺延；**高铁段待接入**，>12h 车程目前只提示改乘）· 多人协作投票 · DeepSeek 流式输出 · 国际化（en_name）
 
@@ -205,6 +235,8 @@ scripts/      44 个运维与测试脚本 6,010 行（扩城/扩库/校验/门�
 - ✅ `family_ok=false` 仅在离线链路生效（M14 / `0457603`）——判据下沉 `sequencer.is_family_query` + `poi_db.is_family_ok`，确定性 gate 挂六个入口（守卫 `test_family_gate.py`）
 - ✅ 日内空档（M15 / `d25119e`）——≥45min 空档逐条核对后**全部出现在正餐点之前**（餐厅被钉在 12:00/18:00 整点）；`MEAL_EARLY_TOL_H=1.0` + 等待段补餐 + `scan_gaps` 分类披露，同扫描 357min → 60min（守卫 `test_gap_manage.py`）
 - ✅ 点名／远郊点「能排但不被提案」（M15 / `d25119e`）——三层修复：确定性注入 → 必选与对账口径（`named_pois`）→ 目的地型餐饮豁免（守卫 `test_named_inject.py`）
+- ✅ **点名点被修复链丢弃**（M19 / PR #3）——query「织金洞1日游」最终行程里没有织金洞。根因**不在求解器**（spy 包住 `toptw.solve_day` 实测 `forced` 已把它保留），而在 `order_day._greedy` 选点**不看闭园时间** → 一级修复（违规触发的贪婪重排）把它抛到 14:17 到达 → 二级修复 `_repair_by_drop` **不问它是不是用户点名的**直接剔（求解器算不出 14:17：它按 `SetRange(lo, close−dur)` 硬约束到 ≤14:00，差额正是排序器插入的**餐块**）。修＝`required` 从 `compose` 透传到修复链 + 注入位置按窗口分流（真夜间点队尾、其余队首）。实测 3/10 → **0/10**（守卫 `test_named_guard_and_merge.py`，含不传 `required` 必被剔的对照）
+- ✅ 近邻目的地跨城重复游玩 + `_alloc_notice` 死代码（M19 / PR #3）——允许 POI 重叠的代价：万峰林的招牌点同时也是兴义的（前缀 `XY`/`WF`），「兴义万峰林3日游」把同一片景区走两遍（修＝`merge_near_destinations`，阈值 25km，排在 `allocate_city_days` **之前**）；`_alloc_notice` 只有构建、没有消费点，`city_days_adjusted`（「你要求苏州 2 天，实际安排 1 天」）**从未到达用户**（修＝并入 `merged_notices`）（守卫 `test_named_guard_and_merge.py`）
 - ✅ 19:00 后开门的点结构性不可排（M15 / `d25119e`）——`LATE_POINT_MARGIN_MIN=60` 按池内最晚需求放宽求解预算（上限真实日窗）
 - ✅ 聚合层丢字段：多城联游时住宿锚点在前端完全不可见（M15 / `007a1e8`，报障 18）——`plan_multi` 自建结果字典漏透出单城 `plan()` 的 `hotel`/`notices`，叠加「时间轴不显示酒店名」与「恢复字段后 `drawRealRoutes` 又给非住宿城补酒店腿」；修＝透出 `hotel` + 时间轴插 `type=hotel` 出发/返回行 + 路线判据改「该天是否含 hotel 行」+ `_lift_seg_notices` 按偏移重写分段 Day 号（守卫 `test_multi_hotel.py`）
 
