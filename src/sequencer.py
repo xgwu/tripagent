@@ -711,8 +711,16 @@ def order_day(day_pois: list, start_poi=None, hotel=None, city: dict | None = No
 
 def _repair_by_drop(day_pois: list, city: dict, day_no: int, max_drop: int = 3,
                     weekday: str | None = None, hotel: dict | None = None,
-                    mode: str | None = None, slow: bool = False):
-    """二级修复：重排后仍有违规 → 剔除肇事 POI（模拟 Agent Loop 的剔除+反馈）。"""
+                    mode: str | None = None, slow: bool = False,
+                    required: set | None = None):
+    """二级修复：重排后仍有违规 → 剔除肇事 POI（模拟 Agent Loop 的剔除+反馈）。
+
+    required：必选点 id（用户点名 / 住宿锚点）。肇事者若是必选点，**改丢别的**——
+    用户点名是硬需求，口径就是「要丢就丢 LLM 提的点，不是丢它」
+    （2026-09-21 实例：「织金洞1日游」点名织金洞，一级修复的不看闭园时间贪婪重排
+    把它抛到 14:17 到点 → 判超窗 → 在此被剔，行程里根本没有用户指名的地方）。
+    """
+    required = required or set()
     pois = list(day_pois)
     dropped = []
     for _ in range(max_drop):
@@ -726,6 +734,17 @@ def _repair_by_drop(day_pois: list, city: dict, day_no: int, max_drop: int = 3,
             # M6 修复链补洞：返程超时的「肇事点」不在列表里 → 剔除离酒店最远的点（返程腿最长的贡献者）
             bad = (max(pois, key=lambda p: poi_db.travel_hours(p, hotel, mode))
                    if hotel is not None else pois[-1])
+        if bad is not None and bad["id"] in required and len(pois) > 1:
+            # 选「排在它前面、评分最低」的非必选点：既把它提前、损失又最小
+            _ord = order_day(pois, hotel=hotel, city=city, mode=mode)
+            _idx = next((k for k, p in enumerate(_ord) if p["id"] == bad["id"]),
+                        len(_ord))
+            _pool = [p for p in _ord[:_idx] if p["id"] not in required]
+            if not _pool:
+                _pool = [p for p in _ord if p["id"] not in required]
+            if _pool:
+                bad = min(_pool, key=lambda p: (p.get("rating") or 0,
+                                                -(p.get("dur") or 0)))
         if bad is None or len(pois) <= 1:
             break
         pois.remove(bad)
@@ -789,11 +808,13 @@ def _cap_km_repair(day_pois: list, city: dict, day_no: int, weekday: str | None,
 
 def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool = True,
                     date0: str | None = None, hotel: dict | None = None,
-                    query: str | None = None) -> dict:
+                    query: str | None = None,
+                    required: set | None = None) -> dict:
     """day_map: {1: [poi_id,...], ...}  —— 尊重 LLM 给定顺序(order_given)，逐日排时序。
 
     date0: 行程起始日期（YYYY-MM-DD）——传入后按天推算星期，闭馆日作为硬约束校验/剔除。
     query: 命中主题画像（骑行/徒步）时，通行时间与 hop 标签按该方式的速度模型计算。
+    required: 必选点 id（用户点名/住宿锚点）——修复链剔点时不丢它们（见 _repair_by_drop）。
     """
     result_days, all_violations, total_km = [], [], 0.0
     all_dropped = []
@@ -857,7 +878,7 @@ def build_itinerary(day_map: dict, city: dict, all_pois: dict, order_given: bool
             # 二级修复：重排无效说明总量超载 → 剔除肇事 POI
             if tl["violations"]:
                 tl3 = _repair_by_drop(pois, city, d, weekday=wd, hotel=hotel,
-                                      mode=mode_d, slow=slow)
+                                      mode=mode_d, slow=slow, required=required)
                 tl3["repairs"] = tl["repairs"]
                 tl3["reordered"] = True
                 tl = tl3

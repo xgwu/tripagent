@@ -1,0 +1,377 @@
+{
+ "city": "中国天眼",
+ "center": {
+  "lat": 25.695951,
+  "lng": 106.897225
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "TY001",
+   "name": "中国天眼景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.695951,
+   "lng": 106.897225,
+   "duration_h": 1.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 8 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY002",
+   "name": "平塘天硐",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.640576,
+   "lng": 106.767361,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "15:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 125 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY003",
+   "name": "大小井风景名胜区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.557381,
+   "lng": 106.864827,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:45",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 141 位（罗甸）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY004",
+   "name": "天空之桥景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.776833,
+   "lng": 107.072521,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 230 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY005",
+   "name": "FAST(中国天眼500米口径球面射电望远镜‌)",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜|科教文化服务"
+   ],
+   "lat": 25.649867,
+   "lng": 106.86033,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "16:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 239 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY006",
+   "name": "中国天眼·星洞探险",
+   "category": "nature",
+   "tags": [
+    "体育休闲服务",
+    "体育休闲服务场所",
+    "体育休闲服务场所"
+   ],
+   "lat": 25.674973,
+   "lng": 106.921199,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 103,
+   "rating": 4,
+   "area": "southeast",
+   "family_ok": true,
+   "note": "热度榜第 240 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "TY007",
+   "name": "平塘凉风洞户外营地",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.615479,
+   "lng": 106.75507,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 261 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY008",
+   "name": "中国天眼平塘天文小镇-天文体验馆",
+   "category": "family",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.69432,
+   "lng": 106.890262,
+   "duration_h": 2.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 287 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY009",
+   "name": "平塘大射电望远镜观景台",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "观景点"
+   ],
+   "lat": 25.645585,
+   "lng": 106.859349,
+   "duration_h": 1.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 332 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY010",
+   "name": "燕子洞风景名胜区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.811253,
+   "lng": 106.815634,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 434 位（惠水）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY011",
+   "name": "南仁东纪念馆",
+   "category": "museum",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.695538,
+   "lng": 106.89317,
+   "duration_h": 2.0,
+   "open": "09:00",
+   "close": "17:00",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 568 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间为 museum 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "TY012",
+   "name": "天眼航天探索中心",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.69469,
+   "lng": 106.8905,
+   "duration_h": 1.5,
+   "open": "09:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 579 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY013",
+   "name": "平塘风景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 25.61228,
+   "lng": 106.842534,
+   "duration_h": 1.5,
+   "open": "08:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 607 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY014",
+   "name": "中国天眼景区元宇宙XR沉浸式体验馆",
+   "category": "family",
+   "tags": [
+    "体育休闲服务",
+    "娱乐场所",
+    "娱乐场所"
+   ],
+   "lat": 25.69621,
+   "lng": 106.896508,
+   "duration_h": 2.5,
+   "open": "10:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 65,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 619 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY015",
+   "name": "平塘天坑群景区",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 25.612811,
+   "lng": 106.84634,
+   "duration_h": 2.5,
+   "open": "09:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southwest",
+   "family_ok": true,
+   "note": "热度榜第 692 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "TY016",
+   "name": "中国天眼星游记太空VR体验馆",
+   "category": "family",
+   "tags": [
+    "体育休闲服务",
+    "娱乐场所",
+    "娱乐场所"
+   ],
+   "lat": 25.696131,
+   "lng": 106.89259,
+   "duration_h": 2.5,
+   "open": "09:30",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 696 位（平塘）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  }
+ ]
+}

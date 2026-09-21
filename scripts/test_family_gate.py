@@ -80,9 +80,14 @@ for f in sorted(glob.glob(os.path.join(ROOT, "data", "*_pois.json"))):
 print(f"   全库 {n_total} 点，family_ok=false 共 {len(blocked)} 个：")
 for b in blocked:
     print(f"     {b[0]} {b[1]} {b[2]}（{b[3]}）")
-case("3a 全库点位数与口径一致（722 = 573 + 西安 54 + 重庆 48 + 长沙 47）", n_total == 722, f"实测 {n_total}")
-case("3b family_ok=false 恰为 11 个（新增点位应显式评估该字段）",
-     len(blocked) == 11, f"实测 {len(blocked)}")
+# 口径：原 12 城 722 点（573 + 西安 54 + 重庆 48 + 长沙 47）
+#      + 贵州 19 个目的地（2026-09-17 方案B 开城）471 点
+BASE_CITIES, GZ_DESTS = 722, 471
+case(f"3a 全库点位数与口径一致（{BASE_CITIES}[原12城] + {GZ_DESTS}[贵州19目的地]"
+     f" = {BASE_CITIES + GZ_DESTS}）",
+     n_total == BASE_CITIES + GZ_DESTS, f"实测 {n_total}")
+case("3b family_ok=false 恰为 18 个（新增点位应显式评估该字段）",
+     len(blocked) == 18, f"实测 {len(blocked)}")
 # 白名单＝可能承载成人/高强度内容的类目：夜生活、高强度户外、题材沉重纪念馆、
 # 山岳徒步（nature）、温泉泡汤（relax）。断言「无标记点落入 food/购物/亲子等日常类目」，
 # 防止误标把普通点从亲子链里静默剔除（曾误标 XA006 西安碑林博物馆）。

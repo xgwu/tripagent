@@ -21,7 +21,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from src import poi_db, m1_planner, m2_planner, baseline, metrics, llm_client
 
-CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "广州", "盐城", "西安", "重庆", "长沙"]
+CITIES = ["杭州", "南京", "上海", "苏州", "武汉", "广州", "盐城", "西安", "重庆", "长沙", "贵阳", "黄果树", "兴义", "万峰林", "小七孔", "六盘水", "凯里", "镇远古城", "遵义", "西江千户苗寨", "赤水", "安顺", "铜仁", "梵净山", "中国天眼", "织金洞", "都匀", "肇兴侗寨", "百里杜鹃"]
 
 # M6 评测酒店锚点：每城一个确定性位置（显式坐标，不走高德 API —— 批量评测要可复现、不烧配额）
 HOTELS = {

@@ -1,0 +1,377 @@
+{
+ "city": "梵净山",
+ "center": {
+  "lat": 27.882377,
+  "lng": 108.720451
+ },
+ "day_start": "09:00",
+ "day_end": "21:30",
+ "meal_slots": {
+  "lunch": [
+   "12:00",
+   "13:00"
+  ],
+  "dinner": [
+   "18:00",
+   "19:00"
+  ]
+ },
+ "meal_cost": {
+  "lunch": 50,
+  "dinner": 80
+ },
+ "pois": [
+  {
+   "id": "FJ001",
+   "name": "梵净山",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 27.882377,
+   "lng": 108.720451,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "13:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 2 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ002",
+   "name": "亚木沟风景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 27.785017,
+   "lng": 108.730415,
+   "duration_h": 1.5,
+   "open": "07:30",
+   "close": "19:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 34 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ003",
+   "name": "红云金顶",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 27.906592,
+   "lng": 108.696121,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "15:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "热度榜第 116 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ004",
+   "name": "云舍景区",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 27.743248,
+   "lng": 108.819788,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 127 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ005",
+   "name": "寨沙侗寨",
+   "category": "history",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.82432,
+   "lng": 108.772051,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "morning",
+   "price": 0,
+   "rating": 4,
+   "area": "southeast",
+   "family_ok": true,
+   "note": "热度榜第 145 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ006",
+   "name": "老金顶",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.910996,
+   "lng": 108.697494,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "15:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "热度榜第 152 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ007",
+   "name": "梵净山景区-蘑菇石",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "国家级景点"
+   ],
+   "lat": 27.908749,
+   "lng": 108.697939,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "13:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "central",
+   "family_ok": true,
+   "note": "热度榜第 171 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ008",
+   "name": "贵州梵净山佛教文化苑",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.819881,
+   "lng": 108.77392,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "18:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southeast",
+   "family_ok": true,
+   "note": "热度榜第 435 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ009",
+   "name": "梵净山生态植物园",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜",
+    "风景名胜"
+   ],
+   "lat": 27.830453,
+   "lng": 108.763054,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "south",
+   "family_ok": true,
+   "note": "热度榜第 571 位（江口）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "FJ010",
+   "name": "十里锦江",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.830024,
+   "lng": 108.766641,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "southeast",
+   "family_ok": true,
+   "note": "热度榜第 645 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ011",
+   "name": "梵净抹茶小镇",
+   "category": "shopping",
+   "tags": [
+    "餐饮服务",
+    "冷饮店",
+    "冷饮店|生活服务"
+   ],
+   "lat": 27.765025,
+   "lng": 108.796692,
+   "duration_h": 1.5,
+   "open": "08:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "suburb",
+   "family_ok": true,
+   "note": "热度榜第 759 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ012",
+   "name": "梦幻梵净山剧场",
+   "category": "nature",
+   "tags": [
+    "体育休闲服务",
+    "影剧院",
+    "剧场"
+   ],
+   "lat": 27.824982,
+   "lng": 108.773371,
+   "duration_h": 2.5,
+   "open": "10:00",
+   "close": "22:00",
+   "best_time": "any",
+   "price": 0,
+   "rating": 5,
+   "area": "southeast",
+   "family_ok": true,
+   "note": "热度榜第 771 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ013",
+   "name": "万卷书",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.91489,
+   "lng": 108.63579,
+   "duration_h": 1.5,
+   "open": "09:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 802 位（印江）；坐标/类目来自高德 2026-09-17；营业时间为 view 类目默认值，**待人工核实**",
+   "closed_days": []
+  },
+  {
+   "id": "FJ014",
+   "name": "万米睡佛",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.9063,
+   "lng": 108.654586,
+   "duration_h": 2.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 4,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 808 位（印江）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ015",
+   "name": "太子石",
+   "category": "view",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.906875,
+   "lng": 108.682404,
+   "duration_h": 1.5,
+   "open": "00:00",
+   "close": "23:59",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "west",
+   "family_ok": true,
+   "note": "热度榜第 869 位（江口）；坐标/类目来自高德 2026-09-17；营业时间取自高德实测",
+   "closed_days": []
+  },
+  {
+   "id": "FJ016",
+   "name": "九皇洞",
+   "category": "nature",
+   "tags": [
+    "风景名胜",
+    "风景名胜相关",
+    "旅游景点"
+   ],
+   "lat": 27.939039,
+   "lng": 108.675891,
+   "duration_h": 2.5,
+   "open": "08:00",
+   "close": "17:30",
+   "best_time": "any",
+   "price": 0,
+   "rating": 3,
+   "area": "northwest",
+   "family_ok": true,
+   "note": "热度榜第 892 位（印江）；坐标/类目来自高德 2026-09-17；营业时间为 nature 类目默认值，**待人工核实**",
+   "closed_days": []
+  }
+ ]
+}

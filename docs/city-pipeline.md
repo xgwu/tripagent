@@ -37,9 +37,18 @@
 
 ```bash
 python scripts/validate_city.py <城市>   # 必须通过（警告可人工确认）
-python scripts/eval_regression.py       # 全量回归必须 18/18（12 城）
+python scripts/eval_regression.py       # 全量回归必须 31/31（31 城）
 python scripts/test_far_big_regroup.py  # 守门单测
+python scripts/test_city_registry.py    # 城市注册表守卫（31 城×7 表，开城必跑）
+python scripts/release_gate.py          # 发布门禁四步：编译→单测→回归→城库校验
 ```
+
+> **另一条开城路径：已有外部「热度名单」时**——用 `scripts/onboard_from_poilist.py`
+> 按名单热度选点 + 高德补字段，再用 `scripts/register_city.py` 注册到 8 个编辑点。
+> 比 `onboard_city.sh` 的类目泛搜可控：后者实测 10 城全撞满 cap=80，而真正决定
+> 留哪 80 个的是 `sort(-rating, name)`，选点近乎按名字序。
+> 贵州 19 个目的地即此路径开出（半径 28km 市区 / 20km 景区，**景区可独立成城**——
+> 景区是用户会直接按名字搜的目的地）。
 
 ## 5. 验收与发布
 
