@@ -450,10 +450,10 @@ function drawCharts(){
   // c3: 迭代过程中 POI 库增长 vs 缺口消亡
   charts.push(new Chart(document.getElementById('c3'), {
     type:'line',
-    data:{labels:['M4 四城初版','M7 首轮评测','M8 武汉扩库','M7.5 终评 6 城','M9 七城补齐','M13 苏/宁扩容','M13 开城广州 8 城','M16 开城盐城 9 城','M17 西/渝/长 三城齐开 12 城'],
+    data:{labels:['M4 四城初版','M7 首轮评测','M8 武汉扩库','M7.5 终评 6 城','M9 七城补齐','M13 苏/宁扩容','M13 开城广州 8 城','M16 开城盐城 9 城','M17 西/渝/长 三城齐开 12 城','M19 贵州 19 目的地 31 城'],
       datasets:[
-        {label:'POI 库规模',data:[162,162,236,315,395,449,528,573,722],borderColor:k.blue,backgroundColor:k.blue,tension:.3},
-        {label:'未消化库缺口数',data:[0,24,8,0,0,0,0,0,0],borderColor:k.red,backgroundColor:k.red,tension:.3}]},
+        {label:'POI 库规模',data:[162,162,236,315,395,449,528,573,722,1193],borderColor:k.blue,backgroundColor:k.blue,tension:.3},
+        {label:'未消化库缺口数',data:[0,24,8,0,0,0,0,0,0,0],borderColor:k.red,backgroundColor:k.red,tension:.3}]},
     options:{plugins:{title:{display:true,text:'数据扩容：POI 库增长 vs 缺口清零（缺口探测器输出）'}},scales:{y:{beginAtZero:true}}}
   }));
 
