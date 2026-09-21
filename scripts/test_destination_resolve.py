@@ -146,7 +146,7 @@ case("7f 对照：3日游（未提地名）→ 保持默认城市",
 case("7g ?city= 显式参数优先（无效城名报错）",
      D("3日游", None, 3, "苏州")["cname"] == "苏州"
      and bool(D("3日游", None, 3, "不存在的城市")["error"]))
-case("7h ?city= 与多城查询共存时仍走跳城（既有行为不丢）",
+case("7h ?city= 与多城查询共存时仍走城际（既有行为不丢）",
      D("苏杭3日游", None, 3, "苏州")["multi"] == ["苏州", "杭州"])
 case("7i 省份降级会带 destinations_degraded notice（不静默降级）",
      any(n.get("kind") == "destinations_degraded"

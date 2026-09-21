@@ -347,7 +347,7 @@ def plan_route_decision(query: str, nl: dict | None, days: int,
                         city_param: str = "") -> dict:
     """「这次规划去哪里」的决策——集中成一个**纯函数**，便于单测。
 
-    返回 {multi, cname, notice, error}：multi 非空（≥2）走跳城；cname 有效走单城；
+    返回 {multi, cname, notice, error}：multi 非空（≥2）走城际；cname 有效走单城；
     error 非空时调用方直接 400。
 
     ⚠️ 为什么必须集中：解析分支（显式 / LLM / 省份降级 / 报错）与「单城校验」耦合在
@@ -360,7 +360,7 @@ def plan_route_decision(query: str, nl: dict | None, days: int,
     city_param = (city_param or "").strip()
     if city_param and city_param not in CITIES:
         return {"multi": [], "cname": "", "notice": [], "error": _unknown}
-    if city_param:   # 显式 ?city= 参数优先，但查询本身是多城时仍走跳城（既有行为）
+    if city_param:   # 显式 ?city= 参数优先，但查询本身是多城时仍走城际（既有行为）
         return {"multi": detect_multi_city(query), "cname": city_param,
                 "notice": [], "error": None}
     res = resolve_destinations(query, nl, days)
@@ -847,9 +847,53 @@ def _hm(h: float, wrap: bool = False) -> str:
     return f"{int(h):02d}:{int(round((h - int(h)) * 60)):02d}"
 
 
+# ---- 城际交通方式（2026-09-21 用户报障）：只认用户**明说**的方式，没提就留空 ----
+# 原先转移行一律写「自驾 X → Y」并在通知里写「驾车到」——用户没说自驾时，行程里
+# 凭空多出一个自驾设定（实测「苏杭3天联游」Day3 被标成「自驾 苏州 → 杭州」）。
+# 改为：未指定则**留空 + 明确标注「方式待定」**；时长仍用驾车口径估算（时间轴必须
+# 预留，否则「上午还在苏州、下午已在杭州玩 5 个点」物理上不成立），并如实披露口径。
+# 以后接入高铁/飞机时长模型时，按 mode 填入即可。
+INTERCITY_MODE_PATTERNS = [
+    ("driving", re.compile(r"自驾|自己开车|开车|驾车|驱车|租车|road\s*trip|driving", re.I)),
+    ("rail", re.compile(r"高铁|动车|火车|铁路|城际列车", re.I)),
+    ("flight", re.compile(r"飞机|航班|机票|乘机|飞过去", re.I)),
+]
+_MODE_ROW = {"driving": "自驾", "rail": "高铁", "flight": "飞机"}
+_MODE_VERB = {"driving": "驾车约", "rail": "乘高铁约", "flight": "乘飞机约"}
+
+
+def intercity_mode(query: str) -> str | None:
+    """用户明说的城际交通方式（driving/rail/flight）；**未指定返回 None**。"""
+    for mode, pat in INTERCITY_MODE_PATTERNS:
+        if pat.search(query or ""):
+            return mode
+    return None
+
+
+def intercity_leg_name(mode: str | None, city_from: str, city_to: str) -> str:
+    """转移行名称。mode=None 时**不写「自驾」**，明确标注方式待定。"""
+    tag = _MODE_ROW.get(mode or "")
+    return (f"{tag} {city_from} → {city_to}" if tag
+            else f"{city_from} → {city_to}（城际交通待定）")
+
+
+def intercity_verb(mode: str | None) -> str:
+    """时长短语的前缀（已含「约」）：驾车约 / 乘高铁约 / 乘飞机约 / 城际交通约。"""
+    return _MODE_VERB.get(mode or "", "城际交通约")
+
+
+def intercity_disclaim(mode: str | None) -> str:
+    """时长口径披露。驾车是本色不必说；留空 / 高铁 / 飞机都要说清是驾车口径估算。"""
+    if mode == "driving":
+        return ""
+    if mode is None:
+        return "（未指定城际交通方式，时长按驾车口径估算；说明高铁/飞机等可据此重排）"
+    return f"（时长仍按驾车口径估算，{_MODE_ROW[mode]}实际时长以购票为准）"
+
+
 def _transfer_day(day_no: int, city_from: str, city_to: str, tr: dict,
                   city: dict, weekday: str | None,
-                  leg: int = 1, n_legs: int = 1) -> dict:
+                  leg: int = 1, n_legs: int = 1, mode: str | None = None) -> dict:
     """长途转移日：整天只有一条 transfer 行，不排景点。
 
     为什么独占一天而不是塞进抵达城的第一天：4 小时以上车程 + 取还车 + 路上用餐，
@@ -870,12 +914,15 @@ def _transfer_day(day_no: int, city_from: str, city_to: str, tr: dict,
         "day": day_no,
         "theme": f"{city_from} → {city_to}｜城际转移{seg}",
         "timeline": [{
-            "type": "transfer", "name": f"自驾 {city_from} → {city_to}{seg}",
+            "type": "transfer",
+            "name": intercity_leg_name(mode, city_from, city_to) + seg,
             "start": _hm(sh), "end": _hm(eh),
             "min": int(round(per)),
             "km": round(float(tr["km"]) / max(n_legs, 1), 1),
             "from": city_from, "to": city_to, "source": tr["source"],
             "leg": leg, "n_legs": n_legs,
+            # 方式字段：未指定时为 None（留空），以后按用户指定的高铁/飞机填入
+            "mode": mode,
         }],
         "travel_km": round(float(tr["km"]) / max(n_legs, 1), 1),
         "travel_h": round(per / 60.0, 2),
@@ -992,6 +1039,8 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     # ---- 城际转移段：先算各段边界车程，长途段预扣抵达城 1 天做纯转移日 ----
     # 必须在规划前扣天：抵达城拿到的 di 已是「扣掉转移日之后」的天数，
     # 该城才会按更少的天数排点；事后插入转移日会让景点总量超出真实可用时间。
+    # 用户明说的城际方式（未说明则为 None，转移行留空不写自驾）
+    _mode = intercity_mode(query)
     _centers = {}
     for cname in use:
         try:
@@ -1072,21 +1121,24 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
                 day_no += 1
                 merged_days.append(_transfer_day(
                     day_no, use[i - 1], cname, tr, city,
-                    _weekday_of(date0, day_no - 1), leg=_leg, n_legs=_take))
+                    _weekday_of(date0, day_no - 1), leg=_leg, n_legs=_take, mode=_mode))
                 if seg_date0:
                     seg_date0 = seg_date0 + _td(days=1)
             tot["km"] += float(tr["km"])
             _days_txt = (f"Day{_first_td}" if _take == 1
                          else f"Day{_first_td}–Day{day_no}")
             _msg = (f"{_days_txt} 为城际转移日：{use[i - 1]} → {cname} "
-                    f"驾车约 {intercity.duration_text(tr['minutes'])}"
-                    f"（{tr['km']:.0f}km），期间不安排景点")
+                    f"{intercity_verb(_mode)} {intercity.duration_text(tr['minutes'])}"
+                    f"（{tr['km']:.0f}km），期间不安排景点{intercity_disclaim(_mode)}")
             if _want > _take:
                 # 想占 _want 天但只挤出 _take 天：必须说清，不能让用户以为开得完
                 _msg += (f"；按单日最多 {intercity.DRIVE_DAY_MAX_MIN // 60} 小时驾驶计，"
                          f"这段实际需要 {_want} 天，当前行程只挤出 {_take} 天")
             if intercity.needs_rail_advice(tr["minutes"]):
-                _msg += "。该距离已超出合理自驾范围，建议改乘高铁/飞机（跨城公共交通衔接尚未接入规划）"
+                # 口径随 mode 变：用户没提自驾时，不能说「超出合理自驾范围」（我们并没假定自驾）
+                _msg += ("。该距离已超出合理自驾范围，建议改乘高铁/飞机（跨城公共交通衔接尚未接入规划）"
+                         if _mode == "driving" else
+                         "。该距离城际交通耗时很长，建议改乘高铁/飞机（跨城公共交通衔接尚未接入规划）")
             merged_notices.append({
                 "kind": "intercity_transfer", "day": _first_td, "city": cname,
                 "days": list(range(_first_td, day_no + 1)), "message": _msg,
@@ -1123,12 +1175,13 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             _prev_day = _depart_day
             _end_h = _night_h + float(tr["minutes"]) / 60.0
             (_prev_day.setdefault("timeline", [])).append({
-                "type": "transfer", "name": f"自驾 {use[i - 1]} → {cname}（夜间转移）",
+                "type": "transfer",
+                "name": intercity_leg_name(_mode, use[i - 1], cname) + "（夜间转移）",
                 "start": _hm(_night_h), "end": _hm(_end_h, wrap=True),
                 "min": int(round(float(tr["minutes"]))),
                 "km": round(float(tr["km"]), 1),
                 "from": use[i - 1], "to": cname, "source": tr["source"],
-                "leg": 1, "n_legs": 1, "night": True,
+                "leg": 1, "n_legs": 1, "night": True, "mode": _mode,
             })
             _prev_day["travel_km"] = round(
                 float(_prev_day.get("travel_km") or 0) + float(tr["km"]), 1)
@@ -1136,24 +1189,25 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             merged_notices.append({
                 "kind": "intercity_transfer", "city": cname,
                 "day": _prev_day["day"],
-                "message": (f"Day{_prev_day['day']} 夜间从 {use[i - 1]} 驾车到 {cname}"
-                            f"：{_hm(_night_h)} 出发、约 "
-                            f"{intercity.duration_text(tr['minutes'])}"
+                "message": (f"Day{_prev_day['day']} 夜间 {use[i - 1]} → {cname}"
+                            f"：{_hm(_night_h)} 出发、"
+                            f"{intercity_verb(_mode)} {intercity.duration_text(tr['minutes'])}"
                             f"（{tr['km']:.0f}km）后抵达"
                             + ("，次日凌晨到达，注意休息" if _end_h >= 24 else "")
-                            + f"；Day{_prev_day['day'] + 1} 起在 {cname} 全天游玩"),
+                            + f"；Day{_prev_day['day'] + 1} 起在 {cname} 全天游玩"
+                            + intercity_disclaim(_mode)),
             })
             tot["km"] += float(tr["km"])
         elif _short and _seg_first_day:
             tr = transfers[i]
             _dep_s = city.get("day_start") or "09:00"
             (_seg_first_day.setdefault("timeline", [])).insert(0, {
-                "type": "transfer", "name": f"自驾 {use[i - 1]} → {cname}",
+                "type": "transfer", "name": intercity_leg_name(_mode, use[i - 1], cname),
                 "start": _dep_s, "end": _hm(_arrive_h),
                 "min": int(round(float(tr["minutes"]))),
                 "km": round(float(tr["km"]), 1),
                 "from": use[i - 1], "to": cname, "source": tr["source"],
-                "leg": 1, "n_legs": 1,
+                "leg": 1, "n_legs": 1, "mode": _mode,
             })
             _seg_first_day["travel_km"] = round(
                 float(_seg_first_day.get("travel_km") or 0) + float(tr["km"]), 1)
@@ -1164,10 +1218,11 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             merged_notices.append({
                 "kind": "intercity_transfer", "city": cname,
                 "day": _seg_first_day["day"],
-                "message": (f"Day{_seg_first_day['day']} 从 {use[i - 1]} 驾车到 {cname}"
-                            f"约 {intercity.duration_text(tr['minutes'])}"
-                            f"（{tr['km']:.0f}km）：{_dep_s} 出发、"
-                            f"{_hm(_arrive_h)} 抵达，当天景点从抵达后开始安排"),
+                "message": (f"Day{_seg_first_day['day']} {use[i - 1]} → {cname}："
+                            f"{intercity_verb(_mode)} {intercity.duration_text(tr['minutes'])}"
+                            f"（{tr['km']:.0f}km），{_dep_s} 出发、"
+                            f"{_hm(_arrive_h)} 抵达，当天景点从抵达后开始安排"
+                            + intercity_disclaim(_mode)),
             })
             tot["km"] += float(tr["km"])
         meta = city_meta(cname)

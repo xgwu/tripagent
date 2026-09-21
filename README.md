@@ -89,7 +89,7 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 - **点名与远郊召回**：用户点名的库内点位**确定性注入**（不依赖 LLM 是否采纳）+ 必选对账（排不进则显式告知）+ **目的地型餐饮豁免**（农家乐/湖鲜馆不被当作绕路配套剔除）+ 夜间点求解预算放宽（19:00 开门的点位可入选）
 - **多轮澄清**：需求缺失时保守追问一轮（选项卡片），已与需求抽取合并为单次 LLM 调用
 - **跨城联游**：「苏杭 4 天」自动识别跨城，逐城规划合并 + 住宿城市天数倾斜；**每城天数尊重用户明说的诉求**（「苏州玩2天」按确定性正则解析，不再 divmod 盲分）
-- **城际转移段**（`src/intercity.py`）：跨城驾车时长走三级模型（磁盘缓存 → 高德 driving → 直线×1.25÷75km/h 兜底，**不能复用 `travel_hours`**——它的市内速度模型会把苏州→杭州算成 9.6h）。≥4h 独占转移日（>10h 按单日上限拆多天）、<4h 顺延抵达日起始时刻、「晚上9点开车去苏州」识别为夜间转移挂在出发城当天末尾；转移段在时间轴与地图上均可见
+- **城际转移段**（`src/intercity.py`）：跨城驾车时长走三级模型（磁盘缓存 → 高德 driving → 直线×1.25÷75km/h 兜底，**不能复用 `travel_hours`**——它的市内速度模型会把苏州→杭州算成 9.6h）。≥4h 独占转移日（>10h 按单日上限拆多天）、<4h 顺延抵达日起始时刻、「晚上9点开车去苏州」识别为夜间转移挂在出发城当天末尾；转移段在时间轴与地图上均可见。**跨城交通方式只认用户明说的**（自驾/高铁/飞机）——没说就不假定自驾：转移行显示「X → Y（城际交通待定）」且 `mode=null`，时长仍按驾车口径估算**并如实披露口径**，以后用户指定高铁/飞机时按需填补
 - **自驾主题**：`自驾/租车/驾车` 命中 driving 画像（每日 400km 预算，作用于含城际段的天），hop 标签显示「自驾」
 - **性能工程**：天复用增量重解 + TOPTW 线程池并行 + at-solution 提前停止 + 提案级缓存（7 天 TTL）——端到端 23.3s → 首次 12.9s / 缓存命中 8.3s，质量零回归
 - **天气/节假日感知**：open-meteo 免 key，≥60% 降水提示室内 + 备雨具
@@ -173,7 +173,7 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 
 > ⚠️ 行程响应中 `result.itinerary.days[].timeline[]` 的元素字段为 `type`（`poi`/`hop`/`meal`/`hotel`/`transfer`）/ `id` / `name` / `start` / `end`，**不是** `kind` / `poi_id`；`city_meta` 不下发 open/close/rating。多城联游时 `hotel` 只在住宿城那几天出现（出发/返回行），路线绘制以「该天时间轴是否含 `hotel` 行」为判据。
 >
-> `transfer`（城际转移段）额外带 `min` / `km` / `from` / `to` / `source` / `leg` / `n_legs`，`night=true` 表示夜间转移（挂在出发城当天末尾）。整天为转移日时 `days[].transfer_day=true`；抵达日被车程顺延时 `days[].arrive_transfer=true`。
+> `transfer`（城际转移段）额外带 `min` / `km` / `from` / `to` / `source` / `leg` / `n_legs` / `mode`，`night=true` 表示夜间转移（挂在出发城当天末尾）。**`mode` 为 `driving`/`rail`/`flight`，用户未指定交通方式时为 `null`**（转移行名称也随之变成「X → Y（城际交通待定）」，不假定自驾）。整天为转移日时 `days[].transfer_day=true`；抵达日被车程顺延时 `days[].arrive_transfer=true`。
 
 ## 架构
 
@@ -240,6 +240,7 @@ scripts/      47 个运维与测试脚本 6,688 行（扩城/扩库/校验/门�
 - ✅ `toptw.py` depot 换位失效（M14 / `0457603`）——元组赋值 + `list.index(obj)` 双重陷阱致交换被整体撤销；换位提前到 `RoutingIndexManager` 构造**之前** + 基于 id 的下标（守卫 `test_depot_anchor.py`）
 - ✅ `family_ok=false` 仅在离线链路生效（M14 / `0457603`）——判据下沉 `sequencer.is_family_query` + `poi_db.is_family_ok`，确定性 gate 挂六个入口（守卫 `test_family_gate.py`）
 - ✅ 日内空档（M15 / `d25119e`）——≥45min 空档逐条核对后**全部出现在正餐点之前**（餐厅被钉在 12:00/18:00 整点）；`MEAL_EARLY_TOL_H=1.0` + 等待段补餐 + `scan_gaps` 分类披露，同扫描 357min → 60min（守卫 `test_gap_manage.py`）
+- ✅ **未指定交通方式却假定跨城自驾**（2026-09-21 / 报障）——「苏杭3天联游」里凭空出现「自驾 苏州 → 杭州」转移行与「从 苏州 驾车到 杭州」通知（自驾主题其实并未触发，只是文案无条件写了自驾）。修＝`intercity_mode(query)` 只认明说的方式，未指定则转移行写「（城际交通待定）」、`mode=null`、通知披露「时长按驾车口径估算」，并可据此填补高铁/飞机（守卫 `test_intercity_mode.py`）
 - ✅ **多城联游进度条停在「解析需求」**（2026-09-21 / 报障）——单城路径用 `_plan_extra_kw` 透传 `progress`（两处），而**多城 `plan_multi` 根本没接 progress**、段内 `planner.plan()` 也没传 → `/api/progress` 永远只拿到第一行的 `parse`。修＝`plan_multi(..., progress=)` 逐段包装后透传，并回传 `seg={i,n,city}` 让前端显示「第 i/n 段 · 城市」（否则进度条会在每城的 proposal→regen 之间来回跳，看不出整体进度）（守卫 `test_multicity_progress.py`）
 - ✅ **提了地名却静默按默认城市规划**（M20 / PR #4）——「川西4日游」「江南水乡5日游」被排成上海，且响应标 `from_query=true`（谎称城市来自需求）。根因：目的地解析只有「命中白名单」与「回落 `DEFAULT_CITY`」两个出口；护栏仅在 LLM 填了 `city_raw` 时生效。修＝解析层 + 「提了地名但解析不出 → 明确报错并给替代建议」（守卫 `test_destination_resolve.py`）
 - ✅ 点名／远郊点「能排但不被提案」（M15 / `d25119e`）——三层修复：确定性注入 → 必选与对账口径（`named_pois`）→ 目的地型餐饮豁免（守卫 `test_named_inject.py`）
