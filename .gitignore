@@ -12,10 +12,12 @@ __pycache__/
 output/
 data/shares/
 nohup.out
-data/llm_cache.json
-data/proposal_cache.json
 # travel_cache.json / photo_cache.json **刻意入库**（随仓库分发）：clone 后开箱可用，
 # 不必重建 6 万对路网请求。要重建用 build_travel_cache.py / fetch_poi_photos.py。
+
+# llm_cache.json / proposal_cache.json **刻意入库**（2026-09-21 决定）：仓库已转 private，
+# 缓存随仓库分发无 ToS 顾虑；push/pull 即可跨机同步，换机后不必重跑 LLM。
+# secrets.json 仍保持忽略（含 deepseek / amap key，永不入库）。
 
 # WorkBuddy 发布应用追踪标记（内部产物）
 .wbapp_*.genie
