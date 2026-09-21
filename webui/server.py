@@ -932,7 +932,8 @@ def merge_near_destinations(cities: list, km: float = NEAR_MERGE_KM) -> tuple:
 
 
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
-               use_llm: bool, planner, hotel_text: str | None = None) -> dict:
+               use_llm: bool, planner, hotel_text: str | None = None,
+               progress=None) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
 
     planner 为单城规划模块（m7/m1）。住宿锚点是城市专属概念（2026-09-15 报障 13
@@ -1092,8 +1093,15 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
             })
         d0 = seg_date0.isoformat() if seg_date0 else None
         seg_hotel = hotel_text if (hotel_text and hotel_city == i) else None
+        # 分阶段进度（2026-09-21 修）：原先多城路径**根本没透传 progress**（那个
+        # `_plan_extra_kw` 只用在单城两处），于是前端进度条停在「解析需求」不动。
+        # 这里按段包装：带上「第 i/n 段 · 哪座城」，否则进度条会在每城的
+        # proposal→regen 之间来回跳，看不出整体进度。
+        _seg_cb = (None if progress is None else
+                   (lambda st, _i=i: progress(st, {"i": _i + 1, "n": n, "city": cname})))
         r = planner.plan(city, query, di, use_llm=use_llm, date0=d0,
-                         hotel_text=seg_hotel)
+                         hotel_text=seg_hotel,
+                         **_plan_extra_kw(planner, _seg_cb))
         if seg_hotel and r.get("hotel"):
             hotel_out = r["hotel"]  # 住宿城市段的解析结果（名称/经纬度/解析来源）
         it = r["itinerary"]
@@ -1225,9 +1233,14 @@ _plan_stages: dict = {}
 _plan_stages_lock = threading.Lock()
 
 
-def _stage_put(sid: str, stage: str) -> None:
+def _stage_put(sid: str, stage: str, **extra) -> None:
+    """记录当前阶段。extra 可带段信息——多城联游时前端要显示「第 i/n 段 · 城市」，
+    否则用户只看到进度条在几个阶段间来回跳（每城都从 proposal 重新开始），
+    无法判断整体走到哪了。"""
     with _plan_stages_lock:
-        _plan_stages[sid] = {"stage": stage, "ts": time.time()}
+        ent = {"stage": stage, "ts": time.time()}
+        ent.update(extra)
+        _plan_stages[sid] = ent
 
 
 def _stage_pop(sid: str) -> None:
@@ -1427,7 +1440,7 @@ class Handler(BaseHTTPRequestHandler):
                 ent = _plan_stages.get(sid)
             if not ent:
                 return self._json({"ok": True, "stage": "done"})
-            return self._json({"ok": True, "stage": ent["stage"],
+            return self._json({"ok": True, "stage": ent["stage"], "seg": ent.get("seg"),
                                "age_s": round(time.time() - ent["ts"], 1)})
         if u.path == "/api/clarify":  # P1 多轮澄清：规划前 LLM 判断是否需要追问
             stats_bump("clarify_total")
@@ -1451,6 +1464,9 @@ class Handler(BaseHTTPRequestHandler):
             if sid:
                 _stage_put(sid, "parse")
             progress_cb = (lambda s: _stage_put(sid, s)) if sid else None
+            # 多城路径的进度回调多一个「段」参数（单城没有段概念，故两个回调并存）
+            progress_cb_m = ((lambda s, seg=None: _stage_put(sid, s, seg=seg))
+                             if sid else None)
             try:
                 query = q.get("query") or ""
                 # ---- P5 NL 提取健壮化：正则未命中时 LLM 结构化抽取兜底（llm=0 离线路径不触发） ----
@@ -1487,7 +1503,8 @@ class Handler(BaseHTTPRequestHandler):
                             m_hotel_text = (nl or {}).get("hotel")
                         r = plan_multi(multi, query, days, m_date0,
                                        use_llm=use_llm_m, planner=planner_m,
-                                       hotel_text=m_hotel_text)
+                                       hotel_text=m_hotel_text,
+                                       progress=progress_cb_m)
                         merged_meta = {"name": "+".join(multi), "n_pois": 0, "n_closed": 0,
                                        "pois": {}}
                         for c in multi:

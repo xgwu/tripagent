@@ -164,7 +164,7 @@ python scripts/gap_report.py                      # POI 库缺口台账汇总（
 | `/api/cities` | GET | 城市元信息（`pois{id:{id,name,lat,lng,category}}` / `n_pois` / `n_closed`）+ LLM/地图 Key 可用性 |
 | `/api/clarify` | POST | 多轮澄清（保守追问一轮，选项卡片） |
 | `/api/plan` | GET | 规划：`city/query/date/hotel/llm`；天数从 query 提取（1–5，默认 2）；查询含 ≥2 城自动跨城；**支持说省份/区域**（「贵州5日自驾游」→ 自动解析为受支持目的地组合）；解析不出目的地时返回 400 并给出最接近的受支持替代；`fresh=1` 跳缓存 |
-| `/api/progress` | GET | 规划进度轮询（五段式分阶段状态） |
+| `/api/progress` | GET | 规划进度轮询（五段式：解析需求/经验提案/落地匹配/求解排程/生成文案；多城联游额外回传 `seg={i,n,city}`，前端显示「第 i/n 段 · 城市」）；`stage` 尾缀 `:r2` 表示闭环质量重算第 2 轮 |
 | `/api/replace` | POST | 反馈换点：同主题邻近换点并重排当天时间轴 |
 | `/api/route` | GET | 高德路径规划代理：`mode=riding\|walking\|driving&o=lng,lat&d=lng,lat`（磁盘缓存；`driving` 用于城际转移腿） |
 | `/api/photo` | GET | POI 实拍图（缓存 1198 条，31 城 98.4%，缺失回退瓦片） |
@@ -240,6 +240,7 @@ scripts/      47 个运维与测试脚本 6,688 行（扩城/扩库/校验/门�
 - ✅ `toptw.py` depot 换位失效（M14 / `0457603`）——元组赋值 + `list.index(obj)` 双重陷阱致交换被整体撤销；换位提前到 `RoutingIndexManager` 构造**之前** + 基于 id 的下标（守卫 `test_depot_anchor.py`）
 - ✅ `family_ok=false` 仅在离线链路生效（M14 / `0457603`）——判据下沉 `sequencer.is_family_query` + `poi_db.is_family_ok`，确定性 gate 挂六个入口（守卫 `test_family_gate.py`）
 - ✅ 日内空档（M15 / `d25119e`）——≥45min 空档逐条核对后**全部出现在正餐点之前**（餐厅被钉在 12:00/18:00 整点）；`MEAL_EARLY_TOL_H=1.0` + 等待段补餐 + `scan_gaps` 分类披露，同扫描 357min → 60min（守卫 `test_gap_manage.py`）
+- ✅ **多城联游进度条停在「解析需求」**（2026-09-21 / 报障）——单城路径用 `_plan_extra_kw` 透传 `progress`（两处），而**多城 `plan_multi` 根本没接 progress**、段内 `planner.plan()` 也没传 → `/api/progress` 永远只拿到第一行的 `parse`。修＝`plan_multi(..., progress=)` 逐段包装后透传，并回传 `seg={i,n,city}` 让前端显示「第 i/n 段 · 城市」（否则进度条会在每城的 proposal→regen 之间来回跳，看不出整体进度）（守卫 `test_multicity_progress.py`）
 - ✅ **提了地名却静默按默认城市规划**（M20 / PR #4）——「川西4日游」「江南水乡5日游」被排成上海，且响应标 `from_query=true`（谎称城市来自需求）。根因：目的地解析只有「命中白名单」与「回落 `DEFAULT_CITY`」两个出口；护栏仅在 LLM 填了 `city_raw` 时生效。修＝解析层 + 「提了地名但解析不出 → 明确报错并给替代建议」（守卫 `test_destination_resolve.py`）
 - ✅ 点名／远郊点「能排但不被提案」（M15 / `d25119e`）——三层修复：确定性注入 → 必选与对账口径（`named_pois`）→ 目的地型餐饮豁免（守卫 `test_named_inject.py`）
 - ✅ **点名点被修复链丢弃**（M19 / PR #3）——query「织金洞1日游」最终行程里没有织金洞。根因**不在求解器**（spy 包住 `toptw.solve_day` 实测 `forced` 已把它保留），而在 `order_day._greedy` 选点**不看闭园时间** → 一级修复（违规触发的贪婪重排）把它抛到 14:17 到达 → 二级修复 `_repair_by_drop` **不问它是不是用户点名的**直接剔（求解器算不出 14:17：它按 `SetRange(lo, close−dur)` 硬约束到 ≤14:00，差额正是排序器插入的**餐块**）。修＝`required` 从 `compose` 透传到修复链 + 注入位置按窗口分流（真夜间点队尾、其余队首）。实测 3/10 → **0/10**（守卫 `test_named_guard_and_merge.py`，含不传 `required` 必被剔的对照）

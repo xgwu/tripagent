@@ -174,9 +174,15 @@ async function doPlan(q){
       const r2=raw.endsWith(":r2");
       const st=r2?raw.slice(0,-3):raw;
       const k=PLAN_STAGES.findIndex(s=>s[0]===st);
-      if(k>=0)$("status").innerHTML='<span class="spin"></span>'
-        +(r2?'<span class="badge b-amber">质量优化·第 2 轮</span> ':"")
-        +PLAN_STAGES[k][1]+"…"+stageBar(k);
+      if(k>=0){
+        // 多城联游：带上「第 i/n 段 · 城市」。否则进度条会在每城的 proposal→regen
+        // 之间来回跳，用户看不出整体走到哪（实测「苏杭3天联游」反馈同一问题）。
+        const sg=pr.seg, segTag=(sg&&sg.n>1)
+          ?`<span class="badge b-blue">第 ${sg.i}/${sg.n} 段 · ${sg.city||""}</span> `:"";
+        $("status").innerHTML='<span class="spin"></span>'+segTag
+          +(r2?'<span class="badge b-amber">质量优化·第 2 轮</span> ':"")
+          +PLAN_STAGES[k][1]+"…"+stageBar(k);
+      }
     }catch(e){/* 网络/时序问题忽略，下次再查 */}
   },600);
   try{
