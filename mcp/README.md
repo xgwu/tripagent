@@ -2,7 +2,7 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅（2026-10-09，自检 60/60）→ M2 待开工**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅（2026-10-09，自检 63/63）→ M2 待开工**
 
 面板已渲染**真实行程**：按天时间轴（含交通段/用餐）、主题与理由、日里程、硬约束违规徽标、
 被剔除点位及原因、POI 照片缩略图。数据来自本地 31 城 POI 库 + 交通/路线缓存，无需联网。
@@ -72,7 +72,7 @@ resourceDomains = ["http://127.0.0.1:*",
 
 ---
 
-## ✅ M1 主体（2026-10-09 完成，自检 60/60）
+## ✅ M1 主体（2026-10-09 完成，自检 63/63）
 
 对话 → 城市识别 → 规划内核 → 时间轴面板，全链路接通。
 
@@ -99,6 +99,11 @@ resourceDomains = ["http://127.0.0.1:*",
   同时兼容宿主下发 `ui/notifications/tool-result` 的 bootstrap 结果。
 - **照片**：server 侧从 `photo_cache` 解析高德直链后随行程下发；面板 `onerror` 隐藏，不留占位框。
 - **内核懒加载**：`initialize` 阶段不 import `src/`（ortools 等），首次规划才加载，保持启动轻快。
+- 🔴 **必须 `config.apply_env()`**：`load_config()` 只**返回** dict、**不写** `os.environ`，
+  而 `llm_client` 惰性只读 `os.environ`。宿主拉起本进程时 env 里只有 `TRIPPLANNER_HOME`，
+  不注入就会 **静默降级**到离线链路 —— 跑得飞快、结果看着也合理，极难发现。
+  现在内核加载时主动注入，并把 `llmEnabled` / `degraded` 回传到结果里，让降级**可见**。
+  自检有专门的「贫瘠环境」阶段（抹掉 `DEEPSEEK_API_KEY` 再跑）守住这条。
 
 ### ⚠️ 改面板必须 +1 版本号
 
@@ -181,7 +186,7 @@ MCP server 只是一层 stdio JSON-RPC 壳，直接 import 现有内核即可，
 mcp/
   tripplanner_mcp_server.py   # stdio MCP server（M0+M1pre：纯标准库、零依赖）
   panel/plan_panel.html     # 面板（自包含，零外部引用）
-  selftest.py               # 不开 WorkBuddy 也能验协议与真实规划（60 项）
+  selftest.py               # 不开 WorkBuddy 也能验协议与真实规划（63 项）
   register.py               # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖）
 ```
 
@@ -190,7 +195,7 @@ mcp/
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
-"$PY" mcp/selftest.py          # 1. 本地自检（60 项，含真实规划）
+"$PY" mcp/selftest.py          # 1. 本地自检（63 项，含真实规划 + 贫瘠环境回归）
 "$PY" mcp/register.py          # 2. 注册进 WorkBuddy 配置
 # 3. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
 # 4. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
@@ -204,7 +209,39 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 | 改了什么 | 怎么生效 |
 |---|---|
 | `tripplanner_mcp_server.py` | 面板里重开一次工具调用（宿主会重启 stdio 子进程），或重启 WorkBuddy |
-| `panel/plan_panel.html` | ⚠️ **宿主有 HTML 缓存**（`resolver.resolve.cacheHit`）→ 临时改 `VIEWER_URI` 加 `?v=<n>` 破缓存，或重启 |
+| `panel/plan_panel.html` | ⚠️ **宿主按 uri 缓存 HTML**（`resolver.resolve.cacheHit`）→ 把 `PANEL_VERSION` +1（uri 变 `ui://tripplanner/plan-<v>`），再重载 MCP |
+
+### 在 WorkBuddy 里验收（M1）
+
+1. **确认宿主真的重载了**（不重载一定看不到新工具）：
+
+   ```
+   连接器 → 自定义 MCP → 刷新
+   ```
+
+   验：工具列表里应出现 **6 个** `tripplanner_*`
+   （`plan_trip` / `open_plan` / `get_plan` / `list_cities` / `panel_ready` / `ping`）。
+   只有 2 个（`open_plan` / `ping`）＝ 还是 M0 的旧快照。
+
+2. **直接说人话，不要点工具**：
+
+   > 帮我规划杭州两天的行程，带 8 岁小孩，轻松一点
+
+   期望：模型自动调 `tripplanner_plan_trip` → **右侧弹出面板** → 面板里是逐日时间轴
+   （点位 / 交通 / 用餐 + 缩略图 + 里程 + 违规徽标）。
+
+3. **逐条对照看**：
+
+   | 看什么 | 期望 |
+   |---|---|
+   | 面板弹出 | 一次对话只弹一扇；再说「换个苏州三天的」应**复用/换内容而不叠两扇** |
+   | 模式 | 面板或摘要里 `mode=llm`（离线会显示 `offline`，看着也合理但少了 LLM 编排） |
+   | 缩略图 | 高德直链能加载（被 CSP 拦则整块隐藏，不留占位框） |
+   | 城市识别 | 「两天随便玩玩」应**明确报错并列出 31 个可用城市**，而不是瞎猜一个 |
+   | 报错 | 「火星玩两天」→ `未知城市：火星。可用：…` |
+
+4. **兜底排查**（面板没弹 / 报连接错）：先让模型调 `tripplanner_ping`，
+   能回就是 server 活着、问题在面板侧；回不了就是注册/重载没生效。
 
 ### 表单添加时填这些
 
@@ -313,7 +350,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 |---|---|---|
 | **M0** | 协议 spike：验证面板可开、桥接可握手、可反向调工具 | ✅ **完成（2026-10-09）** |
 | **M1-pre** | CSP 放行高德图片 + A+C 面板分流（防堆叠） | ✅ **完成（2026-10-09，自检 29/29）** |
-| **M1** | 最小闭环：`plan_trip` + `list_cities` + `get_plan` + 只读时间轴面板 | ✅ **完成（2026-10-09，自检 60/60）** |
+| **M1** | 最小闭环：`plan_trip` + `list_cities` + `get_plan` + 只读时间轴面板 | ✅ **完成（2026-10-09，自检 63/63）** |
 | **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ⏳ 下一步 |
 | **M3** | 远端化：换 `streamable-http` transport，复用线上后端 | ⏳ |
 

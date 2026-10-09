@@ -34,11 +34,13 @@ def check(label, cond, detail=""):
         fails.append(label)
 
 
-def spawn():
+def spawn(env=None):
+    """env=None → 继承当前进程环境；传 dict → 完全替换（用于模拟宿主的贫瘠环境）。"""
     p = subprocess.Popen(
         [sys.executable, SERVER],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", bufsize=1,
+        env=env,
     )
     return p
 
@@ -267,6 +269,9 @@ def phase_planning():
         check("总里程为数值", isinstance(plan.get("totalTravelKm"), (int, float)),
               str(plan.get("totalTravelKm")))
         check("mode 字段有值", bool(plan.get("mode")), str(plan.get("mode")))
+        check("LLM 未静默降级（mode=llm 且 degraded=false）",
+              plan.get("mode") == "llm" and plan.get("degraded") is False,
+              json.dumps({k: plan.get(k) for k in ("mode", "llmEnabled", "degraded")}))
         check("文案摘要非空", bool(((rc.get("content") or [{}])[0].get("text") or "").strip()))
         check("首次 plan_trip 判定为开面板", sc.get("panelOpened") is True,
               json.dumps({k: sc.get(k) for k in ("panelOpened", "stage")}))
@@ -335,6 +340,43 @@ def phase_planning():
     return err
 
 
+def phase_env_injection():
+    """⚠️ 最关键的一条回归：宿主拉起本进程时 env 里只有 TRIPPLANNER_HOME。
+
+    若 kernel() 里没调 config.apply_env()，llm_client 就只读 os.environ 拿不到 key
+    → **静默降级**到离线链路：跑得飞快、结果看着也合理，极难发现。
+    这里把 DEEPSEEK_API_KEY / OPENAI_API_KEY 从环境里抹掉再跑一次规划，
+    断言仍然是 llm 模式 —— 等于提前复现 WorkBuddy 里的真实环境。
+    """
+    print("\n=== 阶段三：贫瘠环境下的 LLM 注入（防静默降级）===")
+    env = dict(os.environ)
+    for k in ("DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
+        env.pop(k, None)
+    env["TRIPPLANNER_HOME"] = os.path.dirname(HERE)      # 宿主只会给这一个
+
+    proc = spawn(env=env)
+    err = ""
+    try:
+        init(proc)
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 90, "method": "tools/call",
+                       "params": {"name": "tripplanner_plan_trip",
+                                  "arguments": {"query": "杭州玩两天"}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        plan = sc.get("plan") or {}
+        check("抹掉 DEEPSEEK_API_KEY 后仍能规划", sc.get("ok") is True,
+              json.dumps(sc, ensure_ascii=False)[:160])
+        check("贫瘠环境下仍走 LLM（证明 apply_env 生效）",
+              plan.get("mode") == "llm",
+              json.dumps({k: plan.get(k) for k in ("mode", "llmEnabled", "degraded")},
+                         ensure_ascii=False))
+        # 反证：若真没 key，llmEnabled 会是 False —— 这里必须是 True
+        check("llmEnabled=True（config.json 的 key 被注入到环境）",
+              plan.get("llmEnabled") is True, str(plan.get("llmEnabled")))
+    finally:
+        err = shutdown(proc)
+    return err
+
+
 def main() -> int:
     print(f"server: {SERVER}")
     print(f"python: {sys.executable}")
@@ -342,8 +384,9 @@ def main() -> int:
 
     err1 = phase_protocol()
     err2 = phase_planning()
+    err3 = phase_env_injection()
 
-    err = (err1 or "") + (err2 or "")
+    err = (err1 or "") + (err2 or "") + (err3 or "")
     print()
     print("--- stderr 末 12 行（server 日志，确认没污染 stdout）---")
     for ln in (err or "").strip().splitlines()[-12:]:

@@ -100,6 +100,15 @@ def kernel():
     if root not in sys.path:
         sys.path.insert(0, root)
     try:
+        from src import config as _config
+        # ⚠️ 必须有这一步：load_config() 只返回 dict、不写 os.environ，而 llm_client
+        # 惰性只读 os.environ。宿主（WorkBuddy）拉起本进程时 env 里只有 TRIPPLANNER_HOME，
+        # 不注入就会「静默降级」到离线链路 —— 0.x 秒跑完、结果看着还挺合理，极难发现。
+        injected = _config.apply_env()
+        log("config.apply_env 注入", keys=injected)
+    except Exception as e:
+        log("config.apply_env 失败（将只依赖进程环境）", err=str(e))
+    try:
         from src import poi_db, m1_planner, llm_client, query_days  # noqa
         _KERNEL = {"root": root, "poi_db": poi_db, "planner": m1_planner,
                    "llm": llm_client, "query_days": query_days}
@@ -399,13 +408,14 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
         n = int(getattr(qd, "DEFAULT_DAYS", 2) or 2)
     n = max(MIN_DAYS, min(MAX_DAYS, n))
 
+    llm_on = bool(k["llm"].llm_available())
     t0 = time.time()
     real_stdout = sys.stdout
     sys.stdout = sys.stderr          # ← 内核输出一律改道，绝不污染 JSON-RPC 通道
     try:
         city_data = k["poi_db"].load_city(city)
         raw = k["planner"].plan(city_data, query, n,
-                                use_llm=k["llm"].llm_available(),
+                                use_llm=llm_on,
                                 date0=date0 or None, hotel_text=hotel_text or None)
     except Exception as e:
         return {"ok": False, "error": f"规划失败：{type(e).__name__}: {e}"}
@@ -414,6 +424,11 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
 
     plan = normalize_plan(raw, city, note)
     plan["latency_s"] = round(time.time() - t0, 1)
+    # 显式回传「LLM 到底用上了没」——离线降级是可用的，但不能静默发生
+    plan["llmEnabled"] = llm_on
+    plan["degraded"] = bool(llm_on and raw.get("mode") != "llm")
+    if plan["degraded"]:
+        log("⚠️ 降级：请求用 LLM 但结果 mode 不是 llm", mode=raw.get("mode"))
     return {"ok": True, "plan": plan}
 
 
