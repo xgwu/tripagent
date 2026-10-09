@@ -6,18 +6,25 @@ MCP server 本地自检 —— 不开 WorkBuddy 也能验协议（把 server 当
 用法：
     D:\\Users\\xgwu\\.workbuddy\\binaries\\python\\envs\\tripagent\\Scripts\\python.exe mcp/selftest.py
 
-验的是：initialize 协商、tools/list（含面板标记）、resources/read（含 _meta.ui.csp 与地图 key 注入）、
+验的是：initialize 协商、tools/list（含面板标记）、resources/read（含 _meta.ui.csp 与地图 key / 本地 API 注入）、
 tools/call（全量 9 个工具，含 M1 真实规划 + M2 换点/挪时段/导出）、A+C 面板分流、
-跨进程取数，以及「stdout 是否被日志污染」。
+跨进程取数、M2.1 本地 HTTP API（health/plan/replace/move/export + token 校验），
+以及「stdout 是否被日志污染」。
 
-⚠️ M1/M2 的规划用例会真的跑一次规划内核（LLM 可用时约 3-6s，不可用则走离线兜底）。
+⚠️ M1/M2/M2.1 的规划用例会真的跑一次规划内核（LLM 可用时约 3-6s，不可用则走离线兜底）。
+⚠️ 阶段六会**真的拉起** `mcp/local_api.py`（detached 常驻进程，端口池 51900 起）。
+   它是幂等的（已有实例活着则新进程直接退出），跑完不主动杀 —— 生产路径同样靠它。
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
+import time
+import urllib.error
+import urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -200,6 +207,21 @@ def phase_protocol():
               "__AMAP_JS_KEY__" in raw_panel)
         check("panel 文件不含 amap_js_key 的取值形式",
               "amap_js_key\"" not in raw_panel and "amap_js_key:" not in raw_panel)
+
+        # ---- M2.1：本地 HTTP API（面板交互的实际通路） ----
+        # 背景：宿主 tools/call 通道已实测不通（面板 ping 10s 超时）。
+        check("面板含本地 API 客户端（probeApi + 五个端点）",
+              all(k in html for k in ("probeApi", "/api/health", "/api/plan",
+                                      "/api/replace", "/api/move", "/api/export")))
+        check("面板保留宿主通道为兜底（tools/call 仍在）", "tools/call" in html)
+        check("panel 文件用本地 API 占位符（真实端口/token 不入库）",
+              "__LOCAL_API_BASE__" in raw_panel and "__LOCAL_API_TOKEN__" in raw_panel)
+        m_api = re.search(r'var\s+API_BASE\s*=\s*"(http://127\.0\.0\.1:\d+)"', html)
+        check("resources/read 已注入本地 API base（真实端口）",
+              bool(m_api), m_api.group(1) if m_api else "仍是占位符")
+        m_tok = re.search(r'var\s+API_TOKEN\s*=\s*"([0-9a-f]{16,})"', html)
+        check("resources/read 已注入本地 API token",
+              bool(m_tok), f"len={len(m_tok.group(1))}" if m_tok else "未注入")
 
         # 兼容性（2026-10-09 踩坑）：改 PANEL_VERSION 后宿主**注册表里仍是旧 uri**
         # （注册表要等宿主重连才更新）。若 resources/read 严格比对当前 uri，
@@ -624,6 +646,184 @@ def phase_interactions():
     return err
 
 
+# ===========================================================================
+# 阶段六（M2.1）：本地 HTTP API —— 面板交互的**实际**通路
+# ===========================================================================
+def _http(url, token=None, body=None, method=None):
+    data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+    req = urllib.request.Request(url, data=data,
+                                 method=method or ("POST" if data is not None else "GET"))
+    if data is not None:
+        req.add_header("Content-Type", "application/json")
+    if token:
+        req.add_header("X-Tripplanner-Token", token)
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        try:
+            return e.code, json.loads(e.read().decode("utf-8"))
+        except Exception:
+            return e.code, {}
+    except Exception as e:
+        return 0, {"ok": False, "error": f"{type(e).__name__}: {e}"}
+
+
+def phase_local_api():
+    """阶段六（M2.1）：本地 HTTP API。
+
+    为什么必须单独验：面板 → 宿主 → server 的 tools/call 通道在本机**实测不通**
+    （宿主 mcp-apps-diag.log 有 rpc.callTool / proxyAppToolCall.ok，但请求从未到达
+    任何 server 进程；面板里点 ping 是 10s 超时）。面板交互已改走 127.0.0.1 的本地
+    HTTP —— 这条通路若不复测，「M2 全绿」就是个假象（M2 当时正是这个假象）。
+    """
+    print()
+    print("--- 阶段六：M2.1 本地 HTTP API ---")
+    proc = spawn()
+    err = ""
+    # 「还没有行程时应当如何」的用例需要干净起点：main() 只在最外面挪过一次，
+    # 而阶段二~五都会真的生成行程并落盘。这里自己挪开、跑完原样放回。
+    state6 = os.path.join(os.path.dirname(HERE), "output", "mcp_last_plan.json")
+    backup6 = state6 + ".phase6-bak"
+    moved6 = os.path.exists(state6)
+    if moved6:
+        os.replace(state6, backup6)
+    try:
+        r0 = init(proc)
+        srv_ver = (((r0 or {}).get("result") or {}).get("serverInfo") or {}).get("version")
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 70, "method": "tools/list"})
+        tools = ((r or {}).get("result") or {}).get("tools") or []
+        by = {t["name"]: t for t in tools}
+        panel_uri = ((((by.get("tripplanner_plan_trip") or {}).get("_meta") or {})
+                      .get("ui") or {}).get("resourceUri")) or ""
+
+        # resources/read 会 ensure_local_api()：拉起（或复用）常驻进程并注入 base + token
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 71, "method": "resources/read",
+                       "params": {"uri": panel_uri}})
+        html = ((((r or {}).get("result") or {}).get("contents") or [{}])[0].get("text") or "")
+        m_api = re.search(r'var\s+API_BASE\s*=\s*"(http://127\.0\.0\.1:\d+)"', html)
+        m_tok = re.search(r'var\s+API_TOKEN\s*=\s*"([0-9a-f]{16,})"', html)
+        check("前置：resources/read 已注入本地 API base", bool(m_api),
+              m_api.group(1) if m_api else "未注入（ensure_local_api 失败）")
+        if not m_api:
+            return err
+        base = m_api.group(1)
+        tok = m_tok.group(1) if m_tok else ""
+        check("前置：已注入本地 API token", bool(tok), f"len={len(tok)}")
+
+        # ---- 探活（health 刻意不校验 token）----
+        code, j = _http(base + "/api/health")
+        check("GET /api/health 200 且 ok", code == 200 and j.get("ok") is True,
+              f"{code} {json.dumps(j, ensure_ascii=False)[:90]}")
+        check("health 回带身份与版本（供版本闸门用）",
+              j.get("server") == "tripplanner" and bool(j.get("version")),
+              f"server={j.get('server')} version={j.get('version')}")
+        # 常驻进程的版本必须跟当前 server 版本一致 —— 否则「改了代码没生效」且不报错。
+        check("常驻进程版本 == server 版本（版本闸门）",
+              j.get("version") == srv_ver,
+              f"api={j.get('version')} server={srv_ver}")
+
+        # ---- token 校验 ----
+        code, j = _http(base + "/api/plan")
+        check("无 token 访问 /api/plan 被拒（403）", code == 403, f"{code} {j.get('error')}")
+        code, j = _http(base + "/api/plan", token=tok)
+        check("带 token 访问 /api/plan 通过", code == 200 and j.get("ok") is True, str(code))
+        check("无行程时 hasPlan=False（自检已隔离状态文件）", j.get("hasPlan") is False,
+              str(j.get("hasPlan")))
+        code, j = _http(base + "/api/export", token=tok, body={"format": "markdown"})
+        check("无行程时导出明确报错（200 + ok=false，不是 500）",
+              code == 200 and j.get("ok") is False and "行程" in (j.get("error") or ""),
+              json.dumps(j, ensure_ascii=False)[:110])
+
+        # ---- 先经 MCP 工具生成行程，再验本地 API 能读到同一份（跨进程共享磁盘状态）----
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 72, "method": "tools/call",
+                       "params": {"name": "tripplanner_plan_trip",
+                                  "arguments": {"query": "杭州2天，喜欢自然风光"}}})
+        plan = (((r or {}).get("result") or {}).get("structuredContent") or {}).get("plan") or {}
+        days = plan.get("dayList") or []
+        check("前置：行程已生成并落盘", bool(days), f"dayList={len(days)}")
+        if not days:
+            return err
+
+        code, j = _http(base + "/api/plan", token=tok)
+        lp = j.get("plan") or {}
+        check("本地 API 读到同一份行程（共享 output/mcp_last_plan.json）",
+              j.get("hasPlan") is True and lp.get("city") == plan.get("city"),
+              f"hasPlan={j.get('hasPlan')} city={lp.get('city')}")
+
+        city = plan.get("city") or ""
+        d0 = days[0]
+        day_ids = [s.get("id") for s in (d0.get("timeline") or []) if s.get("type") == "poi"]
+        used = [s.get("id") for d in days for s in (d.get("timeline") or [])
+                if s.get("type") == "poi"]
+        check("第一天有可换的点（≥2）", len(day_ids) >= 2, str(day_ids))
+        if len(day_ids) < 2:
+            return err
+
+        # ---- 换点（HTTP）----
+        code, j = _http(base + "/api/replace", token=tok, body={
+            "city": city, "day": 1, "poi_id": day_ids[0], "day_ids": day_ids,
+            "used_ids": used, "query": plan.get("query") or ""})
+        check("POST /api/replace ok", code == 200 and j.get("ok") is True,
+              json.dumps(j, ensure_ascii=False)[:140])
+        if not j.get("ok"):
+            return err
+        nplan = j.get("plan") or {}
+        nd0 = (nplan.get("dayList") or [{}])[0]
+        ntl = [s.get("id") for s in (nd0.get("timeline") or []) if s.get("type") == "poi"]
+        check("HTTP 换点后点数不变（守门经 HTTP 仍生效）",
+              len(ntl) == len(day_ids), f"{len(day_ids)} -> {len(ntl)}")
+        check("HTTP 换点后确有替换（点集变化）", set(ntl) != set(day_ids), str(ntl))
+        check("HTTP 换点写回整个行程（带 updatedAt）", bool(nplan.get("updatedAt")))
+        code2, j2 = _http(base + "/api/plan", token=tok)
+        got = [s.get("id") for s in ((((j2.get("plan") or {}).get("dayList") or [{}])[0])
+                                     .get("timeline") or []) if s.get("type") == "poi"]
+        check("换点结果已落盘（再 GET 一次仍可见）", got == ntl, str(got))
+
+        # ---- 挪时段（HTTP）----
+        rev = list(reversed(ntl))
+        code, j = _http(base + "/api/move", token=tok, body={
+            "city": city, "day": 1, "ordered_ids": rev,
+            "query": plan.get("query") or ""})
+        check("POST /api/move ok", code == 200 and j.get("ok") is True,
+              json.dumps(j, ensure_ascii=False)[:140])
+        if j.get("ok"):
+            md0 = ((j.get("plan") or {}).get("dayList") or [{}])[0]
+            got = [s.get("id") for s in (md0.get("timeline") or []) if s.get("type") == "poi"]
+            check("HTTP 重排后顺序与请求一致", got == rev,
+                  f"order_respected={j.get('order_respected')} got={got}")
+            check("HTTP 重排后点数不变", len(got) == len(rev), f"{len(got)} vs {len(rev)}")
+        code, j = _http(base + "/api/move", token=tok, body={
+            "city": city, "day": 1, "ordered_ids": rev[:-1]})
+        check("HTTP 重排点集不一致时拒绝（防拖拽悄悄丢点）",
+              code == 200 and j.get("ok") is False and "点集" in (j.get("error") or ""),
+              json.dumps(j, ensure_ascii=False)[:120])
+
+        # ---- 导出（HTTP）----
+        code, j = _http(base + "/api/export", token=tok, body={"format": "markdown"})
+        text = j.get("text") or ""
+        check("POST /api/export ok", code == 200 and j.get("ok") is True,
+              json.dumps(j, ensure_ascii=False)[:90])
+        check("HTTP 导出是 Markdown（标题 + 逐日小节）",
+              text.startswith("# 【") and "## Day 1" in text, repr(text[:40]))
+        check("HTTP 导出文件名 .md + mimeType=text/markdown",
+              str(j.get("filename") or "").endswith(".md")
+              and j.get("mimeType") == "text/markdown", str(j.get("filename")))
+        code, j = _http(base + "/api/export", token=tok, body={"format": "pdf"})
+        check("不支持的导出格式明确报错",
+              code == 200 and j.get("ok") is False, json.dumps(j, ensure_ascii=False)[:90])
+
+        code, j = _http(base + "/api/nope", token=tok)
+        check("未知路径 404", code == 404, f"{code} {j.get('error')}")
+    finally:
+        if os.path.exists(state6):
+            os.remove(state6)          # 本阶段自己生成的行程，别留给收尾逻辑
+        if moved6:
+            os.replace(backup6, state6)
+        err = shutdown(proc)
+    return err
+
+
 def main() -> int:
     print(f"server: {SERVER}")
     print(f"python: {sys.executable}")
@@ -643,6 +843,7 @@ def main() -> int:
         err3 = phase_env_injection()
         err4 = phase_cross_process()
         err5 = phase_interactions()
+        err6 = phase_local_api()
     finally:
         if had and os.path.exists(backup):
             os.replace(backup, state)
@@ -651,7 +852,7 @@ def main() -> int:
         if os.path.exists(backup):
             os.remove(backup)
 
-    err = (err1 or "") + (err2 or "") + (err3 or "") + (err4 or "") + (err5 or "")
+    err = (err1 or "") + (err2 or "") + (err3 or "") + (err4 or "") + (err5 or "") + (err6 or "")
     print()
     print("--- stderr 末 12 行（server 日志，确认没污染 stdout）---")
     for ln in (err or "").strip().splitlines()[-12:]:
@@ -664,7 +865,7 @@ def main() -> int:
         for f in fails:
             print("   - " + f)
         return 1
-    print("[PASS] 全部通过 —— 协议 / M1 规划 / M2 交互均正确，可以交给 WorkBuddy 信任了")
+    print("[PASS] 全部通过 —— 协议 / M1 规划 / M2 交互 / M2.1 本地 API 均正确，可以交给 WorkBuddy 信任了")
     return 0
 
 

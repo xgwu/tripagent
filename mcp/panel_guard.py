@@ -11,6 +11,7 @@
   - 结构性判断**只用 `count()` 计数比对**，不用正则数标签；
   - key 安全用**精确锚点**（`var amapKey = "..."` 的初值），不用「全文不许有 hex」这种宽正则
     —— 面板里 M1 就有的 CSP 验证探针本身带一个高德图片 hash，宽正则必然误报。
+  - M2.1 起同一套办法也套在本地 API 的 `API_BASE` / `API_TOKEN` 上：初值必须是占位符。
 """
 from __future__ import annotations
 
@@ -49,10 +50,14 @@ def main() -> int:
         cl = html.count("</" + tag + ">")
         chk(f"<{tag}> 配对", op == cl, f"{op} open / {cl} close")
 
-    # 3) 关键锚点（面板与 server 的工具名必须对得上）
+    # 3) 关键锚点（面板与 server 的工具名 / 占位符必须对得上）
     for anchor in ("__AMAP_JS_KEY__", "tripplanner_replace_poi", "tripplanner_move_poi",
                    "tripplanner_export", "tripplanner_get_plan", "tripplanner_panel_ready",
-                   "ui/download-file", "draggable", "webapi.amap.com"):
+                   "ui/download-file", "draggable", "webapi.amap.com",
+                   # M2.1：本地 HTTP API（宿主 tools/call 通道已实测不通）
+                   "__LOCAL_API_BASE__", "__LOCAL_API_TOKEN__",
+                   "/api/health", "/api/plan", "/api/replace", "/api/move", "/api/export",
+                   "probeApi"):
         chk(f"含锚点 {anchor}", anchor in html)
 
     # 4) 内联 JS 语法
@@ -75,6 +80,16 @@ def main() -> int:
         repr(mkey.group(1)) if mkey else "未找到 amapKey 定义")
     chk("panel 里没有 amap_js_key 的**值**（字段名出现在提示文案里是允许的）",
         not re.search(r'amap_js_key["\']?\s*[:=]\s*["\'][0-9A-Za-z]{16,}', html))
+
+    # 6) M2.1：本地 API 的 base/token 初值必须是占位符（真实值只在服务端注入）
+    mbase = re.search(r'var\s+API_BASE\s*=\s*"([^"]*)"', html)
+    chk("API_BASE 初值是占位符（真实端口只在服务端注入）",
+        bool(mbase) and mbase.group(1) == "__LOCAL_API_BASE__",
+        repr(mbase.group(1)) if mbase else "未找到 API_BASE 定义")
+    mtok = re.search(r'var\s+API_TOKEN\s*=\s*"([^"]*)"', html)
+    chk("API_TOKEN 初值是占位符（真实 token 只在服务端注入）",
+        bool(mtok) and mtok.group(1) == "__LOCAL_API_TOKEN__",
+        repr(mtok.group(1)) if mtok else "未找到 API_TOKEN 定义")
 
     print()
     if fails:

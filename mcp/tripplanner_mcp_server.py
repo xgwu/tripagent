@@ -13,6 +13,15 @@ M0（协议 spike）与 M1-pre（CSP + A+C 分流）已验收，本轮把面板�
   tripplanner_list_cities   无面板：列出可规划城市
   tripplanner_panel_ready   无面板：面板自报 appInstanceId（A 方案）
   tripplanner_ping          无面板：连通性对照
+  tripplanner_replace_poi   无面板：M2 换点
+  tripplanner_move_poi      无面板：M2 挪时段
+  tripplanner_export        无面板：M2 导出 Markdown
+
+⚠️ M2.1（2026-10-09）：面板 → 宿主 → server 的 `tools/call` 通道在本宿主上是**死的**
+（宿主有 `rpc.callTool`/`proxyAppToolCall.ok`，但请求从未到达任何 server 进程、
+12ms 假成功、structuredContent 被剥）。上面的 replace/move/export 工具保留，
+但**面板实际走 `mcp/local_api.py` 开在 127.0.0.1 的本地 HTTP**。
+本文件负责「确保那个进程在跑」并把 `端口 + token` 注入面板 HTML。
 
 设计要点（照 app.asar 源码挖出的硬约束）：
   - 工具是否「带面板」**完全取决于** tool._meta.ui.resourceUri；不用手写 isApp
@@ -32,7 +41,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.2.0-m2"
+SERVER_VERSION = "0.2.2-m2.1"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,7 +50,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m4"
+PANEL_VERSION = "m5"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -327,6 +336,164 @@ def _plan_state_write(value) -> None:
     except Exception as e:
         log("last_plan 落盘失败", err=str(e))
         dbg("last_plan.write.fail", err=str(e))
+
+
+def read_plan_state():
+    """当前行程 —— **始终读磁盘**。
+
+    ⚠️ 为什么不用内存缓存（2026-10-09，自检阶段六抓到）：本函数的主要调用方之一是
+    **常驻**的 `mcp/local_api.py`。它的进程内存跨请求永不失效，而行程是 **MCP server
+    进程**（另一个进程，宿主按需 spawn）写进磁盘的。若这里内存优先，就会出现
+    「助手刚生成新行程 → 面板读到的还是上一份旧行程」，且完全不报错。
+    磁盘是跨进程的唯一真相，所以读一律走磁盘；写仍是「落盘 + 同步本进程缓存」。
+    """
+    val = _plan_state_read()
+    if val is not None:
+        SESSION._last_plan = val
+        SESSION._plan_loaded = True
+    return val
+
+
+def write_plan_state(value) -> None:
+    """写回当前行程（落盘 + 同步本进程缓存）。"""
+    SESSION.last_plan = value
+
+
+# ---------------------------------------------------------------------------
+# M2.1：本地 HTTP API（面板 ↔ 服务端的备用通路）
+#
+# 为什么另起一个常驻进程，而不是在本进程开个线程：
+#   宿主对 stdio MCP server 是**按需 spawn**、随时回收（见 _Session 注释里
+#   「pidSpawned 每次都不同」）。挂在 server 进程内的 HTTP 会随它一起死，
+#   面板下一次点击就 fetch 不到。故由本地 `mcp/local_api.py` detached 常驻，
+#   本文件只负责「确保它在跑」并把端口 + token 注入面板 HTML。
+# ---------------------------------------------------------------------------
+LOCAL_API_BASE_PLACEHOLDER = "__LOCAL_API_BASE__"
+LOCAL_API_TOKEN_PLACEHOLDER = "__LOCAL_API_TOKEN__"
+LOCAL_API_DEFAULT_PORT = 51900          # 与 local_api.PREFERRED_PORTS 起点一致
+
+
+def local_api_portfile_path() -> str:
+    return os.path.join(state_dir(), "mcp_local_api.json")
+
+
+def _local_api_read_portfile():
+    try:
+        with open(local_api_portfile_path(), encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict) and d.get("port"):
+            return d
+    except Exception:
+        pass
+    return None
+
+
+def _local_api_info(base: str, timeout: float = 0.6):
+    """读 /api/health 的 JSON；不通返回 None。health 不校验 token，专供探活。"""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(base + "/api/health", timeout=timeout) as r:
+            if int(getattr(r, "status", 0) or 0) != 200:
+                return None
+            return json.loads(r.read().decode("utf-8"))
+    except Exception:
+        return None
+
+
+def _local_api_alive(base: str, timeout: float = 0.6) -> bool:
+    return _local_api_info(base, timeout) is not None
+
+
+def _local_api_kill(pid: int) -> None:
+    """干掉一个**确认是我们自己的**旧实例（代码升级后用，见 ensure_local_api）。
+
+    Windows 下 os.kill(pid, SIGTERM) 等价于 TerminateProcess，可直接用。
+    """
+    if pid <= 0:
+        return
+    try:
+        import signal as _signal
+        os.kill(pid, _signal.SIGTERM)
+        dbg("local_api.kill", pid=pid, reason="version-mismatch")
+    except Exception as e:
+        dbg("local_api.kill.fail", pid=pid, err=str(e))
+
+
+_LOCAL_API_CACHE = {"base": "", "token": "", "checked": 0.0}
+
+
+def ensure_local_api(force: bool = False) -> tuple:
+    """确保本地 HTTP API 在跑。返回 `(base, token)`；失败返回 `("", "")`。
+
+    幂等且便宜：缓存命中（默认 30s）或 portfile + 健康检查通过时都不重新拉起。
+
+    ⚠️ **版本闸门**：常驻进程会一直活着，若只改代码不 bump `SERVER_VERSION`，
+    旧进程会继续用旧逻辑服务面板（表现为「改了没生效」，极难排查）。
+    故健康检查里比对 `version`，不一致就杀掉重拉。
+    🔴 **改 `tripplanner_mcp_server.py` 或 `local_api.py` 都必须 +1** ——
+    `local_api.py` 会 import 本模块取内核，所以本文件的改动同样影响常驻进程。
+    """
+    now = time.time()
+    c = _LOCAL_API_CACHE
+    if not force and c["base"] and now - c["checked"] < 30:
+        return c["base"], c["token"]
+
+    pf = _local_api_read_portfile()
+    if pf:
+        base = f"http://127.0.0.1:{int(pf['port'])}"
+        info = _local_api_info(base)
+        if info and str(info.get("server") or "") == SERVER_NAME:
+            if str(info.get("version") or "") == SERVER_VERSION:
+                c.update(base=base, token=str(pf.get("token") or ""), checked=now)
+                dbg("local_api.reuse", base=base, pid=pf.get("pid"))
+                return base, c["token"]
+            log("本地 API 版本不符，杀掉旧实例重拉",
+                old=info.get("version"), want=SERVER_VERSION)
+            _local_api_kill(int(pf.get("pid") or 0))
+            try:
+                os.remove(local_api_portfile_path())
+            except Exception:
+                pass
+            time.sleep(0.3)          # 等端口释放
+
+    try:
+        import subprocess
+        script = os.path.join(HERE, "local_api.py")
+        env = dict(os.environ)
+        env["TRIPPLANNER_HOME"] = project_root()
+        popen_kw = dict(cwd=HERE, env=env, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        close_fds=True)
+        if os.name == "nt":
+            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
+            # → 脱离宿主控制台，也不会被宿主的 job object 顺手带走
+            flags = 0x00000008 | 0x00000200 | 0x01000000
+            try:
+                subprocess.Popen([sys.executable, script], creationflags=flags, **popen_kw)
+            except OSError:
+                # 某些 job 不允许 breakaway → 退回不脱离（仍在，只是可能被回收）
+                subprocess.Popen([sys.executable, script],
+                                 creationflags=0x00000008 | 0x00000200, **popen_kw)
+        else:
+            subprocess.Popen([sys.executable, script], start_new_session=True, **popen_kw)
+        dbg("local_api.spawn", script=script, python=sys.executable)
+    except Exception as e:
+        log("local_api 拉起失败", err=str(e))
+        dbg("local_api.spawn.fail", err=str(e))
+        return "", ""
+
+    for _ in range(40):                  # 最多等 ~4s
+        time.sleep(0.1)
+        pf = _local_api_read_portfile()
+        if pf:
+            base = f"http://127.0.0.1:{int(pf['port'])}"
+            if _local_api_alive(base, timeout=0.4):
+                c.update(base=base, token=str(pf.get("token") or ""), checked=now)
+                dbg("local_api.ready", base=base, pid=pf.get("pid"))
+                return base, c["token"]
+    dbg("local_api.timeout")
+    log("local_api 启动超时（面板将降级到宿主通道）")
+    return "", ""
 
 
 # ---------------------------------------------------------------------------
@@ -617,6 +784,15 @@ def read_panel() -> str:
         key = amap_js_key()
         html = html.replace(AMAP_KEY_PLACEHOLDER, key)
         log("panel 地图 key 注入", has_key=bool(key))
+    # M2.1：注入本地 HTTP API 的 base + token（面板交互的唯一可靠通路）。
+    # 注入失败就留空串 —— 面板侧会退化为默认端口 / 回落宿主通道并**如实报错**，
+    # 绝不静默。
+    if LOCAL_API_BASE_PLACEHOLDER in html or LOCAL_API_TOKEN_PLACEHOLDER in html:
+        base, token = ensure_local_api()
+        html = html.replace(LOCAL_API_BASE_PLACEHOLDER, base or "")
+        html = html.replace(LOCAL_API_TOKEN_PLACEHOLDER, token or "")
+        log("panel 本地 API 注入", base=base or "(失败)",
+            has_token=bool(token), default_port=LOCAL_API_DEFAULT_PORT)
     return html
 
 

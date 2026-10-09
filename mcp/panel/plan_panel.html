@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TripPlanner 行程面板 · M2</title>
+<title>TripPlanner 行程面板 · M2.1</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
@@ -85,7 +85,7 @@
 </head>
 <body>
 
-<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2</span></h1>
+<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2.1</span></h1>
 <div class="sub" id="subLine">正在连接宿主并读取行程…</div>
 
 <div class="toolbar" id="toolbar" style="display:none">
@@ -115,11 +115,13 @@
     <div class="row"><span class="k">页面路径</span><span class="v" id="diag3">—</span></div>
     <div class="row"><span class="k">照片加载</span><span class="v" id="diagPhoto">—</span></div>
     <div class="row"><span class="k">地图状态</span><span class="v" id="diagMap">—</span></div>
+    <div class="row"><span class="k">本地 API</span><span class="v" id="diagApi">—</span></div>
     <div class="btns">
       <button class="primary" id="btnProbe" onclick="probe()">探测桥接</button>
       <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
       <button id="btnReload" onclick="loadPlan()" disabled>重新拉取行程</button>
       <button id="btnMapRetry" onclick="retryMap()" disabled>重试地图</button>
+      <button id="btnApi" onclick="probeApi()">测试本地 API</button>
     </div>
     <div class="row" style="margin-top:6px"><span class="k">ping 回显</span><span class="v" id="echo">—</span></div>
   </div>
@@ -149,6 +151,22 @@
   var dragFrom = null;
   var amapKey = "__AMAP_JS_KEY__";   // server 在 resources/read 时注入；未配置则保持占位符
   var amapObj = null, amapLoading = false, mapDay = 1;
+
+  // ---------------- M2.1：本地 HTTP API ----------------
+  // 为什么不用宿主的 tools/call（2026-10-09 取证的结论，不是猜）：
+  //   宿主 mcp-apps-diag.log 里**有** rpc.callTool / proxyAppToolCall.ok，
+  //   但请求**从未到达 MCP server**（服务端日志无记录、mcp_last_plan.json 未改写、
+  //   12ms 假成功、返回体恒为 textLen=43 且 structuredContentKeys=[]，
+  //   而面板里点 ping 是 10s 超时）。
+  // ⇒ 交互改走 127.0.0.1 的本地 HTTP（宿主 CSP 的 connectDomains 已放行
+  //   http://127.0.0.1:*）。宿主通道保留为兜底，并**如实显示**走的是哪条。
+  var API_BASE = "__LOCAL_API_BASE__";
+  var API_TOKEN = "__LOCAL_API_TOKEN__";
+  if (!API_BASE || API_BASE.indexOf("__LOCAL") === 0) API_BASE = "http://127.0.0.1:51900";
+  if (!API_TOKEN || API_TOKEN.indexOf("__LOCAL") === 0) API_TOKEN = "";
+  var apiMode = "未探测";        // "http" | "host" | "未探测"
+  var apiErr = "";
+  var apiInfo = null;
 
   function log(dir, obj){
     var line;
@@ -199,6 +217,77 @@
       }, 10000);
     });
   }
+
+  // ---------------- M2.1：本地 API 客户端 ----------------
+  function setDiagApi(){
+    var el = document.getElementById("diagApi");
+    if (!el) return;
+    if (apiMode === "http"){
+      el.textContent = "✅ 本地 API 可用　" + API_BASE
+        + (apiInfo ? "（pid=" + apiInfo.pid + " / v" + apiInfo.version + "）" : "")
+        + (API_TOKEN ? "" : "　⚠ 无 token（注入可能失败）");
+    } else if (apiMode === "host"){
+      el.textContent = "⚠ 本地 API 不可用：" + apiErr
+        + "　→ 互动将回落宿主 tools/call（该通道在本机已实测不通）";
+    } else {
+      el.textContent = "未探测";
+    }
+  }
+
+  // 直连本地 HTTP：返回结构化结果（形状与工具的 structuredContent 一致）
+  function httpJson(path, body, method){
+    var opt = { method: method || (body ? "POST" : "GET"), headers: {} };
+    if (API_TOKEN) opt.headers["X-Tripplanner-Token"] = API_TOKEN;
+    if (body){ opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+    var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctl) ctl.abort(); }, 8000);
+    return fetch(API_BASE + path, opt).then(function(r){
+      return r.text().then(function(t){
+        var j = null;
+        try { j = JSON.parse(t); } catch (e){}
+        if (!r.ok) throw new Error("HTTP " + r.status + (j && j.error ? "：" + j.error : ""));
+        if (!j) throw new Error("返回不是 JSON：" + String(t).slice(0, 80));
+        return j;
+      });
+    }).then(function(j){ clearTimeout(timer); return j; },
+            function(e){ clearTimeout(timer); throw e; });
+  }
+
+  // 宿主通道（保留为兜底 + 对照；实测在本机不通）
+  function toolCall(name, args){
+    return request("tools/call", { name: name, arguments: args || {} })
+      .then(function(res){ return (res && res.structuredContent) || {}; });
+  }
+
+  // 统一入口：本地 API 优先，失败即回落宿主通道
+  function apiCall(path, toolName, args, method){
+    if (apiMode === "host"){
+      return toolCall(toolName, args);
+    }
+    return httpJson(path, args, method).catch(function(e){
+      apiErr = e.message;
+      apiMode = "host";
+      setDiagApi();
+      log("!", "本地 API 失败，回落宿主通道：" + e.message);
+      return toolCall(toolName, args);
+    });
+  }
+
+  window.probeApi = function(){
+    apiMode = "未探测";
+    setDiagApi();
+    return httpJson("/api/health", null, "GET").then(function(j){
+      apiMode = "http"; apiInfo = j; apiErr = "";
+      setDiagApi();
+      log("!", "本地 API 可用 " + JSON.stringify(j));
+      return true;
+    }).catch(function(e){
+      apiMode = "host"; apiErr = e.message;
+      setDiagApi();
+      log("!", "本地 API 不可用：" + e.message);
+      return false;
+    });
+  };
 
   function extractInstanceId(src){
     if (!src || typeof src !== "object") return "";
@@ -528,13 +617,12 @@
     var ids = (d.timeline || []).filter(function(s){ return s.type === "poi" && s.id; })
                                 .map(function(s){ return s.id; });
     toast("换点中…");
-    request("tools/call", { name: "tripplanner_replace_poi", arguments: {
+    apiCall("/api/replace", "tripplanner_replace_poi", {
       city: LAST.city, day: +day, poi_id: poiId, day_ids: ids, used_ids: used,
       query: LAST.query || "", date0: LAST.date0 || "",
       hotel_text: (LAST.hotel && LAST.hotel.name) || ""
-    }}).then(function(res){
-      var sc = (res && res.structuredContent) || {};
-      if (!sc.ok){ toast("换点失败：" + (sc.error || "未知原因")); return; }
+    }).then(function(sc){
+      if (!sc || !sc.ok){ toast("换点失败：" + ((sc && sc.error) || "未知原因")); return; }
       var sw = sc.swap || {};
       toast("🔁 " + sw.from + " → " + sw.to + (sw.same_category ? "（同类目）" : "（就近）"));
       if (sc.plan){ render(sc.plan); }
@@ -553,13 +641,12 @@
 
   function callMove(day, ids){
     toast("调整顺序…");
-    request("tools/call", { name: "tripplanner_move_poi", arguments: {
+    apiCall("/api/move", "tripplanner_move_poi", {
       city: LAST.city, day: +day, ordered_ids: ids,
       query: LAST.query || "", date0: LAST.date0 || "",
       hotel_text: (LAST.hotel && LAST.hotel.name) || ""
-    }}).then(function(res){
-      var sc = (res && res.structuredContent) || {};
-      if (!sc.ok){ toast("调整失败：" + (sc.error || "未知原因")); return; }
+    }).then(function(sc){
+      if (!sc || !sc.ok){ toast("调整失败：" + ((sc && sc.error) || "未知原因")); return; }
       toast(sc.order_respected ? "顺序已更新" : "顺序已更新（部分受开放时间/餐窗约束微调）");
       if (sc.plan){ render(sc.plan); }
     }).catch(function(e){ toast("调整失败：" + e.message); });
@@ -609,10 +696,9 @@
   window.exportMd = function(){
     var hint = document.getElementById("toolHint");
     hint.textContent = "导出中…";
-    request("tools/call", { name: "tripplanner_export", arguments: { format: "markdown" } })
-      .then(function(res){
-        var sc = (res && res.structuredContent) || {};
-        if (!sc.ok){ hint.textContent = "导出失败：" + (sc.error || "未知原因"); return; }
+    apiCall("/api/export", "tripplanner_export", { format: "markdown" })
+      .then(function(sc){
+        if (!sc || !sc.ok){ hint.textContent = "导出失败：" + ((sc && sc.error) || "未知原因"); return; }
         deliver(sc.filename || "TripPlanner.md", sc.text || "");
       })
       .catch(function(e){ hint.textContent = "导出失败：" + e.message; });
@@ -667,17 +753,19 @@
   }
 
   // ---------------- 数据获取 ----------------
-  // 通道 1（主）：握手后面板主动 tools/call 拉 —— V3 已验证可用，最稳。
-  // 通道 2（补）：宿主若把 bootstrap 的 tool-result 推下来，直接用它。
+  // 通道 1（主）：本地 HTTP API 的 /api/plan —— 本机唯一实测可靠的通路。
+  // 通道 2（兜底）：宿主 tools/call 的 get_plan（实测不通，保留作对照）。
+  // 通道 3（补）：宿主把 bootstrap 的 tool-result 推下来时直接用它（这条**带**
+  //   structuredContent，M1 以来面板能显示行程一直靠它）。
   window.loadPlan = function(){
     document.getElementById("subLine").textContent = "正在读取行程…";
-    return request("tools/call", { name: "tripplanner_get_plan", arguments: {} })
-      .then(function(res){
-        var sc = (res && res.structuredContent) || {};
+    return apiCall("/api/plan", "tripplanner_get_plan", {}, "GET")
+      .then(function(sc){
+        sc = sc || {};
         if (sc.hasPlan && sc.plan){
           render(sc.plan);
-          document.getElementById("stage").textContent = "M2 · 已加载";
-          log("!", "行程加载成功 city=" + sc.plan.city);
+          document.getElementById("stage").textContent = "M2.1 · 已加载";
+          log("!", "行程加载成功 city=" + sc.plan.city + " via=" + apiMode);
         } else {
           // ⚠️ 不要用空结果覆盖已渲染好的内容。
           // 宿主对 stdio MCP 是按需 spawn 进程的，面板的 get_plan 有可能落在
@@ -704,7 +792,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.2.0-m2" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.2.1-m2.1" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -736,7 +824,8 @@
       document.getElementById("btnImg").disabled = false;
 
       registerSelf();
-      loadPlan();                       // ← 握手成功即拉行程
+      // ⚠️ 不在这里 loadPlan()：行程统一由启动时那条 probeApi().then(loadPlan) 拉，
+      // 避免宿主握手成功与本地 API 探测成功各拉一次（重复 render 会重置地图选中的 Day）。
     }).catch(function(e){
       setBadge("st", "握手失败", "b-bad");
       document.getElementById("host").textContent = e.message;
@@ -757,8 +846,9 @@
         "已知实例数=" + (sc.count != null ? sc.count : "?") +
         (sc.hasInstanceId === false ? "（C 兜底）" : "");
     }).catch(function(e){
-      setBadge("st3", "上报失败", "b-bad");
-      document.getElementById("reg").textContent = e.message;
+      setBadge("st3", "宿主通道不通", "b-bad");
+      document.getElementById("reg").textContent =
+        e.message + "（宿主 tools/call 在本机已实测不通，不影响面板）";
     });
   };
 
@@ -768,7 +858,10 @@
         var sc = (res && res.structuredContent) || {};
         document.getElementById("echo").textContent = "pong · " + (sc.note || "") + " · " + (sc.ts || "");
       })
-      .catch(function(e){ document.getElementById("echo").textContent = "失败：" + e.message; });
+      .catch(function(e){
+        document.getElementById("echo").textContent =
+          "失败：" + e.message + "—— 这正是 M2.1 改走本地 HTTP 的原因";
+      });
   };
 
   window.probeImage = function(){
@@ -812,7 +905,12 @@
     }
   });
 
-  probe();   // 面板一渲染就握手（不依赖用户点按钮）
+  // 「重新拉取行程」走本地 API，与宿主握手无关 ⇒ 一开始就可用
+  document.getElementById("btnReload").disabled = false;
+  // 启动顺序：先探本地 API（它决定交互走哪条通路），再拉行程；宿主握手并行做，
+  // 只用于诊断与 A+C 登记（那条通道在本机已实测不通，不阻塞任何功能）。
+  probeApi().then(function(){ loadPlan(); });
+  probe();
 })();
 </script>
 </body>

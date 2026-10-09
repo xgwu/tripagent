@@ -2,7 +2,7 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅（自检 108/108）→ 待 WorkBuddy 实测**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅（自检 139/139）→ 待 WorkBuddy 实测**
 
 **M1 已在 WorkBuddy 内实测通过**：一句话需求 → 真实行程 → 面板渲染完整时间线
 （含每个点的**停留时长**）、每日主题/里程/违规徽标、**POI 缩略图**、被剔除点及原因。
@@ -11,6 +11,10 @@
 **M2 新增（面板内交互）**：🔁 换点、⠿ 拖拽调整当天顺序、⬇ 导出 Markdown、
 🗺 高德 JS API 交互地图（路线 polyline + 序号标记）。
 三个交互工具都带**守门**：换点不得改变当天景点数，重排不得丢点 —— 宁可操作失败，也不悄悄改坏行程。
+
+**🔴 M2.1（2026-10-09）**：实测发现**宿主 → MCP server 的 `tools/call` 通道在本机是死的**
+（面板 ping 10s 超时；宿主日志记了 `rpc.callTool` 却从未到达 server，12ms 假成功）。
+面板交互已改走 `mcp/local_api.py` 开在 **`127.0.0.1`** 的本地 HTTP。详见下文「M2.1」一节。
 
 ---
 
@@ -94,6 +98,10 @@ resourceDomains = ["http://127.0.0.1:*",
 | `tripplanner_replace_poi` | — | **M2** 换点（面板「🔁」按钮） |
 | `tripplanner_move_poi` | — | **M2** 挪时段（面板拖拽排序） |
 | `tripplanner_export` | — | **M2** 导出 Markdown 文本 |
+
+> ⚠️ **M2.1 起**：这三个交互工具面板**不再直接调**（宿主 `tools/call` 通道在本机不通，
+> 见「M2.1」一节），改走 `127.0.0.1` 的本地 HTTP。工具本身保留 ——
+> 面板侧仍以它们为**兜底**，模型或其它 MCP 客户端也可直接调。
 
 ### 关键实现要点
 
@@ -298,6 +306,91 @@ innerFrame.setAttribute('sandbox', params.sandbox || 'allow-scripts allow-same-o
 
 ---
 
+## 🔴 M2.1：面板交互改走本地 HTTP（2026-10-09，Kenny 实测报障后定位）
+
+### 报障
+
+> 「更换景点按钮不起作用，拖拽更改景点顺序也不起作用」
+
+### 取证结论：**按钮点了，请求发出了，但那条通道是死的**
+
+不是前端 bug，也不是工具没注册。四条硬证据：
+
+| # | 事实 | 数据 |
+|---|---|---|
+| 1 | 工具注册**正常** | `~/.workbuddy/mcp-tool-list.json` 里 `tripplanner_*` = **9** ✅ |
+| 2 | 面板**确实发了请求** | 宿主 `~/.workbuddy/logs/mcp-apps-diag.log` 有 `rpc.callTool toolName=tripplanner_replace_poi args={...}`，参数完全正确（3×replace + 2×move） |
+| 3 | 🔴 **请求从未到达 MCP server** | `output/mcp_debug.log` 里那几次调用**一条都没有**（时间轴直接跳过）；`output/mcp_last_plan.json` 未改写 |
+| 4 | 🔴 **宿主回的不是我们的结果** | 返回体恒为 `contentCount=1, textLen=43, structuredContentKeys=[]`；而实测我们的 `panel_ready` 才是 43 字符、`get_plan` 有行程时是 **286**/无行程 **34** ⇒ 不可能是我们返回的 |
+
+**决定性判据（一个动作就能定论）**：面板「协议诊断 → 调 tripplanner_ping」→ **10s 超时**。
+
+补充证据：宿主从 `callTool` 到 `.ok` 只花 **12ms** —— 而真实换点要跑一遍 TOPTW 求解（几百 ms 起）。
+另外 `tripplanner_export` 在宿主诊断日志里**一次都没出现**。
+
+> 由此还纠正了一个 M1 以来的误判：**面板一直能显示行程，靠的是宿主 bootstrap 推送**
+> （`ui/notifications/tool-result`，那条**带** `structuredContent`），
+> **而不是** app→server 的 `tools/call`。也就是说这条通道从来没被真正验证过。
+
+### 方案：`mcp/local_api.py`（独立常驻进程）
+
+| 决策 | 理由 |
+|---|---|
+| **开在 `127.0.0.1` 的本地 HTTP** | 宿主 CSP 的 `connectDomains` 本来就放行了 `http://127.0.0.1:*`（M2 时为地图加的），无需改宿主 |
+| **独立 detached 常驻进程**（不是 server 内开线程） | 宿主对 stdio server 是**按需 spawn**（`mcp_debug.log` 里 pid 每隔几秒就换）⇒ 挂在 server 进程里的 HTTP 会随它一起死 |
+| **业务逻辑全部复用 server 模块** | `local_api.py import tripplanner_mcp_server`，调 `kernel()` / `apply_day()` / `plan_to_markdown()`，**不复制一份** |
+| **状态仍是 `output/mcp_last_plan.json`** | 磁盘是跨进程唯一真相；面板改的与助手改的是同一份 |
+| **端口优先 51900 起** | 让面板 URL 跨重启稳定；被占用才退化随机端口 |
+| **`X-Tripplanner-Token` 校验** | 随机 32 hex，写进 portfile、随面板 HTML 注入 ⇒ 本机其它网页无法驱动行程 |
+
+端点（形状与工具的 `structuredContent` **一致**，面板侧一套代码可切换通路）：
+
+```
+GET  /api/health    → {ok, server, version, stage, pid, ts}     ← 不校验 token（探活用）
+GET  /api/plan      → {ok, hasPlan, plan}
+POST /api/replace   → {ok, swap, day, plan}      | {ok:false, error}
+POST /api/move      → {ok, order_respected, day, plan} | {ok:false, error}
+POST /api/export    → {ok, filename, mimeType, text}   | {ok:false, error}
+```
+
+server 只在 `resources/read` 时做两件事：`ensure_local_api()`（不在跑就拉起）+
+把 `__LOCAL_API_BASE__` / `__LOCAL_API_TOKEN__` 替换成真实值 —— 与地图 key 同一套「占位符不入库」手法。
+
+### 🔴 两条踩过的坑（都已加守卫）
+
+1. **常驻进程必须比对版本，否则「改了代码没生效」且不报错**
+   `ensure_local_api()` 读 `/api/health` 的 `version`，与 `SERVER_VERSION` 不一致就**杀掉重拉**。
+   ⇒ **改 `tripplanner_mcp_server.py` 或 `local_api.py` 都必须 +1 `SERVER_VERSION`**
+   （`local_api.py` import 了 server 模块，所以 server 的改动同样影响常驻进程）。
+   自检阶段六会断言「常驻进程版本 == server 版本」。
+
+2. **跨进程读状态必须「始终读磁盘」，不能内存优先**
+   本轮自检**抓到真 bug**：`read_plan_state()` 原是内存优先，而常驻的 local_api 进程内存
+   永不失效 ⇒ 助手（另一个进程）刚生成的新行程，面板读到的还是旧的那份。
+   已改为**读一律走磁盘**（写仍是「落盘 + 同步本进程缓存」）。
+
+### 面板侧：三条通路，如实显示走哪条
+
+| 通道 | 说明 |
+|---|---|
+| **1（主）本地 HTTP** | `/api/plan` 拉行程；换点 / 挪时段 / 导出都走这里 |
+| **2（兜底）宿主 `tools/call`** | 本机实测不通，保留作为兜底与对照 |
+| **3（补）bootstrap 推送** | 宿主把 `plan_trip` 的结果推给面板；**这条带 `structuredContent`**，M1 以来一直靠它 |
+
+诊断区新增一行「**本地 API**」+ 按钮「**测试本地 API**」，会明确显示
+`✅ 本地 API 可用 http://127.0.0.1:51900（pid=… / v…）` 或
+`⚠ 本地 API 不可用：<原因> → 互动将回落宿主 tools/call（该通道在本机已实测不通）`。
+**不再有「点了没反应但什么都不说」的情况。**
+
+### M2.1 自检（阶段六，31 项）
+
+health 探活 / 无 token 403 / 有 token 通过 / 无行程时导出明确报错 /
+本地 API 读到与 MCP 工具**同一份**行程（跨进程） / HTTP 换点点数不变 + 结果**真的落盘** /
+HTTP 重排顺序一致 + 点集不一致拒绝 / HTTP 导出是合法 Markdown + 文件名 `.md` /
+不支持的格式报错 / 未知路径 404 / **常驻进程版本 == server 版本**。
+
+---
+
 ## ⚠️ 最重要的一条：注册后必须「重载」才生效
 
 从 `app.asar` 取证（2026-10-09）：
@@ -370,11 +463,13 @@ MCP server 只是一层 stdio JSON-RPC 壳，直接 import 现有内核即可，
 ```
 mcp/
   tripplanner_mcp_server.py   # stdio MCP server（纯标准库、零依赖）
-  panel/plan_panel.html     # 面板（自包含；地图 key 用占位符，由 server 注入）
-  selftest.py               # 不开 WorkBuddy 也能验协议 / 规划 / M2 交互（108 项）
-  panel_guard.py            # 面板前端守卫（U+FFFD / 标签配对 / node --check / key 安全）
+  local_api.py              # M2.1：面板交互用的本地 HTTP API（detached 常驻，127.0.0.1:51900 起）
+  panel/plan_panel.html     # 面板（自包含；地图 key / 本地 API base+token 用占位符，由 server 注入）
+  selftest.py               # 不开 WorkBuddy 也能验协议 / 规划 / M2 交互 / M2.1 本地 API（139 项）
+  panel_guard.py            # 面板前端守卫（U+FFFD / 标签配对 / node --check / key 与 token 安全）
   register.py               # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖）
 src/poi_swap.py             # 换点 / 挪时段公共内核（Web UI 与 MCP **共用一份**）
+output/mcp_local_api.json   # 本地 API 的 port + token + pid（自动生成，不入库）
 ```
 
 ## 快速开始
@@ -382,11 +477,12 @@ src/poi_swap.py             # 换点 / 挪时段公共内核（Web UI 与 MCP **
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
-"$PY" mcp/selftest.py          # 1. 本地自检（108 项，含真实规划 + 贫瘠环境 + 跨进程 + M2 交互）
-"$PY" mcp/register.py          # 2. 注册进 WorkBuddy 配置
-# 3. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
-# 4. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
-# 5. 对话里说：「打开行程面板」
+"$PY" mcp/selftest.py          # 1. 本地自检（139 项，含真实规划 + 贫瘠环境 + 跨进程 + M2 交互 + M2.1 本地 API）
+"$PY" mcp/panel_guard.py       # 2. 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全）
+"$PY" mcp/register.py          # 3. 注册进 WorkBuddy 配置
+# 4. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
+# 5. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
+# 6. 对话里说：「打开行程面板」
 ```
 
 回滚：`"$PY" mcp/register.py --remove`
@@ -396,7 +492,9 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 | 改了什么 | 怎么生效 |
 |---|---|
 | `tripplanner_mcp_server.py` | 面板里重开一次工具调用（宿主会重启 stdio 子进程），或重启 WorkBuddy |
-| `panel/plan_panel.html` | ⚠️ **宿主按 uri 缓存 HTML**（`resolver.resolve.cacheHit`）→ 把 `PANEL_VERSION` +1（uri 变 `ui://tripplanner/plan-<v>`），再重载 MCP |
+| `panel/plan_panel.html` | ⚠️ **宿主按 uri 缓存 HTML**（`resolver.resolve.cacheHit`）→ 把 `PANEL_VERSION` +1，再重载 MCP |
+| `local_api.py` **或** `tripplanner_mcp_server.py` | ⚠️ **必须把 `SERVER_VERSION` +1** —— 本地 API 是**常驻**进程，靠 `/api/health` 的 version 判断要不要杀掉重拉；不 +1 会出现「改了没生效且不报错」。已加自检守卫 |
+| 只是想重拉本地 API（调试） | 删 `output/mcp_local_api.json`，或面板「测试本地 API」前先 bump 版本 |
 
 ### 在 WorkBuddy 里验收（M1）
 
@@ -406,8 +504,7 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
    连接器 → 自定义 MCP → 刷新
    ```
 
-   验：工具列表里应出现 **6 个** `tripplanner_*`
-   （`plan_trip` / `open_plan` / `get_plan` / `list_cities` / `panel_ready` / `ping`）。
+   验：工具列表里应有 **9 个** `tripplanner_*`（M1 六个 + M2 三个）。
    只有 2 个（`open_plan` / `ping`）＝ 还是 M0 的旧快照。
 
 2. **直接说人话，不要点工具**：
@@ -424,28 +521,35 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
    | 面板弹出 | 一次对话只弹一扇；再说「换个苏州三天的」应**复用/换内容而不叠两扇** |
    | 模式 | 面板或摘要里 `mode=llm`（离线会显示 `offline`，看着也合理但少了 LLM 编排） |
    | 缩略图 | 高德直链能加载（被 CSP 拦则整块隐藏，不留占位框） |
-   | 城市识别 | 「两天随便玩玩」应**明确报错并列出 31 个可用城市**，而不是瞎猜一个 |
+   | 城市识别 | 「两天随便玩玩」应**明确报错并列出可用城市**，而不是瞎猜一个 |
    | 报错 | 「火星玩两天」→ `未知城市：火星。可用：…` |
 
-4. **兜底排查**（面板没弹 / 报连接错）：先让模型调 `tripplanner_ping`，
-   能回就是 server 活着、问题在面板侧；回不了就是注册/重载没生效。
-
-### 在 WorkBuddy 里验收（M2）
+### 在 WorkBuddy 里验收（M2 / M2.1）
 
 前置：`~/.workbuddy/mcp-tool-list.json` 里 `tripplanner_*` 应为 **9 个**
 （6 = M1 旧快照，需先按上文「重载」一节刷新）。
 
+先看**面板底部「协议诊断」**：展开后应能看到
+
+| 诊断行 | 期望 |
+|---|---|
+| **本地 API** | `✅ 本地 API 可用　http://127.0.0.1:51900（pid=… / v0.2.2-m2.1）` |
+| ping 回显 | `失败：超时（10s）… —— 这正是 M2.1 改走本地 HTTP 的原因`（**这条不通是预期内的**） |
+
+然后逐条对照：
+
 | 动作 | 期望 |
 |---|---|
 | 说「杭州2天，喜欢自然风光」 | 面板打开，行程上方出现**地图**（真实底图 + 蓝色路线 + 序号标记） |
-| 点某个 POI 行尾 `🔁` | 该点被同类目就近点替换；**当天景点数不变**，其余顺序不变 |
+| 点某个 POI 行尾 `🔁` | 该点被同类目就近点替换；**当天景点数不变**，其余顺序不变；工具栏出现 `🔁 A → B（同类目）` |
 | 拖行首 `⠿` 到同一天另一位置 | 顺序更新；顺序受约束微调时会明确说明 |
 | 点顶部 `⬇ 导出 Markdown` | 走系统下载目录；宿主不支持则提示「已复制到剪贴板」 |
 | 地图加载失败 | 顶部给出原因，**行程与交互仍可用**（不会白屏） |
 | 拖到另一天 / 拖出列表 | 不生效（当前只支持**同一天内**重排） |
+| 「本地 API」显示不可用 | 点「测试本地 API」重试；仍不行说明常驻进程起不来 —— 看 `output/mcp_debug.log` 里 `local_api.*` 那几行 |
 
-⚠️ **地图是 M2 唯一未经实测的环节**（CSP 已按取证配好，但高德 JS API 在宿主双层
-iframe 里能否初始化，只有浏览器说了算）。失败时先看「协议诊断 → 地图状态」那一行，
+⚠️ **地图仍是唯一未经实测的环节**（CSP 已按取证配好，但高德 JS API 在宿主双层
+iframe 里能否初始化，只有浏览器说了算）。失败时看「协议诊断 → 地图状态」那一行，
 它会区分「key 未配置」「JS 加载失败」「渲染异常」。
 
 ### 表单添加时填这些
@@ -473,7 +577,7 @@ const isApp = Uv(tool) !== undefined;   // Uv 只读 tool._meta.ui.resourceUri
 |---|---|
 | **不用手写 `isApp`** | 给工具加 `_meta.ui.resourceUri`，宿主自动认作 app |
 | **自建 server 也支持** | `listApps()` 遍历所有 controller，`runtimeSource` 区分 `session-stdio` / `remote` |
-| **面板可反向调工具** | AppBridge 走 `ui/initialize` → `tools/call`，token 宿主自动带 |
+| **面板可反向调工具（协议层）** | AppBridge 走 `ui/initialize` → `tools/call`，token 宿主自动带 —— ⚠️ **但本宿主上这条请求到不了 server**（见「M2.1」一节），故实际改用 `127.0.0.1` 本地 HTTP |
 | **server 侧看不到 `appInstanceId`** | 宿主中间层生成，不下发到 `tools/call` ⇒ **必须由面板自报**（`tripplanner_panel_ready`） |
 
 ### 存储字段白名单
@@ -557,7 +661,8 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M1-pre** | CSP 放行高德图片 + A+C 面板分流（防堆叠） | ✅ **完成（2026-10-09，自检 29/29）** |
 | **M1** | 最小闭环：`plan_trip` + `list_cities` + `get_plan` + 只读时间轴面板 | ✅ **完成（2026-10-09，自检 73/73）** |
 | **M1-fix** | `last_plan` 落盘（跨进程）+ 空结果不清屏 + uri 匹配放宽 | ✅ **完成并肉眼验收通过** |
-| **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ✅ **代码完成（2026-10-09，自检 108/108）；待 WorkBuddy 实测** |
+| **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ✅ **代码完成（2026-10-09，自检 108/108）** |
+| **M2.1** | 🔴 实测发现宿主 `tools/call` 通道**不通** ⇒ 面板交互改走 `127.0.0.1` 本地 HTTP（`mcp/local_api.py` 常驻 + token 校验） | ✅ **完成（2026-10-09，自检 139/139，门禁四步全绿）；待 WorkBuddy 实测** |
 | **M3** | 远端化：换 `streamable-http` transport，复用线上后端 | ⏳ |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`
