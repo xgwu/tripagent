@@ -4,7 +4,7 @@ LLM 世界知识 × OR-Tools TOPTW 混合行程规划系统 —— **世界知�
 
 通用大模型的旅行「品味」很好，但直接生成的行程不可行：地点幻觉、营业时间冲突、跨天重复、里程不现实。TripAgent 让 LLM 凭世界知识决定「去哪、为什么去」，本地结构化 POI 库 + 运筹优化保证行程**物理可行**（真实路网时间、营业窗口、闭馆日、餐窗、里程预算）且**结构最优**（TOPTW 排序与可行性）。防幻觉不靠限制提案，而靠落地匹配——未落地的提案自动成为「POI 库缺口采购清单」，反向驱动数据扩容。LLM 不可用时全链路确定性降级，服务永不中断。
 
-> 🌐 **线上运行中**：https://tripagent-planner2.app.workbuddy.host/
+> 🌐 **线上运行中**：https://tripagent-planner2-80644.app.workbuddy.host/
 >
 > 📖 深度文档：[里程碑详情](docs/README-milestones.md) · [项目报告 v3](docs/TripAgent-项目报告.html) · [架构设计](docs/TripAgent-架构设计.html) · [TOPTW 算法报告](docs/TripAgent-TOPTW算法报告.html)
 

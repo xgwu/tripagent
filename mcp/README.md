@@ -2,7 +2,7 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅ → M2 验收 ✅（换点/拖拽均可用了，Kenny 确认）→ M3 面板交互远端化 ✅（自检 176/176）→ 待部署 + WorkBuddy 实测**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅ → M2 验收 ✅（换点/拖拽均可用了，Kenny 确认）→ M3 面板交互远端化 ✅（自检 176/176）→ 线上已部署 ✅（`tripagent-planner2-80644…` / `/api/health` = m3）→ 待 WorkBuddy 实测**
 
 **M1 已在 WorkBuddy 内实测通过**：一句话需求 → 真实行程 → 面板渲染完整时间线
 （含每个点的**停留时长**）、每日主题/里程/违规徽标、**POI 缩略图**、被剔除点及原因。
@@ -435,7 +435,7 @@ HTTP 重排顺序一致 + 点集不一致拒绝 / HTTP 导出是合法 Markdown 
 ### 版本
 
 `SERVER_VERSION` → **0.2.4-m2.2**、`PANEL_VERSION` → **m6**
-（**M2.2 当时值**；当前值见 M3 节 → `0.3.0-m3` / `m8`）。
+（**M2.2 当时值**；当前值见 M3 节 → `0.3.1-m3` / `m9`）。
 ⚠️ 仍是那条铁律：**改 `local_api.py` 或 `tripplanner_mcp_server.py` 都要 +1 `SERVER_VERSION`**。
 
 ### M2.2 自检（143 项；阶段六扩到 35 项）
@@ -502,7 +502,7 @@ HTTP 重排顺序一致 + 点集不一致拒绝 / HTTP 导出是合法 Markdown 
 ### 版本
 
 `SERVER_VERSION` → **0.2.5-m2.3**、`PANEL_VERSION` → **m7**
-（**M2.3 当时值**；当前值见 M3 节 → `0.3.0-m3` / `m8`）。
+（**M2.3 当时值**；当前值见 M3 节 → `0.3.1-m3` / `m9`）。
 
 ### M2.3 自检（150 项；已并入 M3 的 176 项）
 
@@ -537,12 +537,16 @@ M2.3 把「常驻进程会死」变成了**可判定的事实**，但**没根治
 ⇒ 本地 `127.0.0.1:51900` 仍是首选（无网络往返）；本地一死（被回收），
 交互**自动切到线上已部署的 Web UI**，用户不再看到「点了没反应」。
 
-### 线上现状（2026-10-09 实测）
+### 线上现状（2026-10-09 部署后实测）
 
 | 域名 | 状态 |
 |---|---|
-| `tripagent-planner2.app.workbuddy.host`（旧） | ✅ **可用**：`/api/plan`、`/api/replace`、`/api/cities`、`/api/clarify`、`/api/share`、`/api/stats` 全 200 |
-| `tripagent-planner2-80644.app.workbuddy.host`（新） | 🔴 **整站 404**（应用不在，与早期记录相反；CSP 里保留该域名待其恢复） |
+| `tripagent-planner2-80644.app.workbuddy.host`（**新，本仓库目录对应的 app**） | 🟢 **m3 已部署**：`/api/health` 200 `{version:"m3",stage:"M3"}`、`/api/cities` 200；`/api/move`、`/api/export` 已随本次部署上线 |
+| `tripagent-planner2.app.workbuddy.host`（旧） | ⚠️ 另一个**遗留应用**，仍在跑**旧代码**：`/api/cities` 200 但 `/api/health` **404**（无 M3 三端点）|
+
+🔴 ⇒ `REMOTE_API_DOMAINS` **必须把新域名排在首位**（`REMOTE_API_BASE_DEFAULT = REMOTE_API_DOMAINS[0]`），
+否则面板兜底会探活到旧应用的 `/api/health` 404，被误判为「后端不可用」。旧域名保留仅用于
+CSP `connectDomains` 放行（万一它日后更新为 m3 也可兜底）。
 
 线上原本**缺**三个端点 —— M3 补齐（改 `webui/server.py`）：
 
@@ -589,7 +593,9 @@ MCP server 侧保留**同名薄封装**（内部调用点零改动），且 `src
 
 ### 版本
 
-`SERVER_VERSION` → **0.3.0-m3**、`PANEL_VERSION` → **m8**；`webui` 侧 `WEBUI_VERSION = "m3"`。
+`SERVER_VERSION` → **0.3.1-m3**、`PANEL_VERSION` → **m9**；`webui` 侧 `WEBUI_VERSION = "m3"`。
+（`0.3.1-m3`/`m9` 是因为部署后**新域名才是 m3 后端**，把 `REMOTE_API_DOMAINS` 新域名前置 ⇒ 注入的
+base 变了 ⇒ 面板 HTML 必须换 uri 重取，故 `PANEL_VERSION` +1。）
 
 ### M3 自检（176 项；阶段七专测远端化）
 
@@ -603,7 +609,9 @@ CSP `connectDomains` 放行线上且**不放** `frameDomains`。
 
 ### ⚠️ 仍未做
 
-- **线上尚未部署**（本次改动只在本地；部署需显式授权）。
+- **线上部署已完成**（2026-10-09）：`https://tripagent-planner2-80644.app.workbuddy.host/`，`/api/health` 回 `version=m3`；
+  新域名（本目录对应 app）前置进 `REMOTE_API_DOMAINS` ⇒ `SERVER_VERSION 0.3.1-m3` / `PANEL_VERSION m9`。
+  仍未做：**WorkBuddy 内实测**（面板标签应 `M3`、掉线徽标切「线上后端」）。
 - 地图仍未实测（见文末）。
 
 ---
@@ -755,7 +763,7 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
 | 诊断行 | 期望 |
 |---|---|
-| **本地 API** | `✅ 本地 API 可用　http://127.0.0.1:51900（pid=… / v0.3.0-m3）` |
+| **本地 API** | `✅ 本地 API 可用　http://127.0.0.1:51900（pid=… / v0.3.1-m3）` |
 | ping 回显 | `失败：超时（10s）… —— 这正是 M2.1 改走本地 HTTP 的原因`（**这条不通是预期内的**） |
 
 然后逐条对照：
@@ -779,7 +787,7 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 |---|---|
 | 面板标题 / 页脚标签 | 显示 `M3`（不是 `M2.3` ⇒ 面板 HTML 已被宿主重读） |
 | 通道徽标 | 正常 `本地服务就绪`（绿）；本地被回收后**自动切到 `线上后端`**（不再是「已停止」） |
-| 线上兜底时点 `🔁` / 拖拽 | **照常生效**（请求走 `tripagent-planner2.app.workbuddy.host`；本地回来后再切回本地） |
+| 线上兜底时点 `🔁` / 拖拽 | **照常生效**（请求走 `tripagent-planner2-80644.app.workbuddy.host`；本地回来后再切回本地） |
 | 线上兜底时点 `⬇ 导出 Markdown` | 照常导出（plan 由面板带上，需**已部署**新版 `webui/server.py`） |
 | 线上兜底时「拉行程」 | 仅本地有意义 ⇒ 仍要求本地可用（线上无会话状态，给不出「当前行程」） |
 | 面板底部「协议诊断」 | 能看到本地 / 线上两个后端各自的探活结果 |
@@ -901,7 +909,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M2.1** | 🔴 实测发现宿主 `tools/call` 通道**不通** ⇒ 面板交互改走 `127.0.0.1` 本地 HTTP（`mcp/local_api.py` 常驻 + token 校验） | ✅ **完成（2026-10-09，自检 139/139，门禁四步全绿）** |
 | **M2.2** | 二次报障复修：GET 带 body 的同步异常 + token 跨重启漂移 + 常驻进程被杀；补齐「失败必须看得见」 | ✅ **完成（2026-10-09，自检 143/143）** |
 | **M2.3** | 常驻进程**死因取证**（心跳 / atexit / 信号 / 崩溃 + stderr 落盘）+ 把  挂到请求总入口 + 面板**掉线自愈**（等恢复再发请求 / 看门狗 / 重试按钮） | ✅ **完成（2026-10-09，自检 150/150，门禁四步全绿）；待 WorkBuddy 实测** |
-| **M3** | 面板交互**远端化**：线上后端补齐 `/api/health`、`/api/move`、`/api/export`；面板改「本地优先 → 线上兜底」；`normalize_day` / `apply_day` / `plan_to_markdown` 抽成 `src/` 公共内核（Web UI 与 MCP **共用一份**） | ✅ **代码完成（2026-10-09，自检 176/176，门禁四步全绿）；待部署 + WorkBuddy 实测** |
+| **M3** | 面板交互**远端化**：线上后端补齐 `/api/health`、`/api/move`、`/api/export`；面板改「本地优先 → 线上兜底」；`normalize_day` / `apply_day` / `plan_to_markdown` 抽成 `src/` 公共内核（Web UI 与 MCP **共用一份**） | ✅ **已上线（2026-10-09，自检 176/176，门禁四步全绿，`tripagent-planner2-80644…` /api/health=m3）；待 WorkBuddy 实测** |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`
 

@@ -41,7 +41,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.3.0-m3"
+SERVER_VERSION = "0.3.1-m3"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +50,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m8"
+PANEL_VERSION = "m9"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -75,8 +75,12 @@ AMAP_DOMAINS = [
 # 用户不再看到「点了没反应」。域名只需进 `connectDomains`（走 fetch/XHR）；
 # 面板并不 iframe 线上页面，故无需 frameDomains。
 REMOTE_API_DOMAINS = [
-    "https://tripagent-planner2.app.workbuddy.host",        # 线上 Web UI（旧域名，实测可用）
-    "https://tripagent-planner2-80644.app.workbuddy.host",  # 新域名（2026-10-09 实测 404，留待恢复）
+    # 2026-10-09 部署实测：本仓库目录对应的线上应用落在 **新域名**，
+    # 且跑的是含 M3 三端点的 m3 代码（/api/health 200）；旧域名是另一个
+    # 遗留应用、仍在跑**旧代码**（/api/health 404）⇒ 必须把新域名排在首位，
+    # 否则面板兜底会探活失败、被误判为「后端不可用」。
+    "https://tripagent-planner2-80644.app.workbuddy.host",  # 线上 Web UI（新域名，m3 代码，实测 /api/health 200）
+    "https://tripagent-planner2.app.workbuddy.host",         # 旧域名（遗留应用，旧代码；保留仅作 connectDomains 放行）
 ]
 
 UI_RESOURCE_META = {
