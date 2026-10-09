@@ -2,7 +2,7 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅（自检 143/143）→ 待 WorkBuddy 实测**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅（自检 150/150）→ 待 WorkBuddy 实测**
 
 **M1 已在 WorkBuddy 内实测通过**：一句话需求 → 真实行程 → 面板渲染完整时间线
 （含每个点的**停留时长**）、每日主题/里程/违规徽标、**POI 缩略图**、被剔除点及原因。
@@ -444,6 +444,78 @@ HTTP 重排顺序一致 + 点集不一致拒绝 / HTTP 导出是合法 Markdown 
 
 ---
 
+## 🔴 M2.3：把「常驻进程会死」变成**可判定的事实** + 面板自愈（2026-10-09）
+
+### 报障
+
+> M2.2 面板显示「读取失败：本地服务未运行（已尝试自动重连）」+ 红色横幅。
+
+### 先纠正一个误判
+
+现场日志显示**当时功能其实是通的**：`16:43:41 replace.ok 花港观鱼→太子湾公园`、
+`16:43:44 move.ok respected=true`。用户看到的是**服务被回收的那两分钟**里的状态，
+之后任一 MCP 工具调用把它重新拉起来了（`16:42:43 spawn → 16:42:45 listen`）。
+
+⇒ 真正要治的不是「面板写错了」，而是**常驻进程为什么会无声消失**。
+
+### 已有的**否定性**结论（实验，不是推测）
+
+- `_jobtest.py`：三种拉起方式（direct-break / launcher-break / WMI）子进程 `in_job` **全 = 1**
+  ⇒ **`CREATE_BREAKAWAY_FROM_JOB` 在本环境无效**。
+- `explorer.exe` 拉起：rc=1，进程根本没建起来（不可用）。
+- 面板发起的 `resources/read` **不会**到达 server（那次 `spawn` 的进程日志里没有
+  `panel 本地 API 注入`）⇒ **不能**把「远程重启本地服务」当作可靠恢复手段。
+- 存活观测：1.5 ~ 5 分钟不等，**没有任何 kill 日志**（我们自己的版本闸门 kill 是会记日志的）。
+
+### 修法：先取证，再谈根治
+
+**1）常驻进程装「死因取证」**（`mcp/local_api.py`）—— 判据表：
+
+| 日志现象 | 结论 |
+|---|---|
+| `local_api.exit reason=atexit` | 走到收尾逻辑（非硬杀） |
+| `local_api.exit reason=signal-15` | 被 `taskkill`（不带 `/F`）等**优雅**结束 |
+| `local_api.crash` + traceback | 自身异常崩了 |
+| **只有心跳，之后什么都没有** | **硬杀**（job 关闭 / `taskkill /F`）⇒ 只能靠外部代理 |
+
+- `local_api.heartbeat` **每 60s 一条** ⇒ 最后一条心跳的时间就是死亡窗口起点，
+  可与 `~/.workbuddy/logs/daemon.log`、`mcp-apps-diag.log` 对齐找凶手。
+- `stderr/stdout` 落盘 `output/mcp_local_api.err.log`（**以前是 DEVNULL，崩溃现场全丢**）；
+  server 侧拉起时也把 stderr 接到同一文件 —— import 阶段的崩溃同样看得见。
+- `sys.excepthook` / `threading.excepthook` / `atexit` / SIGTERM·SIGINT·SIGBREAK 全部埋点。
+- `local_api.listen` 现在带 `ppid` + `ppid_name`（判「谁创建了我」）。
+
+**2）复活窗口最小化**：`ensure_local_api()` 挂到 `handle()` **总入口**
+（除 `notifications/*` 外**所有**方法：`initialize` / `tools/list` / `tools/call` / `resources/read`）。
+宿主每碰一次 MCP ⇒ 本地服务复活一次（内部 30s 缓存，命中时零成本）。
+
+**3）面板自愈**（`panel_guard` 已加锚点守卫）：
+
+- `waitForApi()`：掉线后**不立刻报错**，每 2s 复探、横幅显示进度，最长等 60s；
+  **请求尚未发出**，服务一恢复就立刻续做 ⇒ 用户不用重新点。
+- `watchdogTick()` 每 15s 轻探一次：掉线**响亮提示**、恢复**自动重拉行程**（磁盘是唯一真相）。
+- `retryApi()`：诊断区按钮从「测试本地 API」升级为「测试 / 重试」，会**等它回来并自动刷新**。
+- `reviveViaHostBestEffort()` 增加一条 fire-and-forget 的 `tools/list`
+  （只读幂等，比再发一次 `initialize` 安全；宿主若代理就顺手唤醒了服务）。
+
+### 版本
+
+`SERVER_VERSION` → **0.2.5-m2.3**、`PANEL_VERSION` → **m7**。
+
+### M2.3 自检（150 项）
+
+新增 7 项**源码级守护**：退出取证 / 崩溃取证 / 心跳 / stderr 落盘（两端）/
+server 不再把 stderr 指向 DEVNULL / 总入口确保本地 API / 面板「等恢复再发请求」+ 看门狗。
+
+### ⚠️ 仍未根治
+
+常驻进程**依然会被宿主回收**（取证只是让它可判定）。要根治只有两条路：
+
+1. **外部代理拉起**（计划任务 / WMI 之外的服务）—— 让它活在宿主 job 之外；
+2. **M3 走线上后端** —— 面板直连已部署服务，不再依赖任何本地进程。
+
+---
+
 ## ⚠️ 最重要的一条：注册后必须「重载」才生效
 
 从 `app.asar` 取证（2026-10-09）：
@@ -588,7 +660,7 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
 | 诊断行 | 期望 |
 |---|---|
-| **本地 API** | `✅ 本地 API 可用　http://127.0.0.1:51900（pid=… / v0.2.4-m2.2）` |
+| **本地 API** | `✅ 本地 API 可用　http://127.0.0.1:51900（pid=… / v0.2.5-m2.3）` |
 | ping 回显 | `失败：超时（10s）… —— 这正是 M2.1 改走本地 HTTP 的原因`（**这条不通是预期内的**） |
 
 然后逐条对照：
@@ -602,8 +674,9 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 | 点顶部 `⬇ 导出 Markdown` | 走系统下载目录；宿主不支持则提示「已复制到剪贴板」 |
 | 地图加载失败 | 给出原因，**行程与交互仍可用**（不会白屏） |
 | 拖到另一天 / 拖出列表 | 不生效（当前只支持**同一天内**重排） |
-| 徽标变成 `本地服务已停止` | 顶部横幅会说明原因。**恢复**：在对话里再说一句需求（助手重新生成行程即会重新拉起本地服务），或直接点「重新拉取行程」 |
-| 仍失败 | 把 `output/mcp_debug.log` 末尾给我 —— 现在每条动作都有 `panel.trace`，能直接看出卡在哪一环 |
+| 徽标变成 `本地服务已停止` | 顶部横幅会显示「⏳ 正在等待它恢复…（已等 Ns）」。**M2.3 起面板会自己等并续做**：对助手说一句话（例如「刷新行程」）即可唤醒，服务一回来面板会自动继续，**不用重新点** |
+| 等了 60s 仍不通 | 横幅改为「长时间未恢复」并给出恢复方法；点「测试本地 API / 重试」可再等 20s。同时把 `output/mcp_debug.log` 末尾给我 —— 现在每条动作都有 `panel.trace`，且常驻进程有 `local_api.heartbeat / .exit / .crash` **死因取证**，能判到「崩了 / 被优雅杀 / 被硬杀」 |
+| 想直接看死因 | `output/mcp_local_api.err.log`（stderr 与崩溃现场）+ `output/mcp_debug.log` 里的 `local_api.*` |
 
 ⚠️ **地图仍是唯一未经实测的环节**（CSP 已按取证配好，但高德 JS API 在宿主双层
 iframe 里能否初始化，只有浏览器说了算）。失败时看「协议诊断 → 地图状态」那一行，
@@ -720,7 +793,8 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M1-fix** | `last_plan` 落盘（跨进程）+ 空结果不清屏 + uri 匹配放宽 | ✅ **完成并肉眼验收通过** |
 | **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ✅ **代码完成（2026-10-09，自检 108/108）** |
 | **M2.1** | 🔴 实测发现宿主 `tools/call` 通道**不通** ⇒ 面板交互改走 `127.0.0.1` 本地 HTTP（`mcp/local_api.py` 常驻 + token 校验） | ✅ **完成（2026-10-09，自检 139/139，门禁四步全绿）** |
-| **M2.2** | 二次报障复修：GET 带 body 的同步异常 + token 跨重启漂移 + 常驻进程被杀；补齐「失败必须看得见」 | ✅ **完成（2026-10-09，自检 143/143）；待 WorkBuddy 实测** |
+| **M2.2** | 二次报障复修：GET 带 body 的同步异常 + token 跨重启漂移 + 常驻进程被杀；补齐「失败必须看得见」 | ✅ **完成（2026-10-09，自检 143/143）** |
+| **M2.3** | 常驻进程**死因取证**（心跳 / atexit / 信号 / 崩溃 + stderr 落盘）+ 把  挂到请求总入口 + 面板**掉线自愈**（等恢复再发请求 / 看门狗 / 重试按钮） | ✅ **完成（2026-10-09，自检 150/150，门禁四步全绿）；待 WorkBuddy 实测** |
 | **M3** | 远端化：换 `streamable-http` transport，复用线上后端 | ⏳ |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`

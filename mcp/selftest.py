@@ -17,6 +17,7 @@ tools/call（全量 9 个工具，含 M1 真实规划 + M2 换点/挪时段/导�
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import re
@@ -840,6 +841,30 @@ def phase_local_api():
         code, j = _http(base + "/api/export", token=tok, body={"format": "pdf"})
         check("不支持的导出格式明确报错",
               code == 200 and j.get("ok") is False, json.dumps(j, ensure_ascii=False)[:90])
+
+        # ---- 死因取证守卫（源码级）----
+        # 常驻进程会**无声消失**（宿主回收，2026-10-09 实测 1.5~5 分钟不等、无 kill 日志）。
+        # 下面每一条删掉都会让「为什么死了」重新变成玄学 —— 写死防复发。
+        la = io.open(os.path.join(HERE, "local_api.py"), encoding="utf-8").read()
+        sv = io.open(os.path.join(HERE, "tripplanner_mcp_server.py"), encoding="utf-8").read()
+        check("常驻进程有退出取证（atexit / SIGTERM）+ 心跳",
+              "atexit.register" in la and "local_api.exit" in la
+              and "local_api.heartbeat" in la)
+        check("常驻进程有崩溃取证（excepthook / traceback）",
+              "sys.excepthook" in la and "local_api.crash" in la)
+        check("常驻进程 stderr 落盘（不丢 DEVNULL）",
+              "mcp_local_api.err.log" in la and "mcp_local_api.err.log" in sv)
+        check("server 侧不再把本地 API 的 stderr 指向 DEVNULL",
+              "stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL" not in sv)
+        check("每个请求入口都会确保本地 API 在跑（复活窗口最小）",
+              "ensure_local_api()" in sv
+              and 'not str(method).startswith("notifications/")' in sv)
+        pan = io.open(os.path.join(HERE, "panel", "plan_panel.html"),
+                      encoding="utf-8").read()
+        check("面板掉线后会「等恢复再发请求」（不是直接报错）",
+              "function waitForApi" in pan and "waitForApi(WAIT_API_MS" in pan)
+        check("面板有服务看门狗（掉线提示 + 恢复自动重拉）",
+              "function watchdogTick" in pan and "startWatchdog" in pan)
 
         code, j = _http(base + "/api/nope", token=tok)
         check("未知路径 404", code == 404, f"{code} {j.get('error')}")

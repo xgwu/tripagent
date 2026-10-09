@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TripPlanner 行程面板 · M2.2</title>
+<title>TripPlanner 行程面板 · M2.3</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
@@ -91,7 +91,7 @@
 </head>
 <body>
 
-<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2.2</span></h1>
+<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2.3</span></h1>
 <div class="sub" id="subLine">正在连接宿主并读取行程…</div>
 <div id="alert" class="alert"></div>
 
@@ -129,7 +129,7 @@
       <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
       <button id="btnReload" onclick="loadPlan()" disabled>重新拉取行程</button>
       <button id="btnMapRetry" onclick="retryMap()" disabled>重试地图</button>
-      <button id="btnApi" onclick="probeApi()">测试本地 API</button>
+      <button id="btnApi" onclick="retryApi()">测试本地 API / 重试</button>
     </div>
     <div class="row" style="margin-top:6px"><span class="k">ping 回显</span><span class="v" id="echo">—</span></div>
   </div>
@@ -317,63 +317,135 @@
   }
 
   var reviveTried = false;
-  // 自愈尝试（尽力而为，不阻塞报错）：请宿主重新读一次面板资源。
-  // server 侧的 resources/read 会调 ensure_local_api() ⇒ 等于**远程重启本地服务**。
-  // 宿主是否代理这条请求未经实测（app→server 通道本来就是死的），
-  // 所以这里只做「试一下、不等待结果」，失败只写日志。
+  // 自愈尝试（尽力而为，不阻塞报错）：请宿主重新读一次面板资源 / 列一次工具。
+  // server 侧的 `handle()` **总入口**挂着 ensure_local_api() ⇒ 只要宿主把这些请求
+  // 代理到 MCP server，就等于**远程重启本地服务**。
+  // 宿主是否代理未经实测（app→server 的 tools/call 本来就是死的），所以这里只
+  // 「试一下、不等待结果」，失败只写日志 —— 零成本，成了就是全自动自愈。
   function reviveViaHostBestEffort(){
     if (reviveTried) return;
     reviveTried = true;
     request("resources/read", { uri: "ui://tripplanner/plan" })
       .then(function(){ log("!", "已请宿主重读面板资源（server 侧会顺带确保本地服务在跑）"); })
-      ["catch"](function(e){ log("!", "宿主通道重读资源失败（预期内）：" + e.message); });
+      ["catch"](function(e){ log("!", "重读资源失败（预期内）：" + e.message); });
+    // tools/list 是只读且幂等的，不会打乱宿主状态（比再发一次 initialize 安全）。
+    request("tools/list", {})
+      .then(function(){ log("!", "tools/list 有回包（宿主代理了这条，服务应已被唤醒）"); })
+      ["catch"](function(e){ log("!", "tools/list 无回包（预期内）：" + e.message); });
   }
 
   // 廉价探活：仅当「上次不是健康态」或「距上次探活 >20s」才真的打请求。
-  // 目的：每次交互前先确认服务在不在 —— 不在就**立刻**给出准确提示，
-  // 而不是让用户等 8s 超时 + 1.2s 重试才看到一句含糊的失败。
+  // 目的：每次交互前先确认服务在不在 —— 不在就**先等它回来**，
+  // 而不是让用户等 8s 超时 + 1.2s 重试后才看到一句「点了没反应」。
   var lastProbeAt = 0;
+  var WAIT_API_MS = 60000;        // 掉线后最多等 60s（server 侧任何一次请求都会把它拉起来）
+
+  function markHealthy(j){
+    apiMode = "http"; apiInfo = j; apiErr = ""; lastProbeAt = Date.now();
+    setDiagApi();
+  }
+
   function ensureApi(){
     var now = Date.now();
     if (apiMode === "http" && now - lastProbeAt < 20000) return Promise.resolve(true);
     return probeApi().then(function(ok){ lastProbeAt = Date.now(); return ok; });
   }
 
+  // 掉线后**等它回来**：每 2s 复探一次，横幅上显示已等多久。
+  // 常驻进程会被宿主回收，而它只在「MCP server 被唤起」时才被复活
+  // （server 侧 handle() 总入口挂着 ensure_local_api）⇒ 用户/助手只要碰一次
+  // MCP，服务就回来了。等到的瞬间请求**照原样发出**，用户不会白点一次。
+  function waitForApi(maxMs, note){
+    var t0 = Date.now();
+    return new Promise(function(resolve){
+      (function loop(){
+        httpJson("/api/health", null, "GET").then(function(j){
+          markHealthy(j);
+          clearAlert();
+          toast("✅ 本地服务已恢复，正在继续…");
+          trace("api.recovered", "pid=" + j.pid);
+          resolve(true);
+        })["catch"](function(e){
+          if (Date.now() - t0 >= maxMs){ resolve(false); return; }
+          apiMode = "down"; apiErr = e.message; setDiagApi();
+          showAlert("⏳ 本地服务暂时不可用，正在等待它恢复…（已等 "
+            + Math.round((Date.now() - t0) / 1000) + "s / 最多 "
+            + Math.round(maxMs / 1000) + "s）\n" + (note || ""));
+          setTimeout(loop, 2000);
+        });
+      })();
+    });
+  }
+
   // 统一入口：本地 API 优先。
-  // ⚠️ 失败**不再**静默回落到已知不通的宿主通道（那只会换来 10s 静默等待，
-  //    用户侧就是「点了没反应」）。改为：先探活 → 重试一次 → 复探 → 响亮报错。
+  // ⚠️ 失败**不再**静默回落到已知不通的宿主通道（那只会换来 10s 静默等待）。
+  //    顺序：探活 → 掉线则等它回来（最长 60s）→ 发出请求 → 连接级失败再重试一次。
   function apiCall(path, toolName, args, method){
     if (apiMode === "host"){
       return toolCall(toolName, args);
     }
-    var attempt = function(left){
+    var send = function(left){
       return httpJson(path, args, method)["catch"](function(e){
         if (left > 0 && retriable(e.message)){
           log("!", "本地 API 调用失败，1.2s 后重试：" + path + " · " + e.message);
           return new Promise(function(res){ setTimeout(res, 1200); })
-            .then(function(){ return attempt(left - 1); });
+            .then(function(){ return send(left - 1); });
         }
-        return probeApi().then(function(okNow){
-          apiErr = e.message;
-          apiMode = okNow ? "http" : "down";
-          setDiagApi();
-          throw e;
-        });
+        throw e;
       });
     };
     return ensureApi().then(function(okNow){
-      if (!okNow) throw new Error("本地服务未运行（已尝试自动重连）");
-      return attempt(1);
-    })["catch"](function(e){
-      showAlert("⚠ 无法访问本地服务（" + e.message + "）—— 换点 / 拖拽 / 导出暂不可用。\n"
-        + "原因通常是宿主回收了后台常驻进程（几分钟空闲就会发生）。"
-        + "已自动尝试重连：请等 2~3 秒后再点一次；仍不行就对助手说一句需求，"
-        + "让助手重新生成一次行程即可恢复。");
-      log("!", "apiCall 最终失败 " + path + "：" + e.message);
+      if (okNow) return true;
       reviveViaHostBestEffort();
+      trace("api.wait", path);
+      apiWaiting = true;                 // 等待期间看门狗不要再抢横幅
+      return waitForApi(WAIT_API_MS,
+        "（请求尚未发出，服务一恢复就会立即继续，不用重新点）")
+        .then(function(ok){ apiWaiting = false; return ok; });
+    }).then(function(okNow){
+      if (!okNow){
+        showAlert("⚠ 本地服务长时间未恢复 —— 换点 / 拖拽 / 导出暂不可用。\n"
+          + "原因：宿主回收了后台常驻进程（空闲几分钟就会发生）。"
+          + "请在对话里对助手说一句话（例如「刷新行程」）即可唤醒它，然后再点一次。");
+        throw new Error("本地服务未运行");
+      }
+      return send(1);
+    })["catch"](function(e){
+      log("!", "apiCall 失败 " + path + "：" + e.message);
       throw e;
     });
   }
+
+  // 服务健康看门狗：每 15s 轻探一次。掉线立即**响亮提示**（不再只写 11px 灰字），
+  // 恢复则**自动重新拉取行程** —— 面板不需要用户干预就能回到可用状态。
+  var lastHealthy = null;
+  function watchdogTick(){
+    httpJson("/api/health", null, "GET").then(function(j){
+      var wasDown = (lastHealthy === false) || (apiMode === "down");
+      markHealthy(j);
+      lastHealthy = true;
+      if (wasDown){
+        clearAlert();
+        toast("✅ 本地服务已恢复");
+        trace("api.up", "pid=" + j.pid);
+        loadPlan();                       // 重新对齐磁盘上的行程（真相同在磁盘）
+      }
+    })["catch"](function(e){
+      if (lastHealthy !== false && !apiWaiting){
+        apiMode = "down"; apiErr = e.message; setDiagApi();
+        showAlert("⚠ 本地服务已停止（" + e.message + "）—— 换点 / 拖拽 / 导出暂停。\n"
+          + "面板会在它恢复后自动继续；对助手说一句话（例如「刷新行程」）可立刻唤醒。");
+        trace("api.down", e.message);
+      }
+      lastHealthy = false;
+    });
+  }
+  function startWatchdog(){
+    if (watchdogTimer) return;
+    watchdogTimer = setInterval(watchdogTick, 15000);
+  }
+  var watchdogTimer = null;
+  var apiWaiting = false;
 
   window.probeApi = function(){
     var before = apiMode;
@@ -391,6 +463,29 @@
       setDiagApi();
       log("!", "本地 API 不可达：" + e.message);
       return false;
+    });
+  };
+
+  // 诊断区「测试本地 API / 重试」：不但探活，还会**等它回来并自动重拉行程**。
+  window.retryApi = function(){
+    trace("api.retry", "");
+    apiWaiting = false;
+    return probeApi().then(function(okNow){
+      if (okNow){
+        clearAlert(); lastHealthy = true;
+        toast("✅ 本地服务正常");
+        loadPlan();
+        return true;
+      }
+      reviveViaHostBestEffort();
+      apiWaiting = true;
+      showAlert("⏳ 本地服务不可用，正在自动重试…（最多 20s）\n"
+        + "若一直不通：对助手说一句话（例如「刷新行程」）即可唤醒它。");
+      return waitForApi(20000, "（自动重试中…）").then(function(ok){
+        apiWaiting = false;
+        if (ok) loadPlan();
+        return ok;
+      });
     });
   };
 
@@ -913,7 +1008,7 @@
         sc = sc || {};
         if (sc.hasPlan && sc.plan){
           render(sc.plan);
-          document.getElementById("stage").textContent = "M2.2 · 已加载";
+          document.getElementById("stage").textContent = "M2.3 · 已加载";
           log("!", "行程加载成功 city=" + sc.plan.city + " via=" + apiMode);
           trace("plan.loaded", "city=" + sc.plan.city + " via=" + apiMode);
         } else {
@@ -942,7 +1037,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.2.3-m2.2" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.2.5-m2.3" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -1075,11 +1170,13 @@
 
   // 启动顺序：先探本地 API（它决定交互走哪条通路），再拉行程；宿主握手并行做，
   // 只用于诊断与 A+C 登记（那条通道在本机已实测不通，不阻塞任何功能）。
-  trace("panel.boot", "v=m6 base=" + API_BASE + " token=" + (API_TOKEN ? "yes" : "no"));
+  trace("panel.boot", "v=m7 base=" + API_BASE + " token=" + (API_TOKEN ? "yes" : "no"));
   probeApi().then(function(okNow){
     trace("panel.apiProbe", okNow ? "ok" : "down");
+    lastHealthy = okNow;
     loadPlan();
   });
+  startWatchdog();      // 掉线自动提示、恢复自动重拉行程（用户无需干预）
   probe();
 })();
 </script>

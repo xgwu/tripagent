@@ -59,7 +59,9 @@ def main() -> int:
                    "/api/health", "/api/plan", "/api/replace", "/api/move", "/api/export",
                    "probeApi",
                    # M2.2：可观测性（失败必须看得见，否则又回到「点了没反应」）
-                   "showAlert", "unhandledrejection", "/api/log", "ensureApi"):
+                   "showAlert", "unhandledrejection", "/api/log", "ensureApi",
+                   # M2.3：掉线自愈（常驻进程会被宿主回收 ⇒ 面板必须能自己等到它回来）
+                   "waitForApi", "startWatchdog", "watchdogTick", "retryApi"):
         chk(f"含锚点 {anchor}", anchor in html)
 
     # 3b) M2.2 专项守卫 —— 这几条都是踩过的真坑，写死防复发
