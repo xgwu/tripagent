@@ -23,7 +23,7 @@ except (AttributeError, ValueError):  # 非标准 stdout（被替换为非 TextI
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from src import poi_db, m1_planner, llm_client  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
+from src import poi_db, m1_planner, llm_client, poi_swap  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
 from src import gap_log  # POI 库缺口台账：规划缺口持久化（旁路，失败不拖垮主链路）
 from src import intercity  # 城际转移段：跨城驾车时长（travel_cache 不建跨城对）
 
@@ -1738,50 +1738,15 @@ class Handler(BaseHTTPRequestHandler):
             day_ids = payload.get("day_ids") or []
             if cname not in CITIES or not poi_id or not day or not day_ids:
                 return self._json({"ok": False, "error": "参数缺失（city/day/poi_id/day_ids）"}, code=400)
-            try:
-                from src import hotel as hotel_mod, sequencer
-                city = poi_db.load_city(cname)
-                all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
-                replaced = all_pois.get(poi_id)
-                if not replaced:
-                    return self._json({"ok": False, "error": f"POI {poi_id} 不存在"}, code=404)
-                exclude = set(payload.get("used_ids") or []) | set(day_ids)  # 含被换点本身
-                cands = [p for p in all_pois.values() if p["id"] not in exclude]
-                if not cands:
-                    return self._json({"ok": False, "error": "候选池已空，无点可换"})
-                same_cat = [p for p in cands if p["category"] == replaced["category"]]
-                pool = same_cat or cands  # 同类目优先；没有则放宽到全部
-                pool.sort(key=lambda p: (
-                    poi_db.haversine_km(p["lat"], p["lng"], replaced["lat"], replaced["lng"]),
-                    -p["rating"]))
-                hotel = hotel_mod.resolve_hotel(city, payload.get("hotel_text") or None)
-                date0, query = payload.get("date0") or None, payload.get("query") or ""
-                # 逐候选试排：换点不得改变当天景点数——
-                # 新点若引发闭馆/餐窗/里程违规，build_itinerary 修复链会剔点（含前置修剪），
-                # 因此只接受「零剔点且景点一一对应」的候选，按距离从近到远试到成功为止
-                pick = it = new_ids = None
-                for cand in pool[:25]:
-                    trial_ids = [cand["id"] if i == poi_id else i for i in day_ids]
-                    trial = sequencer.build_itinerary({int(day): trial_ids}, city, all_pois,
-                                                      order_given=False, date0=date0,
-                                                      hotel=hotel, query=query)
-                    d0 = trial["days"][0]
-                    tl_ids = [s["id"] for s in d0["timeline"] if s.get("type") == "poi"]
-                    if not d0.get("dropped") and len(tl_ids) == len(trial_ids) \
-                            and set(tl_ids) == set(trial_ids):
-                        pick, it, new_ids = cand, trial, trial_ids
-                        break
-                if pick is None:
-                    return self._json({"ok": False,
-                                       "error": "附近的候选点都会挤掉当天其他行程，已保留原行程；可换一天或稍后再试"})
-                return self._json({"ok": True,
-                                   "swap": {"from": replaced["name"], "to": pick["name"],
-                                            "same_category": bool(same_cat)},
-                                   "new_id": pick["id"], "day": it["days"][0]})
-            except Exception as e:  # noqa
-                import traceback
-                return self._json({"ok": False, "error": f"{type(e).__name__}: {e}",
-                                   "trace": traceback.format_exc()[-600:]}, code=500)
+            # 逻辑已抽到 src/poi_swap.py —— MCP App 面板的「换一个」按钮共用同一实现，
+            # 避免两处各写一遍后漂移（行为与原内联实现逐字段一致）。
+            code, data = poi_swap.replace_poi(
+                cname, poi_id, day, day_ids,
+                used_ids=payload.get("used_ids") or [],
+                date0=payload.get("date0") or None,
+                query=payload.get("query") or "",
+                hotel_text=payload.get("hotel_text") or None)
+            return self._json(data, code=code)
         return self._json({"error": "not found"}, code=404)
 
     def log_message(self, fmt, *args):  # 静默默认访问日志

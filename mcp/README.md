@@ -2,11 +2,15 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收通过 ✅（2026-10-09，自检 73/73，Kenny 肉眼确认）→ M2 待开工**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅（自检 108/108）→ 待 WorkBuddy 实测**
 
 **M1 已在 WorkBuddy 内实测通过**：一句话需求 → 真实行程 → 面板渲染完整时间线
 （含每个点的**停留时长**）、每日主题/里程/违规徽标、**POI 缩略图**、被剔除点及原因。
 数据来自本地 31 城 POI 库 + 交通/路线缓存，无需联网。
+
+**M2 新增（面板内交互）**：🔁 换点、⠿ 拖拽调整当天顺序、⬇ 导出 Markdown、
+🗺 高德 JS API 交互地图（路线 polyline + 序号标记）。
+三个交互工具都带**守门**：换点不得改变当天景点数，重排不得丢点 —— 宁可操作失败，也不悄悄改坏行程。
 
 ---
 
@@ -87,6 +91,9 @@ resourceDomains = ["http://127.0.0.1:*",
 | `tripplanner_list_cities` | — | 列出 31 个可规划城市 + POI 数 |
 | `tripplanner_panel_ready` | — | 面板自报 `appInstanceId`（A 方案） |
 | `tripplanner_ping` | — | 连通性对照组 |
+| `tripplanner_replace_poi` | — | **M2** 换点（面板「🔁」按钮） |
+| `tripplanner_move_poi` | — | **M2** 挪时段（面板拖拽排序） |
+| `tripplanner_export` | — | **M2** 导出 Markdown 文本 |
 
 ### 关键实现要点
 
@@ -207,6 +214,90 @@ CSP `resourceDomains` 放行即可，**不需要**改走本地 `/api/photo` 代�
 
 ---
 
+## ✅ M2 面板交互（2026-10-09 代码完成，自检 108/108）
+
+### 三个交互 + 一个地图
+
+| 能力 | 面板入口 | 工具 | 守门 |
+|---|---|---|---|
+| 换点 | 每行尾部 `🔁` | `tripplanner_replace_poi` | **当天景点数不变**；候选会挤掉别处就放弃 |
+| 挪时段 | 行首 `⠿` 拖拽 | `tripplanner_move_poi` | **点集必须与当天一致**（防拖拽悄悄丢点） |
+| 导出 | 顶部 `⬇ 导出 Markdown` | `tripplanner_export` | 格式白名单（目前仅 markdown） |
+| 地图 | 行程上方 | 无（面板内直连高德） | key 缺失 / CSP 拦截时**降级提示，不影响行程** |
+
+### 公共内核：`src/poi_swap.py`（**不是**在 server 里重写一遍）
+
+换点逻辑原先内联在 `webui/server.py` 的 `/api/replace` 处理函数里。M2 需要同一能力，
+**没有复制一份**（本项目的既有教训：多副本实现必然漂移），而是抽成 `src/poi_swap.py`
+的 `replace_poi()` / `reorder_day()`，**Web UI 与 MCP 共用**：
+
+- `webui/server.py` 的 `/api/replace` 现在只做参数校验 + 调 `poi_swap.replace_poi(...)`，
+  响应字段与行为**逐字段不变**（发布门禁四步全绿：21 单测 + 1 前端守卫 + 31 例离线回归 + 31 城校验）。
+- 两条守门规则都建在公共模块里，两边同时生效。
+
+### 🔴 CSP 的关键发现（app.asar `buildCspMeta()` 取证）
+
+```js
+var directives = [
+  "default-src 'none'",
+  "script-src 'unsafe-inline' 'unsafe-eval' blob: " + resource,  // resource = csp.resourceDomains
+  "style-src  'unsafe-inline' "                     + resource,
+  "img-src    data: blob: "                         + resource,
+  "connect-src "                                    + connect,   // connect  = csp.connectDomains
+  ...
+];
+```
+
+⇒ **`resourceDomains` 同时控制 `script-src` / `img-src` / `style-src` / `font-src` / `media-src`**。
+所以「放行一个域名」就等于「允许从这里加载 JS」—— **面板里能加载高德 JS API 靠的就是这条**。
+`connectDomains` 单独控制 `fetch/XHR`，JS API 的服务端请求必须在那里也放行。
+
+现在两个列表都放了高德（`AMAP_DOMAINS`）：`store.is.autonavi.com`（照片）、
+`*.amap.com`（JS 载体 + restapi）、`*.autonavi.com`（瓦片）。
+
+⚠️ **漏了 `connectDomains` 会「JS 加载成功但瓦片/接口全被拦」，且不报错** —— 典型静默失败。
+
+### 🔴 iframe sandbox：没有 `allow-downloads`（决定导出怎么做）
+
+```js
+innerFrame.setAttribute('sandbox', params.sandbox || 'allow-scripts allow-same-origin allow-forms');
+```
+
+- ✅ 有 `allow-same-origin` → Blob / canvas / `navigator.clipboard` 可用
+- ❌ **没有 `allow-downloads`** → 传统 `<a download>` + Blob 会被浏览器拦掉
+- ❌ 没有 `allow-popups` → `window.open` 不可用
+
+⇒ **导出必须走宿主的 `ui/download-file` 桥接**（能力在 `hostCapabilities.downloadFile` 里声明），
+兜底 `navigator.clipboard.writeText`（sandbox 默认下放 `clipboard-write`），再兜底在面板里给出
+可直接复制的 textarea。**三级降级**，任何一级都不至于让用户拿不到内容。
+
+### 🔴 地图 key 不入仓库
+
+`panel/plan_panel.html` 里写的是占位符 `__AMAP_JS_KEY__`，**由 `read_panel()` 在
+`resources/read` 时替换**成 `secrets.json` 里的 `amap_js_key`。
+⇒ 仓库里永远是占位符；自检同时断言「panel 文件用占位符」+「read 返回的 HTML 里已无占位符」。
+
+### 地图坐标是 server 补的
+
+内核 `timeline` 只给 `id / name / start / end`，**没有坐标**。M2 在 `_normalize_day()` 里
+从 POI 库补 `lat/lng`（按城市缓存；GCJ-02，可直接给高德，无需转换）。
+换点 / 重排写回（`apply_day()`）走同一个归一化函数，所以坐标与照片都不会掉
+（`_normalize_day` 因此必须**幂等**，自检专门守这条）。
+
+### 守门为什么这么严
+
+`build_itinerary` 的修复链遇到闭馆 / 餐窗 / 里程违规时会**剔点**（含前置修剪）。
+若换点只看「成功没有」，很容易换进一个把当天另一个点挤掉的候选 —— 用户看到的是
+「换了个点，怎么少了一个」。所以两个操作都以「**零剔点 + 点集一致**」为接受条件，
+全部候选都不行就明确拒绝、**保留原行程**。
+
+### M2 自检（108 项，阶段五专测交互）
+
+换点点数不变 / 换入点不重复 / 写回后仍带 photo / 重排顺序与请求一致 /
+点集不一致必须拒绝 / 导出是合法 Markdown 且不含 HTML 标签 / 不支持的格式要报错。
+
+---
+
 ## ⚠️ 最重要的一条：注册后必须「重载」才生效
 
 从 `app.asar` 取证（2026-10-09）：
@@ -278,10 +369,12 @@ MCP server 只是一层 stdio JSON-RPC 壳，直接 import 现有内核即可，
 
 ```
 mcp/
-  tripplanner_mcp_server.py   # stdio MCP server（M0+M1pre：纯标准库、零依赖）
-  panel/plan_panel.html     # 面板（自包含，零外部引用）
-  selftest.py               # 不开 WorkBuddy 也能验协议与真实规划（63 项）
+  tripplanner_mcp_server.py   # stdio MCP server（纯标准库、零依赖）
+  panel/plan_panel.html     # 面板（自包含；地图 key 用占位符，由 server 注入）
+  selftest.py               # 不开 WorkBuddy 也能验协议 / 规划 / M2 交互（108 项）
+  panel_guard.py            # 面板前端守卫（U+FFFD / 标签配对 / node --check / key 安全）
   register.py               # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖）
+src/poi_swap.py             # 换点 / 挪时段公共内核（Web UI 与 MCP **共用一份**）
 ```
 
 ## 快速开始
@@ -289,7 +382,7 @@ mcp/
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
-"$PY" mcp/selftest.py          # 1. 本地自检（63 项，含真实规划 + 贫瘠环境回归）
+"$PY" mcp/selftest.py          # 1. 本地自检（108 项，含真实规划 + 贫瘠环境 + 跨进程 + M2 交互）
 "$PY" mcp/register.py          # 2. 注册进 WorkBuddy 配置
 # 3. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
 # 4. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
@@ -336,6 +429,24 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
 4. **兜底排查**（面板没弹 / 报连接错）：先让模型调 `tripplanner_ping`，
    能回就是 server 活着、问题在面板侧；回不了就是注册/重载没生效。
+
+### 在 WorkBuddy 里验收（M2）
+
+前置：`~/.workbuddy/mcp-tool-list.json` 里 `tripplanner_*` 应为 **9 个**
+（6 = M1 旧快照，需先按上文「重载」一节刷新）。
+
+| 动作 | 期望 |
+|---|---|
+| 说「杭州2天，喜欢自然风光」 | 面板打开，行程上方出现**地图**（真实底图 + 蓝色路线 + 序号标记） |
+| 点某个 POI 行尾 `🔁` | 该点被同类目就近点替换；**当天景点数不变**，其余顺序不变 |
+| 拖行首 `⠿` 到同一天另一位置 | 顺序更新；顺序受约束微调时会明确说明 |
+| 点顶部 `⬇ 导出 Markdown` | 走系统下载目录；宿主不支持则提示「已复制到剪贴板」 |
+| 地图加载失败 | 顶部给出原因，**行程与交互仍可用**（不会白屏） |
+| 拖到另一天 / 拖出列表 | 不生效（当前只支持**同一天内**重排） |
+
+⚠️ **地图是 M2 唯一未经实测的环节**（CSP 已按取证配好，但高德 JS API 在宿主双层
+iframe 里能否初始化，只有浏览器说了算）。失败时先看「协议诊断 → 地图状态」那一行，
+它会区分「key 未配置」「JS 加载失败」「渲染异常」。
 
 ### 表单添加时填这些
 
@@ -446,7 +557,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M1-pre** | CSP 放行高德图片 + A+C 面板分流（防堆叠） | ✅ **完成（2026-10-09，自检 29/29）** |
 | **M1** | 最小闭环：`plan_trip` + `list_cities` + `get_plan` + 只读时间轴面板 | ✅ **完成（2026-10-09，自检 73/73）** |
 | **M1-fix** | `last_plan` 落盘（跨进程）+ 空结果不清屏 + uri 匹配放宽 | ✅ **完成并肉眼验收通过** |
-| **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ⏳ 下一步 |
+| **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ✅ **代码完成（2026-10-09，自检 108/108）；待 WorkBuddy 实测** |
 | **M3** | 远端化：换 `streamable-http` transport，复用线上后端 | ⏳ |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TripPlanner 行程面板 · M1</title>
+<title>TripPlanner 行程面板 · M2</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
@@ -51,7 +51,7 @@
   .day-h .meta{color:var(--muted);font-size:11.5px;margin-top:2px}
   .day-b{padding:8px 12px 10px}
   .tl{list-style:none;margin:0;padding:0}
-  .tl li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed #eef0f3}
+  .tl li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed #eef0f3;align-items:flex-start}
   .tl li:last-child{border-bottom:0}
   .time{flex:0 0 124px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted);padding-top:1px}
   .dur{font-style:normal;color:#98a1ac;font-size:10.5px;margin-left:4px}
@@ -66,30 +66,60 @@
   .empty{color:var(--muted);font-size:12px;padding:18px 2px}
   details{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
   summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
+
+  /* ---- M2：工具栏 / 地图 / 拖拽 ---- */
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:0 0 12px}
+  .toolbar .hint{margin-top:0}
+  .grip{cursor:grab;color:#c2c9d1;user-select:none;font-size:14px;padding:0 4px;line-height:1;letter-spacing:-1px}
+  .grip:active{cursor:grabbing}
+  .mini{font-size:11px;padding:2px 8px;line-height:1.4;border-radius:6px;white-space:nowrap}
+  .rowact{flex:0 0 auto;display:flex;align-items:center;gap:2px;padding-top:1px}
+  li.dragging{opacity:.35}
+  li.droptarget{outline:2px dashed var(--blue);outline-offset:-2px;background:var(--bluebg)}
+  .amap{height:300px;border:1px solid var(--line);border-radius:10px;background:#f0f2f5;overflow:hidden}
+  .days{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .days button{padding:3px 12px;font-size:11.5px}
+  .days button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .maperr{padding:16px;color:var(--muted);font-size:12px}
 </style>
 </head>
 <body>
 
-<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M1</span></h1>
+<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2</span></h1>
 <div class="sub" id="subLine">正在连接宿主并读取行程…</div>
+
+<div class="toolbar" id="toolbar" style="display:none">
+  <button class="primary" id="btnExport" onclick="exportMd()">⬇ 导出 Markdown</button>
+  <span class="hint" id="toolHint"></span>
+</div>
+
+<div class="card" id="mapCard" style="display:none">
+  <h2>路线地图 <span class="hint" id="mapTitle" style="font-weight:400"></span></h2>
+  <div class="days" id="mapDays"></div>
+  <div class="amap" id="amap"></div>
+  <div class="hint" id="mapHint">等待行程…</div>
+</div>
 
 <div id="content"><div class="empty">等待行程数据…</div></div>
 
 <details>
-  <summary>协议诊断（M0 探针，排查用）</summary>
+  <summary>协议诊断（排查用）</summary>
   <div class="card" style="margin-top:10px">
     <h2>AppBridge 握手</h2>
     <div class="row"><span class="k">桥接状态</span><span class="v"><span class="badge b-idle" id="st">未探测</span></span></div>
     <div class="row"><span class="k">宿主信息</span><span class="v" id="host">—</span></div>
+    <div class="row"><span class="k">宿主能力</span><span class="v" id="caps">—</span></div>
     <div class="row"><span class="k">appInstanceId</span><span class="v" id="iid">—</span></div>
     <div class="row"><span class="k">自报登记（A）</span><span class="v"><span class="badge b-idle" id="st3">待握手</span> <span id="reg">—</span></span></div>
     <div class="row"><span class="k">数据诊断</span><span class="v" id="diag2">—</span></div>
     <div class="row"><span class="k">页面路径</span><span class="v" id="diag3">—</span></div>
     <div class="row"><span class="k">照片加载</span><span class="v" id="diagPhoto">—</span></div>
+    <div class="row"><span class="k">地图状态</span><span class="v" id="diagMap">—</span></div>
     <div class="btns">
       <button class="primary" id="btnProbe" onclick="probe()">探测桥接</button>
       <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
       <button id="btnReload" onclick="loadPlan()" disabled>重新拉取行程</button>
+      <button id="btnMapRetry" onclick="retryMap()" disabled>重试地图</button>
     </div>
     <div class="row" style="margin-top:6px"><span class="k">ping 回显</span><span class="v" id="echo">—</span></div>
   </div>
@@ -113,6 +143,12 @@
   var logEl = document.getElementById("log");
   var first = true;
   var nextId = 1, pending = {}, appInstanceId = "";
+  var hostCaps = {};          // 宿主能力：downloadFile / openLinks / serverTools …
+  var LAST = null;            // 最近一次渲染的 plan（换点 / 重排后整体替换）
+  var dayPoiIds = {};         // {day: [poiId,...]} —— 拖拽排序用
+  var dragFrom = null;
+  var amapKey = "__AMAP_JS_KEY__";   // server 在 resources/read 时注入；未配置则保持占位符
+  var amapObj = null, amapLoading = false, mapDay = 1;
 
   function log(dir, obj){
     var line;
@@ -133,6 +169,12 @@
   function setDiag(label, text, id){
     var el = document.getElementById(id || "diag2");
     if (el) el.textContent = label + "：" + text;
+  }
+
+  function toast(msg){
+    var el = document.getElementById("toolHint");
+    if (el) el.textContent = msg;
+    log("!", msg);
   }
 
   function esc(s){
@@ -216,6 +258,9 @@
       return;
     }
 
+    LAST = plan;
+    dayPoiIds = {};
+
     // 拿到数据先算结构摘要 —— 出问题时「数据没到」与「渲染出错」一眼可分
     var keys = Object.keys(plan);
     var dl = plan.dayList || [];
@@ -239,7 +284,10 @@
       ? '<span class="badge b-ok">硬约束 0 违规</span>'
       : '<span class="badge b-bad">违规 ' + plan.totalViolations + '</span>';
     document.getElementById("subLine").innerHTML =
-      modeBadge + violBadge + '<span class="badge b-idle">' + esc(plan.generatedAt) + '</span>';
+      modeBadge + violBadge + '<span class="badge b-idle">' + esc(plan.generatedAt) + '</span>'
+      + (plan.updatedAt ? '<span class="badge b-blue">已调整 ' + esc(plan.updatedAt) + '</span>' : '');
+
+    document.getElementById("toolbar").style.display = "flex";
 
     var h = "";
     h += '<div class="card"><h2>总览</h2>';
@@ -255,6 +303,7 @@
       h += '<div class="row" style="margin-top:6px"><span class="k">住宿锚点</span><span class="v">'
         + esc(plan.hotel.name) + '（' + esc(plan.hotel.resolved) + '）</span></div>';
     }
+    h += '<div class="hint">提示：拖动行首 ⠿ 可调整当天景点顺序；点行尾 🔁 可换成同类目就近的点。</div>';
     h += '</div>';
 
     // 数据不完整时给出明确诊断，别让用户对着空面板猜
@@ -271,6 +320,9 @@
     }
 
     dl.forEach(function(d){
+      var poiSeq = 0;
+      dayPoiIds[d.day] = [];
+
       h += '<div class="day"><div class="day-h">';
       h += '<div class="t">Day ' + d.day + ' · ' + esc(d.theme || "未命名主题") + '</div>';
       h += '<div class="meta">日交通 ' + d.travel_km + 'km / ' + d.travel_h + 'h'
@@ -282,11 +334,24 @@
       (d.timeline || []).forEach(function(s){
         var cls = s.type === "hop" ? "hop" : (s.type === "meal" ? "meal" : "poi");
         var icon = s.type === "hop" ? "→" : (s.type === "meal" ? "🍽" : "📍");
-        h += '<li class="' + cls + '">';
-        var durTxt = (cls === "poi" || cls === "meal") ? durText(s.start, s.end) : "";
+        var isPoi = (cls === "poi");
+        var pIdx = -1;
+        if (isPoi){
+          pIdx = poiSeq++;
+          if (s.id) dayPoiIds[d.day].push(s.id);
+        }
+        h += '<li class="' + cls + '"'
+          + (isPoi ? ' draggable="true" data-day="' + d.day + '" data-idx="' + pIdx
+                     + '" data-id="' + esc(s.id) + '"' : '')
+          + '>';
         h += '<span class="time">' + esc(s.start) + (s.end ? "–" + esc(s.end) : "")
-          + (durTxt ? '<i class="dur">' + durTxt + '</i>' : "") + '</span>';
-        if (cls === "poi" && s.photo){
+          + (function(){ var t = (cls === "poi" || cls === "meal") ? durText(s.start, s.end) : "";
+                         return t ? '<i class="dur">' + t + '</i>' : ""; })()
+          + '</span>';
+        if (isPoi){
+          h += '<span class="grip" title="拖动调整顺序">⠿</span>';
+        }
+        if (isPoi && s.photo){
           h += '<img class="thumb" src="' + esc(s.photo) + '" alt="" '
             + 'title="' + esc(s.name) + '" '
             + 'onload="photoOk()" onerror="photoFail(this)">';
@@ -297,7 +362,14 @@
             + (s.km != null ? s.km + "km" : "") + (s.min != null ? " · " + s.min + "分钟" : "")
             + '</span>';
         }
-        h += '</span></li>';
+        h += '</span>';
+        if (isPoi){
+          h += '<span class="rowact">'
+            + '<button class="mini" title="换成同类目、就近的另一个点" '
+            + 'onclick="replacePoi(' + d.day + ',\'' + esc(s.id) + '\')\">🔁</button>'
+            + '</span>';
+        }
+        h += '</li>';
       });
       h += '</ul>';
 
@@ -323,6 +395,275 @@
     }
 
     box.innerHTML = h;
+    setupMap(plan);
+  }
+
+  // ---------------- M2：地图（高德 JS API） ----------------
+  // CSP 依据（app.asar buildCspMeta 取证）：
+  //   script-src 拼的是 resourceDomains ⇒ 已放行 https://*.amap.com，JS 载体能加载；
+  //   瓦片走 img-src（同样是 resourceDomains）⇒ *.autonavi.com 已放行；
+  //   JS API 内部 XHR 走 connect-src ⇒ connectDomains 已加高德域名。
+  function setMapHint(t){
+    var el = document.getElementById("mapHint");
+    if (el) el.textContent = t;
+    setDiag("地图状态", t, "diagMap");
+  }
+
+  function loadAmap(cb){
+    if (!amapKey || amapKey.indexOf("__AMAP") === 0){
+      setMapHint("未在 secrets.json 配置 amap_js_key —— 地图不可用（行程与交互功能不受影响）");
+      return;
+    }
+    if (window.AMap){ cb(); return; }
+    if (amapLoading) return;
+    amapLoading = true;
+    setMapHint("正在加载高德 JS API…");
+    var s = document.createElement("script");
+    s.src = "https://webapi.amap.com/maps?v=2.0&key=" + encodeURIComponent(amapKey);
+    s.onload = function(){
+      amapLoading = false;
+      log("!", "高德 JS API 加载成功");
+      try { cb(); } catch(e){ setMapHint("地图绘制失败：" + e.message); }
+    };
+    s.onerror = function(){
+      amapLoading = false;
+      setMapHint("高德 JS API 加载失败（CSP 拦截或网络不通）—— 行程与交互功能不受影响");
+      log("!", "高德 JS API 加载失败");
+    };
+    document.head.appendChild(s);
+  }
+
+  function setupMap(plan){
+    var card = document.getElementById("mapCard");
+    var dl = (plan && plan.dayList) || [];
+    var hasCoord = false;
+    dl.forEach(function(d){
+      (d.timeline || []).forEach(function(s){
+        if (s.type === "poi" && s.lat != null && s.lng != null) hasCoord = true;
+      });
+    });
+    if (!dl.length){ card.style.display = "none"; return; }
+    card.style.display = "block";
+
+    // Day 切换按钮
+    var bar = document.getElementById("mapDays");
+    bar.innerHTML = "";
+    dl.forEach(function(d){
+      var b = document.createElement("button");
+      b.textContent = "Day " + d.day;
+      if (+d.day === +mapDay) b.className = "on";
+      b.onclick = function(){ mapDay = +d.day; setupMap(plan); };
+      bar.appendChild(b);
+    });
+
+    if (!hasCoord){
+      setMapHint("行程数据里没有坐标（lat/lng），地图无法绘制 —— 请反馈：server 未下发坐标");
+      return;
+    }
+    document.getElementById("btnMapRetry").disabled = false;
+    drawMap();
+  }
+
+  function drawMap(){
+    var plan = LAST;
+    if (!plan) return;
+    var d = null;
+    (plan.dayList || []).forEach(function(x){ if (+x.day === +mapDay) d = x; });
+    if (!d) return;
+    var pts = [];
+    (d.timeline || []).forEach(function(s){
+      if (s.type === "poi" && s.lat != null && s.lng != null){
+        pts.push({ name: s.name, lat: +s.lat, lng: +s.lng });
+      }
+    });
+    if (!pts.length){ setMapHint("Day " + mapDay + " 没有可定位的景点"); return; }
+
+    if (!window.AMap){ loadAmap(function(){ drawMap(); }); return; }
+
+    try {
+      if (amapObj && amapObj.destroy) { try { amapObj.destroy(); } catch(e){} }
+      amapObj = new AMap.Map("amap", {
+        zoom: 12, center: [pts[0].lng, pts[0].lat], viewMode: "2D",
+        mapStyle: "amap://styles/normal"
+      });
+      var path = pts.map(function(p){ return [p.lng, p.lat]; });
+      if (path.length > 1){
+        new AMap.Polyline({
+          path: path, map: amapObj, strokeColor: "#185fa5", strokeWeight: 4,
+          strokeOpacity: 0.85, lineJoin: "round", showDir: true
+        });
+      }
+      pts.forEach(function(p, i){
+        new AMap.Marker({
+          position: [p.lng, p.lat], map: amapObj,
+          label: {
+            direction: "top",
+            content: '<span style="background:#185fa5;color:#fff;border-radius:9px;'
+                   + 'padding:1px 6px;font-size:11px;line-height:16px;display:inline-block">'
+                   + (i + 1) + '</span>'
+          }
+        });
+      });
+      amapObj.setFitView(null, false, [40, 40, 40, 40]);
+      setMapHint("Day " + mapDay + "：已定位 " + pts.length + " 个景点（序号对应下方时间线顺序）");
+    } catch(e){
+      setMapHint("地图渲染失败：" + e.message + " —— 行程与交互功能不受影响");
+      log("!", "地图渲染异常 " + e.message);
+    }
+  }
+
+  window.retryMap = function(){ setMapHint("重试中…"); drawMap(); };
+
+  // ---------------- M2：换点 ----------------
+  window.replacePoi = function(day, poiId){
+    if (!LAST) return;
+    var d = null, used = [];
+    (LAST.dayList || []).forEach(function(x){
+      (x.timeline || []).forEach(function(s){
+        if (s.type === "poi" && s.id) used.push(s.id);
+      });
+      if (+x.day === +day) d = x;
+    });
+    if (!d) return;
+    var ids = (d.timeline || []).filter(function(s){ return s.type === "poi" && s.id; })
+                                .map(function(s){ return s.id; });
+    toast("换点中…");
+    request("tools/call", { name: "tripplanner_replace_poi", arguments: {
+      city: LAST.city, day: +day, poi_id: poiId, day_ids: ids, used_ids: used,
+      query: LAST.query || "", date0: LAST.date0 || "",
+      hotel_text: (LAST.hotel && LAST.hotel.name) || ""
+    }}).then(function(res){
+      var sc = (res && res.structuredContent) || {};
+      if (!sc.ok){ toast("换点失败：" + (sc.error || "未知原因")); return; }
+      var sw = sc.swap || {};
+      toast("🔁 " + sw.from + " → " + sw.to + (sw.same_category ? "（同类目）" : "（就近）"));
+      if (sc.plan){ render(sc.plan); }
+    }).catch(function(e){ toast("换点失败：" + e.message); });
+  };
+
+  // ---------------- M2：拖拽排序（挪时段） ----------------
+  function clearDrag(){
+    var els = document.querySelectorAll("li.dragging, li.droptarget");
+    for (var i = 0; i < els.length; i++){
+      els[i].classList.remove("dragging");
+      els[i].classList.remove("droptarget");
+    }
+    dragFrom = null;
+  }
+
+  function callMove(day, ids){
+    toast("调整顺序…");
+    request("tools/call", { name: "tripplanner_move_poi", arguments: {
+      city: LAST.city, day: +day, ordered_ids: ids,
+      query: LAST.query || "", date0: LAST.date0 || "",
+      hotel_text: (LAST.hotel && LAST.hotel.name) || ""
+    }}).then(function(res){
+      var sc = (res && res.structuredContent) || {};
+      if (!sc.ok){ toast("调整失败：" + (sc.error || "未知原因")); return; }
+      toast(sc.order_respected ? "顺序已更新" : "顺序已更新（部分受开放时间/餐窗约束微调）");
+      if (sc.plan){ render(sc.plan); }
+    }).catch(function(e){ toast("调整失败：" + e.message); });
+  }
+
+  (function bindDrag(){
+    var box = document.getElementById("content");
+    box.addEventListener("dragstart", function(e){
+      var li = e.target && e.target.closest ? e.target.closest('li[draggable="true"]') : null;
+      if (!li) return;
+      dragFrom = { day: +li.getAttribute("data-day"), idx: +li.getAttribute("data-idx") };
+      li.classList.add("dragging");
+      try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", "x"); }
+      catch(err){}
+      log("!", "drag start day=" + dragFrom.day + " idx=" + dragFrom.idx);
+    });
+    box.addEventListener("dragover", function(e){
+      if (!dragFrom) return;
+      var li = e.target && e.target.closest ? e.target.closest('li[draggable="true"]') : null;
+      e.preventDefault();
+      var old = box.querySelector("li.droptarget");
+      if (old) old.classList.remove("droptarget");
+      if (li && +li.getAttribute("data-day") === dragFrom.day) li.classList.add("droptarget");
+    });
+    box.addEventListener("drop", function(e){
+      if (!dragFrom) return;
+      e.preventDefault();
+      var li = e.target && e.target.closest ? e.target.closest('li[draggable="true"]') : null;
+      if (!li){ clearDrag(); return; }
+      var day = +li.getAttribute("data-day");
+      var to = +li.getAttribute("data-idx");
+      var from = dragFrom.idx;
+      var sameDay = (day === dragFrom.day);
+      clearDrag();
+      if (!sameDay || to === from) return;
+      var ids = (dayPoiIds[day] || []).slice();
+      if (from < 0 || from >= ids.length) return;
+      var moved = ids.splice(from, 1)[0];
+      ids.splice(to, 0, moved);
+      log("!", "drop day=" + day + " " + from + " -> " + to + " ids=" + ids.join(","));
+      callMove(day, ids);
+    });
+    box.addEventListener("dragend", clearDrag);
+  })();
+
+  // ---------------- M2：导出 Markdown ----------------
+  window.exportMd = function(){
+    var hint = document.getElementById("toolHint");
+    hint.textContent = "导出中…";
+    request("tools/call", { name: "tripplanner_export", arguments: { format: "markdown" } })
+      .then(function(res){
+        var sc = (res && res.structuredContent) || {};
+        if (!sc.ok){ hint.textContent = "导出失败：" + (sc.error || "未知原因"); return; }
+        deliver(sc.filename || "TripPlanner.md", sc.text || "");
+      })
+      .catch(function(e){ hint.textContent = "导出失败：" + e.message; });
+  };
+
+  function deliver(filename, text){
+    var hint = document.getElementById("toolHint");
+    // 正路：宿主 ui/download-file。
+    // 为什么不用 <a download>：面板 iframe 的 sandbox 是
+    // "allow-scripts allow-same-origin allow-forms"，**没有 allow-downloads**
+    // （2026-10-09 从 app.asar loadResource() 取证）⇒ 浏览器会拦掉下载。
+    if (hostCaps && hostCaps.downloadFile){
+      request("ui/download-file", {
+        contents: [{ uri: "file:///" + filename, mimeType: "text/markdown", text: text }]
+      }).then(function(){
+        hint.textContent = "✅ 已通过宿主下载：" + filename;
+      }).catch(function(e){
+        log("!", "ui/download-file 失败：" + e.message);
+        copyFallback(text, hint, filename);
+      });
+      return;
+    }
+    copyFallback(text, hint, filename);
+  }
+
+  function copyFallback(text, hint, filename){
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){
+        hint.textContent = "✅ 宿主不支持直接下载，Markdown 已复制到剪贴板（" + text.length + " 字）";
+      }).catch(function(){
+        showText(text, hint, filename);
+      });
+    } else {
+      showText(text, hint, filename);
+    }
+  }
+
+  function showText(text, hint, filename){
+    hint.textContent = "无法自动下载/复制（" + filename + "），请手动复制下方内容：";
+    var box = document.getElementById("exportBox");
+    if (!box){
+      box = document.createElement("textarea");
+      box.id = "exportBox";
+      box.style.cssText = "width:100%;height:170px;margin-top:8px;font-family:ui-monospace,"
+        + "Consolas,monospace;font-size:11px;border:1px solid #e3e6ea;border-radius:8px;padding:8px";
+      document.getElementById("toolbar").parentNode.insertBefore(
+        box, document.getElementById("content"));
+    }
+    box.value = text;
+    box.focus();
+    box.select();
   }
 
   // ---------------- 数据获取 ----------------
@@ -335,7 +676,7 @@
         var sc = (res && res.structuredContent) || {};
         if (sc.hasPlan && sc.plan){
           render(sc.plan);
-          document.getElementById("stage").textContent = "M1 · 已加载";
+          document.getElementById("stage").textContent = "M2 · 已加载";
           log("!", "行程加载成功 city=" + sc.plan.city);
         } else {
           // ⚠️ 不要用空结果覆盖已渲染好的内容。
@@ -363,7 +704,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.1.0-m3" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.2.0-m2" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -373,14 +714,19 @@
         "名称=" + (hi.name || "?") + " · 版本=" + (hi.version || "?") +
         " · 协议=" + (info.protocolVersion || "?");
 
+      hostCaps = info.hostCapabilities || {};
+      document.getElementById("caps").textContent = Object.keys(hostCaps).length
+        ? JSON.stringify(hostCaps) : "（宿主未声明能力）";
+      log("!", "hostCapabilities=" + JSON.stringify(hostCaps));
+
       appInstanceId = extractInstanceId(info);
       if (!appInstanceId){
         var m = (location.pathname || "").match(/mcp-apps\/([^/]+)\//i);
         if (m) appInstanceId = m[1];
       }
       document.getElementById("iid").textContent = appInstanceId || "（宿主未提供）";
-      // A 方案为何取不到：把真实路径摊出来（iframe 可能是 sandbox-proxy 包裹层，
-      // 路径里就没有 mcp-apps/<id>/ 这一段）。下次据此改提取规则。
+      // A 方案为何取不到：把真实路径摊出来（iframe 是 sandbox-proxy 包裹层，
+      // 路径里没有 mcp-apps/<id>/ 这一段）。
       var href = String(location.href || "");
       setDiag("页面路径", href.length > 140 ? href.slice(0, 140) + "…" : href, "diag3");
 
@@ -390,7 +736,7 @@
       document.getElementById("btnImg").disabled = false;
 
       registerSelf();
-      loadPlan();                       // ← M1：握手成功即拉行程
+      loadPlan();                       // ← 握手成功即拉行程
     }).catch(function(e){
       setBadge("st", "握手失败", "b-bad");
       document.getElementById("host").textContent = e.message;
@@ -403,7 +749,7 @@
     setBadge("st3", "上报中…", "b-run");
     request("tools/call", {
       name: "tripplanner_panel_ready",
-      arguments: { app_instance_id: appInstanceId, label: "m1-panel" }
+      arguments: { app_instance_id: appInstanceId, label: "m2-panel" }
     }).then(function(res){
       var sc = (res && res.structuredContent) || {};
       setBadge("st3", "已登记", "b-ok");

@@ -6,10 +6,11 @@ MCP server 本地自检 —— 不开 WorkBuddy 也能验协议（把 server 当
 用法：
     D:\\Users\\xgwu\\.workbuddy\\binaries\\python\\envs\\tripagent\\Scripts\\python.exe mcp/selftest.py
 
-验的是：initialize 协商、tools/list（含面板标记）、resources/read（含 _meta.ui.csp）、
-tools/call（全量工具，含 M1 真实规划）、A+C 面板分流，以及「stdout 是否被日志污染」。
+验的是：initialize 协商、tools/list（含面板标记）、resources/read（含 _meta.ui.csp 与地图 key 注入）、
+tools/call（全量 9 个工具，含 M1 真实规划 + M2 换点/挪时段/导出）、A+C 面板分流、
+跨进程取数，以及「stdout 是否被日志污染」。
 
-⚠️ M1 的规划用例会真的跑一次规划内核（LLM 可用时约 3-6s，不可用则走离线兜底）。
+⚠️ M1/M2 的规划用例会真的跑一次规划内核（LLM 可用时约 3-6s，不可用则走离线兜底）。
 """
 from __future__ import annotations
 
@@ -112,7 +113,7 @@ def phase_protocol():
         r = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = ((r or {}).get("result") or {}).get("tools") or []
         names = [t["name"] for t in tools]
-        check("tools/list 返回 6 个工具", len(tools) == 6, str(names))
+        check("tools/list 返回 9 个工具（M1 六个 + M2 三个）", len(tools) == 9, str(names))
         by = {t["name"]: t for t in tools}
 
         # 面板 URI 从 server **动态取** —— 按项目惯例「源码守卫锁 wiring，别硬编码版本号」，
@@ -130,9 +131,11 @@ def phase_protocol():
             check(f"{tname} visibility == [model, app]",
                   meta.get("visibility") == ["model", "app"], repr(meta.get("visibility")))
 
-        # 不带面板：其余四个（若误配会每次调用都堆一扇面板）
+        # 不带面板：其余六个（若误配会每次调用都堆一扇面板）
         for tname in ("tripplanner_get_plan", "tripplanner_list_cities",
-                      "tripplanner_ping", "tripplanner_panel_ready"):
+                      "tripplanner_ping", "tripplanner_panel_ready",
+                      "tripplanner_replace_poi", "tripplanner_move_poi",
+                      "tripplanner_export"):
             check(f"{tname} 不带 _meta（对照组）",
                   not (by.get(tname) or {}).get("_meta"),
                   repr((by.get(tname) or {}).get("_meta")))
@@ -165,12 +168,38 @@ def phase_protocol():
         check("resourceDomains 放行高德图片域名",
               any("autonavi.com" in str(d) for d in rdom),
               json.dumps(rdom, ensure_ascii=False)[:140])
+        # M2：高德 JS API 的 JS 载体走 script-src（= resourceDomains），
+        # 其服务端请求走 connect-src（= connectDomains）—— 两条都要放行，
+        # 否则地图会「加载了但瓦片/接口全被拦」，且**不报错**（静默失败）。
+        cdom = csp.get("connectDomains") or []
+        check("connectDomains 放行高德（JS API 的 XHR）",
+              any("amap.com" in str(d) for d in cdom),
+              json.dumps(cdom, ensure_ascii=False)[:160])
         check("面板零外部引用（无 src=/href= http）",
               ("src=\"http" not in html) and ("href=\"http" not in html))
         check("面板含 A 方案上报（tripplanner_panel_ready）", "tripplanner_panel_ready" in html)
         check("面板含 appInstanceId 提取逻辑", "appInstanceId" in html)
         check("面板含 M1 数据通道（get_plan）", "tripplanner_get_plan" in html)
         check("面板渲染时间轴（timeline）", "timeline" in html)
+
+        # ---- M2 面板能力 ----
+        check("面板含 M2 换点入口（replace_poi）", "tripplanner_replace_poi" in html)
+        check("面板含 M2 挪时段入口（move_poi）", "tripplanner_move_poi" in html)
+        check("面板含 M2 导出入口（export）", "tripplanner_export" in html)
+        check("面板含拖拽排序（draggable）", "draggable" in html)
+        check("面板含地图加载逻辑（webapi.amap.com）", "webapi.amap.com" in html)
+        # 面板 iframe 的 sandbox 没有 allow-downloads ⇒ 导出必须走宿主能力
+        check("面板走宿主下载能力（ui/download-file）", "ui/download-file" in html)
+        check("resources/read 已把 key 占位符替换掉", "__AMAP_JS_KEY__" not in html)
+        # key 安全：磁盘上的 panel 文件必须是占位符，真实 key 只在 read 时注入。
+        # 注意**只断言占位符存在** —— 面板的提示文案里会提到 `amap_js_key`
+        # 这个字段名（告诉用户去哪配），不能把字段名当 key 值来判。
+        with open(os.path.join(HERE, "panel", "plan_panel.html"), encoding="utf-8") as _f:
+            raw_panel = _f.read()
+        check("panel 文件用 key 占位符（真实 key 不入库）",
+              "__AMAP_JS_KEY__" in raw_panel)
+        check("panel 文件不含 amap_js_key 的取值形式",
+              "amap_js_key\"" not in raw_panel and "amap_js_key:" not in raw_panel)
 
         # 兼容性（2026-10-09 踩坑）：改 PANEL_VERSION 后宿主**注册表里仍是旧 uri**
         # （注册表要等宿主重连才更新）。若 resources/read 严格比对当前 uri，
@@ -304,6 +333,15 @@ def phase_planning():
         check("poi 节点带 photo 字段（可为空串）",
               len(photos) > 0 and all(isinstance(p, str) for p in photos),
               f"{sum(1 for p in photos if p)}/{len(photos)} 有图")
+
+        # M2：地图要坐标 —— 内核 timeline 不给，需 server 从 POI 库补齐（GCJ-02）
+        poi_rows = [s for d in days for s in (d.get("timeline") or [])
+                    if s.get("type") == "poi"]
+        withxy = [s for s in poi_rows
+                  if s.get("lat") is not None and s.get("lng") is not None]
+        check("poi 节点带 lat/lng（地图所需）",
+              len(poi_rows) > 0 and len(withxy) == len(poi_rows),
+              f"{len(withxy)}/{len(poi_rows)} 有坐标")
 
         # 行程已缓存 → get_plan 能取回
         r = rpc(proc, {"jsonrpc": "2.0", "id": 13, "method": "tools/call",
@@ -458,6 +496,134 @@ def phase_cross_process():
     return err
 
 
+def phase_interactions():
+    """阶段五（M2）：面板内交互 —— 换点 / 挪时段 / 导出 Markdown。
+
+    按面板的真实调用序列走：规划 → 取第一天 → 换点 → 拖拽重排 → 导出。
+    每条都验**守门是否生效**（换点不得改变当天点数；重排不得丢点）——
+    这正是「面板能点」与「点了不把行程搞坏」的区别。
+    """
+    print()
+    print("--- 阶段五：M2 面板交互（换点 / 挪时段 / 导出）---")
+    proc = spawn()
+    err = ""
+    try:
+        init(proc)
+
+        # 前置：真实规划
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 60, "method": "tools/call",
+                       "params": {"name": "tripplanner_plan_trip",
+                                  "arguments": {"query": "杭州2天，喜欢自然风光"}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        plan = sc.get("plan") or {}
+        days = plan.get("dayList") or []
+        check("M2 前置：先拿到真实行程", bool(days), f"dayList={len(days)}")
+        if not days:
+            return err
+
+        city = plan.get("city") or ""
+        d0 = days[0]
+        day_ids = [s.get("id") for s in (d0.get("timeline") or []) if s.get("type") == "poi"]
+        used = [s.get("id") for d in days for s in (d.get("timeline") or [])
+                if s.get("type") == "poi"]
+        check("第一天有可换的点（≥2）", len(day_ids) >= 2, str(day_ids))
+        if len(day_ids) < 2:
+            return err
+
+        # ---------------- 换点 ----------------
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 61, "method": "tools/call",
+                       "params": {"name": "tripplanner_replace_poi",
+                                  "arguments": {"city": city, "day": 1,
+                                                "poi_id": day_ids[0],
+                                                "day_ids": day_ids,
+                                                "used_ids": used,
+                                                "query": plan.get("query") or ""}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        check("replace_poi 返回 ok", sc.get("ok") is True,
+              json.dumps(sc, ensure_ascii=False)[:160])
+        if not sc.get("ok"):
+            return err
+        sw = sc.get("swap") or {}
+        check("换点给出 from/to 且二者不同",
+              bool(sw.get("from")) and bool(sw.get("to")) and sw.get("from") != sw.get("to"),
+              json.dumps(sw, ensure_ascii=False))
+
+        nplan = sc.get("plan") or {}
+        nd0 = (nplan.get("dayList") or [{}])[0]
+        ntl = [s.get("id") for s in (nd0.get("timeline") or []) if s.get("type") == "poi"]
+        check("换点后当天点数不变（守门生效）", len(ntl) == len(day_ids),
+              f"{len(day_ids)} -> {len(ntl)}")
+        check("换点后确有替换（点集变化）", set(ntl) != set(day_ids), str(ntl))
+        check("换点后无剔除", not nd0.get("dropped"), str(nd0.get("dropped")))
+        added = set(ntl) - set(day_ids)
+        check("换入的点不在全程已用中（防重复）", not (added & set(used)),
+              f"added={sorted(added)}")
+        check("换点写回 last_plan（带 updatedAt）", bool(nplan.get("updatedAt")),
+              str(nplan.get("updatedAt")))
+        # _normalize_day 幂等性：换点后的那天仍要带 photo，否则面板缩略图会掉
+        check("换点后 timeline 仍带 photo 字段",
+              all("photo" in s for s in (nd0.get("timeline") or [])
+                  if s.get("type") == "poi"),
+              str([("photo" in s) for s in (nd0.get("timeline") or [])
+                   if s.get("type") == "poi"]))
+
+        # ---------------- 挪时段（拖拽重排） ----------------
+        rev = list(reversed(ntl))
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 62, "method": "tools/call",
+                       "params": {"name": "tripplanner_move_poi",
+                                  "arguments": {"city": city, "day": 1, "ordered_ids": rev,
+                                                "query": plan.get("query") or ""}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        check("move_poi 返回 ok", sc.get("ok") is True,
+              json.dumps(sc, ensure_ascii=False)[:160])
+        if sc.get("ok"):
+            md0 = ((sc.get("plan") or {}).get("dayList") or [{}])[0]
+            got = [s.get("id") for s in (md0.get("timeline") or [])
+                   if s.get("type") == "poi"]
+            check("重排后顺序与请求一致", got == rev,
+                  f"order_respected={sc.get('order_respected')} got={got}")
+            check("重排后点数不变", len(got) == len(rev), f"{len(got)} vs {len(rev)}")
+
+        # 边界：点集不一致必须拒绝（防拖拽悄悄丢点）
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 63, "method": "tools/call",
+                       "params": {"name": "tripplanner_move_poi",
+                                  "arguments": {"city": city, "day": 1,
+                                                "ordered_ids": rev[:-1]}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        check("点集不一致时拒绝（防悄悄丢点）",
+              sc.get("ok") is False and "点集" in (sc.get("error") or ""),
+              json.dumps(sc, ensure_ascii=False)[:160])
+
+        # ---------------- 导出 Markdown ----------------
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 64, "method": "tools/call",
+                       "params": {"name": "tripplanner_export", "arguments": {}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        text = sc.get("text") or ""
+        check("export 返回 ok", sc.get("ok") is True,
+              json.dumps(sc, ensure_ascii=False)[:120])
+        check("导出内容是 Markdown（标题 + 逐日小节）",
+              text.startswith("# 【") and "## Day 1" in text, repr(text[:48]))
+        check("导出含总里程与多天", "总里程" in text and "## Day 2" in text,
+              f"chars={len(text)}")
+        check("导出文件名以 .md 结尾",
+              str(sc.get("filename") or "").endswith(".md"), str(sc.get("filename")))
+        check("导出 mimeType = text/markdown",
+              sc.get("mimeType") == "text/markdown", str(sc.get("mimeType")))
+        check("导出内容不含 HTML 标签（便于直接粘贴）",
+              "<div" not in text and "<span" not in text)
+
+        # 边界：不支持的格式
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 65, "method": "tools/call",
+                       "params": {"name": "tripplanner_export",
+                                  "arguments": {"format": "pdf"}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        check("不支持的导出格式明确报错", sc.get("ok") is False,
+              json.dumps(sc, ensure_ascii=False)[:120])
+    finally:
+        err = shutdown(proc)
+    return err
+
+
 def main() -> int:
     print(f"server: {SERVER}")
     print(f"python: {sys.executable}")
@@ -476,6 +642,7 @@ def main() -> int:
         err2 = phase_planning()
         err3 = phase_env_injection()
         err4 = phase_cross_process()
+        err5 = phase_interactions()
     finally:
         if had and os.path.exists(backup):
             os.replace(backup, state)
@@ -484,7 +651,7 @@ def main() -> int:
         if os.path.exists(backup):
             os.remove(backup)
 
-    err = (err1 or "") + (err2 or "") + (err3 or "") + (err4 or "")
+    err = (err1 or "") + (err2 or "") + (err3 or "") + (err4 or "") + (err5 or "")
     print()
     print("--- stderr 末 12 行（server 日志，确认没污染 stdout）---")
     for ln in (err or "").strip().splitlines()[-12:]:
@@ -497,7 +664,7 @@ def main() -> int:
         for f in fails:
             print("   - " + f)
         return 1
-    print("[PASS] 全部通过 —— server 侧协议与 M1 规划均正确，可以交给 WorkBuddy 信任了")
+    print("[PASS] 全部通过 —— 协议 / M1 规划 / M2 交互均正确，可以交给 WorkBuddy 信任了")
     return 0
 
 

@@ -32,7 +32,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.1.0-m1"
+SERVER_VERSION = "0.2.0-m2"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,26 +41,32 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m3"
+PANEL_VERSION = "m4"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
-# 宿主侧读取的就是这一段（_meta.ui.csp.*）—— 缺了它 iframe 会被静默拦掉
-# resourceDomains 必须放行高德图片域名，否则 <img src="https://store.is.autonavi.com/...">
-# 会被宿主的两层 CSP（HTTP 头 + 注入 meta）静默拦掉 —— 不报错，只是图不显示。
-AMAP_IMG_DOMAINS = [
-    "https://store.is.autonavi.com",
+# 宿主 CSP 构造（2026-10-09 从 app.asar `buildCspMeta()` 取证，非推测）：
+#   "script-src 'unsafe-inline' 'unsafe-eval' blob: " + resourceDomains
+#   "style-src  'unsafe-inline' "                    + resourceDomains
+#   "img-src    data: blob: "                        + resourceDomains
+#   "font-src   data: blob: "                        + resourceDomains
+#   "connect-src "                                   + connectDomains
+# ⇒ **resourceDomains 同时管 script/img/style/font/media**，
+#   所以把高德域名放进去 ⇒ 面板内可加载高德 JS API（M2 交互地图靠这条）。
+#   connectDomains 单独管 fetch/XHR/WebSocket ⇒ JS API 的服务端请求要在这里放行。
+AMAP_DOMAINS = [
+    "https://store.is.autonavi.com",      # 图片直链（POI 缩略图）
     "https://store.is.autonavi.com:*",
-    "https://*.amap.com",
-    "https://*.autonavi.com",
+    "https://*.amap.com",                 # webapi/restapi：JS API 载体 + 服务端接口
+    "https://*.autonavi.com",             # 地图瓦片 webrd0*.is.autonavi.com
 ]
 
 UI_RESOURCE_META = {
     "ui": {
         "csp": {
             "frameDomains": ["http://127.0.0.1:*"],
-            "connectDomains": ["http://127.0.0.1:*"],
-            "resourceDomains": ["http://127.0.0.1:*"] + AMAP_IMG_DOMAINS,
+            "connectDomains": ["http://127.0.0.1:*"] + AMAP_DOMAINS,
+            "resourceDomains": ["http://127.0.0.1:*"] + AMAP_DOMAINS,
         },
         "permissions": {},
         "prefersBorder": False,
@@ -73,6 +79,10 @@ PANEL_READY_TOOL = "tripplanner_panel_ready"
 LIST_CITIES_TOOL = "tripplanner_list_cities"
 PLAN_TOOL = "tripplanner_plan_trip"
 GET_PLAN_TOOL = "tripplanner_get_plan"
+# M2：面板内的交互（换点 / 挪时段 / 导出）
+REPLACE_TOOL = "tripplanner_replace_poi"
+MOVE_TOOL = "tripplanner_move_poi"
+EXPORT_TOOL = "tripplanner_export"
 
 # 面板上「天数」的合理区间；query_days 里有同名常量，这里取值保持一致
 MIN_DAYS, MAX_DAYS = 1, 7
@@ -109,9 +119,9 @@ def kernel():
     except Exception as e:
         log("config.apply_env 失败（将只依赖进程环境）", err=str(e))
     try:
-        from src import poi_db, m1_planner, llm_client, query_days  # noqa
+        from src import poi_db, m1_planner, llm_client, query_days, poi_swap  # noqa
         _KERNEL = {"root": root, "poi_db": poi_db, "planner": m1_planner,
-                   "llm": llm_client, "query_days": query_days}
+                   "llm": llm_client, "query_days": query_days, "poi_swap": poi_swap}
         return _KERNEL, None
     except Exception as e:  # 内核挂了也不能让 server 崩 —— 面板还要能开、能报错
         return None, f"{type(e).__name__}: {e}"
@@ -135,6 +145,58 @@ def photo_of(poi_id: str) -> str:
             _PHOTO_CACHE = {}
     url = _PHOTO_CACHE.get(poi_id) or ""
     return url if isinstance(url, str) and url.startswith("http") else ""
+
+
+_COORD_CACHE: dict = {}
+
+
+def poi_coords(city: str) -> dict:
+    """{poi_id: (lat, lng)} —— M2 地图需要坐标，而内核 timeline 不提供。
+
+    坐标是 **GCJ-02**（POI 库来源即高德），可直接交给高德 JS API，无需转换。
+    按城市缓存：一次规划后的多次换点 / 重排都复用，不必反复解析整个库。
+    """
+    if not city:
+        return {}
+    if city in _COORD_CACHE:
+        return _COORD_CACHE[city]
+    k, err = kernel()
+    m: dict = {}
+    if err:
+        log("poi_coords：内核不可用", err=err)
+    else:
+        try:
+            city_data = k["poi_db"].load_city(city)
+            for p in city_data.get("pois", []):
+                pp = k["poi_db"].parse_poi(p, city_data)
+                if pp.get("id") is not None:
+                    m[pp["id"]] = (pp.get("lat"), pp.get("lng"))
+        except Exception as e:
+            log("poi_coords 加载失败", city=city, err=str(e))
+    _COORD_CACHE[city] = m
+    return m
+
+
+def amap_js_key() -> str:
+    """从 secrets.json 取**Web 端 JSAPI** key（面板地图用）。
+
+    刻意不放进 panel/*.html 文件（那会随 git 入库）；改由 `read_panel()` 在
+    resources/read 时注入占位符 —— key 只在传输时出现，仓库里始终是占位符。
+    """
+    global _AMAP_KEY_CACHE
+    if _AMAP_KEY_CACHE is not None:
+        return _AMAP_KEY_CACHE
+    key = ""
+    try:
+        with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
+            key = str((json.load(f) or {}).get("amap_js_key") or "").strip()
+    except Exception as e:
+        log("amap_js_key 读取失败（地图将不可用）", err=str(e))
+    _AMAP_KEY_CACHE = key
+    return key
+
+
+_AMAP_KEY_CACHE = None
 
 
 # ---------------------------------------------------------------------------
@@ -432,6 +494,68 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    # ---------------- M2：面板内交互（换点 / 挪时段 / 导出） ----------------
+    {
+        "name": REPLACE_TOOL,
+        "description": (
+            "【面板「🔁 换一个」按钮调用，模型一般不直接调】把当天某个点换成"
+            "同类目、就近的另一个点，并重排当天。\n"
+            "守门：换点不得改变当天景点数 —— 会挤掉别处的候选直接放弃（宁可换不成也不破坏行程）。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "城市名"},
+                "day": {"type": "integer", "description": "第几天（1 起）"},
+                "poi_id": {"type": "string", "description": "要换掉的 POI id"},
+                "day_ids": {"type": "array", "items": {"type": "string"},
+                            "description": "当天全部 POI id（按当前顺序）"},
+                "used_ids": {"type": "array", "items": {"type": "string"},
+                             "description": "全程已用 POI id（避免换成重复点）"},
+                "query": {"type": "string", "description": "原需求，用于主题/节奏口径"},
+                "date0": {"type": "string", "description": "起始日期 YYYY-MM-DD"},
+                "hotel_text": {"type": "string", "description": "住宿锚点"},
+            },
+            "required": ["city", "day", "poi_id", "day_ids"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": MOVE_TOOL,
+        "description": (
+            "【面板拖拽排序调用】按给定的新顺序重排某一天（挪时段）。\n"
+            "硬约束（餐窗 / 闭馆 / 里程）若必须微调，返回里的 order_respected 会是 false。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "城市名"},
+                "day": {"type": "integer", "description": "第几天（1 起）"},
+                "ordered_ids": {"type": "array", "items": {"type": "string"},
+                                "description": "该天 POI id 的新顺序（点集必须与原来一致）"},
+                "query": {"type": "string", "description": "原需求，用于主题/节奏口径"},
+                "date0": {"type": "string", "description": "起始日期 YYYY-MM-DD"},
+                "hotel_text": {"type": "string", "description": "住宿锚点"},
+            },
+            "required": ["city", "day", "ordered_ids"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": EXPORT_TOOL,
+        "description": (
+            "【面板「导出」按钮调用】把当前行程导出为 Markdown 文本。\n"
+            "面板拿到 text 后走宿主 ui/download-file 落盘；宿主不支持时退化为复制到剪贴板。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "format": {"type": "string",
+                           "description": "导出格式，目前仅支持 markdown（默认）"},
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 TOOL_BY_NAME = {t["name"]: t for t in TOOLS}
@@ -445,6 +569,17 @@ def log(msg: str, **kw) -> None:
         sys.stderr.flush()
     except Exception:
         pass
+
+
+def tool_error(msg: str) -> dict:
+    """统一的「工具执行失败」返回。
+
+    ⚠️ 刻意**不用** JSON-RPC error：面板走的是 AppBridge 的 tools/call，
+    返回 error 会让面板的 Promise 直接 reject、连提示都拿不到；
+    统一用 result + structuredContent.ok=false，面板可以照常渲染一句人话。
+    """
+    return {"content": [{"type": "text", "text": msg}],
+            "structuredContent": {"ok": False, "error": msg}}
 
 
 def send(payload: dict) -> None:
@@ -461,10 +596,15 @@ def fail(id_, code, message):
     return {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
 
 
+# 面板里的地图 key 占位符 —— 由 read_panel() 在返回前替换成真实 key。
+# 这样 **key 不进仓库**（panel/*.html 里永远是占位符，只有传输时才出现真实值）。
+AMAP_KEY_PLACEHOLDER = "__AMAP_JS_KEY__"
+
+
 def read_panel() -> str:
     try:
         with open(PANEL_PATH, encoding="utf-8") as f:
-            return f.read()
+            html = f.read()
     except OSError as e:
         log("panel read failed", err=str(e), path=PANEL_PATH)
         return (
@@ -473,6 +613,11 @@ def read_panel() -> str:
             "<h3>TripPlanner 面板文件读取失败</h3>"
             f"<pre>{e}</pre><p>路径：{PANEL_PATH}</p></body></html>"
         )
+    if AMAP_KEY_PLACEHOLDER in html:
+        key = amap_js_key()
+        html = html.replace(AMAP_KEY_PLACEHOLDER, key)
+        log("panel 地图 key 注入", has_key=bool(key))
+    return html
 
 
 # ---------------------------------------------------------------------------
@@ -526,39 +671,70 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
     return {"ok": True, "plan": plan}
 
 
+def _normalize_day(d: dict, coords: dict | None = None) -> dict:
+    """把内核一天的原始编排压成面板/模型好消化的形状。
+
+    ⚠️ M2 起被 `normalize_plan` 与「换点 / 挪时段」的写回共用 —— 必须**幂等**：
+    已归一化过的一天再走一遍，结果要与原来逐字段一致（否则重排后的那天会掉字段）。
+
+    `coords`：{poi_id: (lat, lng)}，用来给 poi 项补坐标（面板地图需要，
+    而内核 timeline 只有 id/name/时刻）。
+    """
+    tl = []
+    for s in d.get("timeline", []):
+        item = {"type": s.get("type"), "name": s.get("name"),
+                "start": s.get("start"), "end": s.get("end")}
+        if s.get("type") == "poi":
+            item["id"] = s.get("id")
+            item["photo"] = photo_of(s.get("id") or "")
+            c = (coords or {}).get(s.get("id"))
+            if c and c[0] is not None and c[1] is not None:
+                item["lat"], item["lng"] = c[0], c[1]
+        if s.get("type") == "hop":
+            item["min"] = s.get("min")
+            item["km"] = s.get("km")
+        tl.append(item)
+    return {
+        "day": d.get("day"),
+        "theme": d.get("theme") or "",
+        "reason": d.get("reason") or "",
+        "weekday": d.get("weekday"),
+        "travel_km": round(float(d.get("travel_km") or 0), 1),
+        "travel_h": round(float(d.get("travel_h") or 0), 1),
+        "finish": d.get("finish"),
+        "violations": d.get("violations") or [],
+        "dropped": d.get("dropped") or [],
+        "reordered": bool(d.get("reordered")),
+        "timeline": tl,
+    }
+
+
+def apply_day(plan: dict, day_obj: dict) -> dict:
+    """把换点 / 挪时段后的一天写回整个行程，并刷新总里程。
+
+    返回**新的** plan（不改原对象），面板拿到后整体重渲染即可。
+    """
+    if not isinstance(plan, dict):
+        return plan
+    nd = _normalize_day(day_obj, poi_coords(plan.get("city") or ""))
+    new = dict(plan)
+    days = [(nd if d.get("day") == nd.get("day") else d)
+            for d in (plan.get("dayList") or [])]
+    new["dayList"] = days
+    new["totalTravelKm"] = round(sum(float(d.get("travel_km") or 0) for d in days), 1)
+    new["updatedAt"] = _now()
+    return new
+
+
 def normalize_plan(raw: dict, city: str, city_note: str) -> dict:
     """把 m1_planner 的原始输出压成「面板 + 模型」都好消化的形状。
 
-    只做两件事：① 补齐面板要展示但内核没给的字段（照片、POI 分类）；
+    只做两件事：① 补齐面板要展示但内核没给的字段（照片、坐标、POI 分类）；
     ② 裁掉面板用不上的诊断噪音，保证 structuredContent 不臃肿。
     """
     itin = raw.get("itinerary") or {}
-    days = []
-    for d in itin.get("days", []):
-        tl = []
-        for s in d.get("timeline", []):
-            item = {"type": s.get("type"), "name": s.get("name"),
-                    "start": s.get("start"), "end": s.get("end")}
-            if s.get("type") == "poi":
-                item["id"] = s.get("id")
-                item["photo"] = photo_of(s.get("id") or "")
-            if s.get("type") == "hop":
-                item["min"] = s.get("min")
-                item["km"] = s.get("km")
-            tl.append(item)
-        days.append({
-            "day": d.get("day"),
-            "theme": d.get("theme") or "",
-            "reason": d.get("reason") or "",
-            "weekday": d.get("weekday"),
-            "travel_km": round(float(d.get("travel_km") or 0), 1),
-            "travel_h": round(float(d.get("travel_h") or 0), 1),
-            "finish": d.get("finish"),
-            "violations": d.get("violations") or [],
-            "dropped": d.get("dropped") or [],
-            "reordered": bool(d.get("reordered")),
-            "timeline": tl,
-        })
+    coords = poi_coords(city)
+    days = [_normalize_day(d, coords) for d in itin.get("days", [])]
 
     dropped = []
     for p in itin.get("dropped_pois", []) or []:
@@ -600,6 +776,110 @@ def plan_summary(plan: dict) -> str:
         names = "、".join(p["name"] for p in plan["droppedPois"][:3])
         lines.append(f"剔除：{names}" + ("等" if len(plan["droppedPois"]) > 3 else ""))
     return "\n".join(lines)
+
+
+def _to_min(t):
+    """HH:MM → 分钟数；非法返回 None。"""
+    p = str(t or "").split(":")
+    if len(p) != 2:
+        return None
+    try:
+        return int(p[0]) * 60 + int(p[1])
+    except ValueError:
+        return None
+
+
+def _dur_text(a, b) -> str:
+    """由 start/end 反推停留时长文本（内核 timeline 只给时刻，不给时长）。"""
+    x, y = _to_min(a), _to_min(b)
+    if x is None or y is None:
+        return ""
+    d = y - x
+    if d <= 0:
+        d += 24 * 60            # 跨零点兜底
+    if d <= 0:
+        return ""
+    hh, mm = divmod(d, 60)
+    return (f"{hh} 小时" if hh else "") + (f"{mm} 分" if mm else "")
+
+
+TYPE_ICON = {"poi": "📍", "hop": "→", "meal": "🍽", "hotel": "🏨"}
+
+
+def plan_to_markdown(plan: dict) -> str:
+    """把行程导出成 Markdown（面板「导出」用；也可直接粘进文档 / 微信 / 笔记）。"""
+    md = []
+    md.append(f"# 【{plan.get('city', '')}】{plan.get('days', '')} 天行程")
+    md.append("")
+    mode = str(plan.get("mode") or "")
+    mode_txt = "LLM 规划" if mode.startswith("llm") else f"离线兜底（{mode or '未知'}）"
+    md.append(f"**需求**：{plan.get('query') or '—'}  ")
+    md.append(f"**模式**：{mode_txt} ｜ **总里程**：{plan.get('totalTravelKm')} km ｜ "
+              f"**硬约束违规**：{plan.get('totalViolations')} ｜ "
+              f"**候选池**：{plan.get('candidates')} 个点  ")
+    stamp = str(plan.get("generatedAt") or "")
+    if plan.get("updatedAt"):
+        stamp += f"（更新于 {plan['updatedAt']}）"
+    md.append(f"**生成时间**：{stamp}")
+    if plan.get("hotel"):
+        h = plan["hotel"]
+        md.append(f"**住宿锚点**：{h.get('name')}（{h.get('resolved')}）")
+    md.append("")
+    md.append("---")
+
+    for d in plan.get("dayList") or []:
+        md.append("")
+        md.append(f"## Day {d.get('day')} · {d.get('theme') or '未命名主题'}")
+        meta = [f"日交通 {d.get('travel_km')} km / {d.get('travel_h')} h",
+                f"收工 {d.get('finish') or '—'}"]
+        if d.get("weekday"):
+            meta.append(str(d["weekday"]))
+        md.append("")
+        md.append("> " + " ｜ ".join(meta))
+        md.append("")
+        for s in d.get("timeline") or []:
+            t = s.get("type")
+            icon = TYPE_ICON.get(t, "·")
+            span = f"`{s.get('start') or ''}`"
+            if s.get("end"):
+                span = f"`{s.get('start')}–{s.get('end')}`"
+            name = s.get("name") or ""
+            if t == "hop":
+                extra = []
+                if s.get("km") is not None:
+                    extra.append(f"{s['km']} km")
+                if s.get("min") is not None:
+                    extra.append(f"{s['min']} 分钟")
+                md.append(f"- {span} {icon} 前往 {name}"
+                          + (f"（{' · '.join(extra)}）" if extra else ""))
+            else:
+                dur = _dur_text(s.get("start"), s.get("end")) if t in ("poi", "meal") else ""
+                md.append(f"- {span} {icon} **{name}**" + (f"（{dur}）" if dur else ""))
+        if d.get("reason"):
+            md.append("")
+            md.append(f"*{d['reason']}*")
+        if d.get("violations"):
+            md.append("")
+            md.append("> ⚠️ 违规：" + "；".join(str(v) for v in d["violations"]))
+        if d.get("dropped"):
+            md.append("")
+            md.append("> ✕ 当天剔除：" + "；".join(
+                f"{p.get('name')}（{p.get('reason')}）" for p in d["dropped"]))
+
+    if plan.get("droppedPois"):
+        md.append("")
+        md.append("---")
+        md.append("")
+        md.append("## 被剔除的点")
+        md.append("")
+        for p in plan["droppedPois"]:
+            md.append(f"- {p.get('name')} —— {p.get('reason')}")
+
+    md.append("")
+    md.append("---")
+    md.append("")
+    md.append("*由 TripPlanner 生成*")
+    return "\n".join(md)
 
 
 def handle(msg: dict):
@@ -804,6 +1084,97 @@ def handle(msg: dict):
                     "hasPlan": SESSION.last_plan is not None,
                     "server": SERVER_NAME,
                 },
+            })
+
+        # ---------------- M2：换点（面板「🔁 换一个」按钮） ----------------
+        if name == REPLACE_TOOL:
+            city = (args.get("city") or "").strip()
+            day = args.get("day")
+            poi_id = (args.get("poi_id") or "").strip()
+            day_ids = args.get("day_ids") or []
+            if not (city and day and poi_id and day_ids):
+                return ok(id_, tool_error("参数缺失（需要 city / day / poi_id / day_ids）"))
+            k, kerr = kernel()
+            if kerr:
+                return ok(id_, tool_error(f"规划内核加载失败：{kerr}"))
+            _code, data = k["poi_swap"].replace_poi(
+                city, poi_id, day, day_ids,
+                used_ids=args.get("used_ids") or [],
+                date0=args.get("date0"),
+                query=args.get("query") or "",
+                hotel_text=args.get("hotel_text"))
+            if not data.get("ok"):
+                log("replace_poi 失败", city=city, day=day, err=data.get("error"))
+                return ok(id_, tool_error(data.get("error") or "换点失败"))
+            plan = apply_day(SESSION.last_plan, data["day"])
+            SESSION.last_plan = plan
+            sw = data["swap"]
+            log("replace_poi 成功", city=city, day=day, frm=sw["from"], to=sw["to"])
+            return ok(id_, {
+                "content": [{"type": "text",
+                             "text": f"已换点：{sw['from']} → {sw['to']}"
+                                     + ("（同类目）" if sw.get("same_category") else "（就近）")}],
+                "structuredContent": {"ok": True, "swap": sw,
+                                      "day": data["day"], "plan": plan,
+                                      "server": SERVER_NAME},
+            })
+
+        # ---------------- M2：挪时段（面板拖拽排序） ----------------
+        if name == MOVE_TOOL:
+            city = (args.get("city") or "").strip()
+            day = args.get("day")
+            ordered = [str(x) for x in (args.get("ordered_ids") or [])]
+            if not (city and day and ordered):
+                return ok(id_, tool_error("参数缺失（需要 city / day / ordered_ids）"))
+            # 点集校验：拖拽只改顺序，**不允许**悄悄丢点或加点
+            cur = SESSION.last_plan or {}
+            day_ids = []
+            for d in cur.get("dayList") or []:
+                if d.get("day") == day:
+                    day_ids = [s.get("id") for s in (d.get("timeline") or [])
+                               if s.get("type") == "poi"]
+            if day_ids and set(ordered) != set(day_ids):
+                return ok(id_, tool_error(
+                    f"新顺序的点集与当天不一致（原 {len(day_ids)} 个，收到 {len(ordered)} 个）"))
+            k, kerr = kernel()
+            if kerr:
+                return ok(id_, tool_error(f"规划内核加载失败：{kerr}"))
+            _code, data = k["poi_swap"].reorder_day(
+                city, day, ordered,
+                date0=args.get("date0"),
+                query=args.get("query") or "",
+                hotel_text=args.get("hotel_text"))
+            if not data.get("ok"):
+                log("reorder_day 失败", city=city, day=day, err=data.get("error"))
+                return ok(id_, tool_error(data.get("error") or "调整顺序失败"))
+            plan = apply_day(SESSION.last_plan, data["day"])
+            SESSION.last_plan = plan
+            respected = bool(data.get("order_respected"))
+            log("reorder_day 成功", city=city, day=day, respected=respected)
+            return ok(id_, {
+                "content": [{"type": "text",
+                             "text": "顺序已更新。" if respected
+                                     else "顺序已更新（部分受开放时间/餐窗约束微调）。"}],
+                "structuredContent": {"ok": True, "order_respected": respected,
+                                      "day": data["day"], "plan": plan,
+                                      "server": SERVER_NAME},
+            })
+
+        # ---------------- M2：导出 Markdown ----------------
+        if name == EXPORT_TOOL:
+            plan = SESSION.last_plan
+            if not plan:
+                return ok(id_, tool_error("还没有行程可导出，请先生成行程"))
+            fmt = str(args.get("format") or "markdown").lower()
+            if fmt not in ("markdown", "md"):
+                return ok(id_, tool_error(f"暂不支持的导出格式：{fmt}（目前仅 markdown）"))
+            text = plan_to_markdown(plan)
+            fname = f"TripPlanner-{plan.get('city') or 'trip'}-{plan.get('days') or ''}天.md"
+            log("export ok", city=plan.get("city"), chars=len(text))
+            return ok(id_, {
+                "content": [{"type": "text", "text": text}],
+                "structuredContent": {"ok": True, "filename": fname,
+                                      "mimeType": "text/markdown", "text": text},
             })
 
     if is_notification:
