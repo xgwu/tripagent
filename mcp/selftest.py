@@ -115,11 +115,18 @@ def phase_protocol():
         check("tools/list 返回 6 个工具", len(tools) == 6, str(names))
         by = {t["name"]: t for t in tools}
 
-        # 带面板：plan_trip / open_plan
+        # 面板 URI 从 server **动态取** —— 按项目惯例「源码守卫锁 wiring，别硬编码版本号」，
+        # 以后改 PANEL_VERSION 不必回来改测试。
+        panel_uri = ((((by.get("tripplanner_plan_trip") or {}).get("_meta") or {})
+                      .get("ui") or {}).get("resourceUri")) or ""
+        check("plan_trip 带面板 resourceUri（ui://tripplanner/plan-*）",
+              panel_uri.startswith("ui://tripplanner/plan"), repr(panel_uri))
+
+        # 带面板：plan_trip / open_plan 必须同一个 resourceUri
         for tname in ("tripplanner_plan_trip", "tripplanner_open_plan"):
             meta = ((by.get(tname) or {}).get("_meta") or {}).get("ui") or {}
-            check(f"{tname} 带 _meta.ui.resourceUri",
-                  meta.get("resourceUri") == "ui://tripplanner/plan-m1", repr(meta.get("resourceUri")))
+            check(f"{tname} 的 resourceUri 与 plan_trip 一致",
+                  meta.get("resourceUri") == panel_uri, repr(meta.get("resourceUri")))
             check(f"{tname} visibility == [model, app]",
                   meta.get("visibility") == ["model", "app"], repr(meta.get("visibility")))
 
@@ -142,7 +149,7 @@ def phase_protocol():
               str(res[0].get("mimeType") if res else None))
 
         r = rpc(proc, {"jsonrpc": "2.0", "id": 4, "method": "resources/read",
-                       "params": {"uri": "ui://tripplanner/plan-m1"}})
+                       "params": {"uri": panel_uri}})
         contents = ((r or {}).get("result") or {}).get("contents") or []
         c0 = contents[0] if contents else {}
         html = c0.get("text") or ""
@@ -377,16 +384,92 @@ def phase_env_injection():
     return err
 
 
+def phase_cross_process():
+    """⚠️ 跨进程取数回归（2026-10-09 线上踩坑）。
+
+    宿主对 stdio MCP 是**按需 spawn 进程**的（`daemon.log` 里 `pidSpawned` 每次都不同），
+    所以「agent 调 plan_trip 的进程」与「面板调 get_plan 的进程」**未必是同一个**。
+    last_plan 若只放进程内存，面板就必然读到空 → 渲染不出行程
+    （线上现象：面板能开，但行程区渲染不出每天的时间线）。
+
+    这里用两个**独立进程**复现该场景：A 规划落盘 → B 读取。
+    """
+    print("\n=== 阶段四：跨进程取数（防 last_plan 进程内存失效）===")
+    state = os.path.join(os.path.dirname(HERE), "output", "mcp_last_plan.json")
+    # （状态文件由 main() 统一隔离，这里只验证「落盘 + 跨进程可读」）
+
+    # --- 进程 A：规划 ---
+    pa = spawn()
+    try:
+        init(pa)
+        r = rpc(pa, {"jsonrpc": "2.0", "id": 95, "method": "tools/call",
+                     "params": {"name": "tripplanner_plan_trip",
+                                "arguments": {"query": "杭州两日游"}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        check("进程 A 规划成功", sc.get("ok") is True,
+              json.dumps({k: sc.get(k) for k in ("ok",)}, ensure_ascii=False))
+    finally:
+        shutdown(pa)
+    check("行程已落盘（output/mcp_last_plan.json）", os.path.exists(state), state)
+
+    # --- 进程 B：全新进程读取 ---
+    pb = spawn()
+    err = ""
+    try:
+        init(pb)
+        r = rpc(pb, {"jsonrpc": "2.0", "id": 96, "method": "tools/call",
+                     "params": {"name": "tripplanner_get_plan", "arguments": {}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        plan = sc.get("plan") or {}
+        dl = plan.get("dayList") or []
+        check("进程 B 能跨进程读到行程（落盘生效）",
+              sc.get("hasPlan") is True and bool(dl),
+              f"hasPlan={sc.get('hasPlan')} dayList={len(dl)}")
+        tl0 = (dl[0] or {}).get("timeline") if dl else None
+        check("跨进程拿到的 dayList 含 timeline（面板渲染所需）",
+              bool(tl0), f"timeline={len(tl0 or [])}")
+        poi_photos = 0
+        poi_total = 0
+        for d in dl:
+            for row in (d.get("timeline") or []):
+                if row.get("type") == "poi":
+                    poi_total += 1
+                    if (row.get("photo") or "").strip():
+                        poi_photos += 1
+        check("跨进程拿到的 poi 带 photo 字段",
+              poi_total > 0 and poi_photos > 0, f"{poi_photos}/{poi_total} 有图")
+    finally:
+        err = shutdown(pb)
+    return err
+
+
 def main() -> int:
     print(f"server: {SERVER}")
     print(f"python: {sys.executable}")
     print()
 
-    err1 = phase_protocol()
-    err2 = phase_planning()
-    err3 = phase_env_injection()
+    # 状态文件隔离：M1 起 last_plan 是**跨进程落盘**的（output/mcp_last_plan.json），
+    # 而本自检有若干「无行程时应当如何」的用例，需要一个干净起点。
+    # 这里先把已有状态挪开，跑完恢复 —— 既不污染真实状态，也不用改断言。
+    state = os.path.join(os.path.dirname(HERE), "output", "mcp_last_plan.json")
+    backup = state + ".selftest-bak"
+    had = os.path.exists(state)
+    if had:
+        os.replace(state, backup)
+    try:
+        err1 = phase_protocol()
+        err2 = phase_planning()
+        err3 = phase_env_injection()
+        err4 = phase_cross_process()
+    finally:
+        if had and os.path.exists(backup):
+            os.replace(backup, state)
+        elif os.path.exists(state):
+            os.remove(state)          # 清掉自检自身产生的状态
+        if os.path.exists(backup):
+            os.remove(backup)
 
-    err = (err1 or "") + (err2 or "") + (err3 or "")
+    err = (err1 or "") + (err2 or "") + (err3 or "") + (err4 or "")
     print()
     print("--- stderr 末 12 行（server 日志，确认没污染 stdout）---")
     for ln in (err or "").strip().splitlines()[-12:]:

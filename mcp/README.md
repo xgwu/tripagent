@@ -2,7 +2,7 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅（2026-10-09，自检 63/63）→ M2 待开工**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅（2026-10-09，自检 71/71）→ M2 待开工**
 
 面板已渲染**真实行程**：按天时间轴（含交通段/用餐）、主题与理由、日里程、硬约束违规徽标、
 被剔除点位及原因、POI 照片缩略图。数据来自本地 31 城 POI 库 + 交通/路线缓存，无需联网。
@@ -110,6 +110,63 @@ resourceDomains = ["http://127.0.0.1:*",
 宿主按 uri 缓存面板 HTML（`resolver.resolve.cacheHit`）。`PANEL_VERSION` 常量在
 `tripplanner_mcp_server.py` 顶部 —— **每次改完 `panel/plan_panel.html` 就 +1**
 （uri 随之变成 `ui://tripplanner/plan-<v>`），否则用户看到的还是旧面板。
+自检已改为**从 `tools/list` 动态取 uri**，不再硬编码版本号，所以 +1 不会弄红测试。
+
+---
+
+## 🔴 M1 修正：`last_plan` 必须落盘（2026-10-09 线上踩坑）
+
+### 现象
+
+面板**能开**（`openHostApp.created` 正常）、握手正常、照片 CSP 正常，
+但**行程区渲染不出每天的时间线** —— 只有标题与总览指标卡。
+
+### 根因：宿主对 stdio MCP 是**按需 spawn 进程**的
+
+```
+daemon.log:
+  [MCP-AuthDiag] stdio-connected {"pid":30200,"pidSpawned":16440}
+  [MCP-AuthDiag] stdio-connected {"pid":30200,"pidSpawned":4556}
+  [MCP-AuthDiag] stdio-connected {"pid":13876,"pidSpawned":32072}
+  [MCP-AuthDiag] stdio-connected {"pid":13876,"pidSpawned":21000}
+                                              ↑ 每次都不同
+```
+
+⇒ **「agent 调 `plan_trip` 的进程」与「面板调 `get_plan` 的进程」未必是同一个。**
+而 `SESSION.last_plan` 原本只是**进程内存**（注释还写着「进程重启即重置，正合语义」），
+面板所在的新进程里它是 `None` → `get_plan` 回 `hasPlan:false` → 面板渲染不出行程。
+
+### 修法：状态分两类，别一刀切
+
+| 状态 | 持久性 | 理由 |
+|---|---|---|
+| `opened_any` / `instances`（A+C 分流） | **进程级，放内存** | 纯控制流，生命周期短；宿主起新进程时只会「少判一次已开」，不会读到**脏数据** |
+| `last_plan`（面板取数） | **🔴 必须落盘** | 「一次调用写、另一次调用读」，跨进程 ⇒ 纯内存必空 |
+
+- 落盘位置 `output/mcp_last_plan.json`（`output/` 已在 `.gitignore`，不会误入库）
+- 用 `@property` 实现「内存优先、未命中读盘」，所有读写点零改动
+- 写入走 **临时文件 + `os.replace` 原子替换**，避免面板读到半截 JSON
+
+### 同时加的诊断设施（宿主环境拿不到 stderr，只能落盘）
+
+- **`output/mcp_debug.log`** —— 每行带 `pid`，一眼看出「这次调用是不是新进程」：
+  ```
+  [14:38:40] pid=34256 tools/call {"name":"tripplanner_plan_trip","planOnDisk":false}
+  [14:38:45] pid=34256 last_plan.write.ok {"city":"杭州","bytes":4687}
+  [14:38:46] pid=17660 tools/call {"name":"tripplanner_get_plan","planOnDisk":true}
+  [14:38:46] pid=17660 last_plan.read.hit {"city":"杭州"}
+  ```
+- **面板「协议诊断」区**新增两行：`数据诊断`（收到的字段数 / dayList / timeline / poi 计数）
+  与 `照片加载`（成功/失败计数）。数据没到 vs 渲染出错，一眼可分。
+- 面板某天 `dayList` 为空时，直接渲染「⚠ 行程数据不完整」并列出**已收到哪些字段**，
+  不让用户对着空面板猜。
+- 面板还给每个 poi/meal **算出了停留时长**（`start`/`end` 反推，内核 timeline 只给时刻）。
+
+### 回归守卫
+
+`selftest.py` 新增 **阶段四：跨进程取数** —— 两个**独立进程**：A 规划落盘 → B 读取，
+断言 `hasPlan=true`、`dayList` 含 `timeline`、poi 带 `photo`。
+这是本坑唯一能防住的测试形态（同进程内怎么测都是绿的）。
 
 ---
 

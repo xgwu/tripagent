@@ -53,7 +53,8 @@
   .tl{list-style:none;margin:0;padding:0}
   .tl li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed #eef0f3}
   .tl li:last-child{border-bottom:0}
-  .time{flex:0 0 92px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted);padding-top:1px}
+  .time{flex:0 0 124px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted);padding-top:1px}
+  .dur{font-style:normal;color:#98a1ac;font-size:10.5px;margin-left:4px}
   .body{flex:1 1 auto;min-width:0}
   .nm{font-weight:500}
   .hop .nm{color:var(--muted);font-weight:400;font-size:12px}
@@ -82,6 +83,9 @@
     <div class="row"><span class="k">宿主信息</span><span class="v" id="host">—</span></div>
     <div class="row"><span class="k">appInstanceId</span><span class="v" id="iid">—</span></div>
     <div class="row"><span class="k">自报登记（A）</span><span class="v"><span class="badge b-idle" id="st3">待握手</span> <span id="reg">—</span></span></div>
+    <div class="row"><span class="k">数据诊断</span><span class="v" id="diag2">—</span></div>
+    <div class="row"><span class="k">页面路径</span><span class="v" id="diag3">—</span></div>
+    <div class="row"><span class="k">照片加载</span><span class="v" id="diagPhoto">—</span></div>
     <div class="btns">
       <button class="primary" id="btnProbe" onclick="probe()">探测桥接</button>
       <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
@@ -125,6 +129,12 @@
     el.textContent = text; el.className = "badge " + cls;
   }
 
+  // 诊断行：把「实际拿到的结构」摊开，用于区分「数据没到」与「渲染出错」
+  function setDiag(label, text, id){
+    var el = document.getElementById(id || "diag2");
+    if (el) el.textContent = label + "：" + text;
+  }
+
   function esc(s){
     return String(s == null ? "" : s)
       .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
@@ -165,12 +175,60 @@
   }
 
   // ---------------- 行程渲染 ----------------
+  var photoStat = { ok: 0, fail: 0 };
+
+  // 由 start/end 反推停留时长 —— 内核的 timeline 只给时刻，不给 duration，
+  // 但「每个点待多久」是用户最关心的信息之一。
+  function durText(a, b){
+    function toMin(t){
+      var m = String(t == null ? "" : t).match(/^(\d{1,2}):(\d{2})$/);
+      return m ? (+m[1]) * 60 + (+m[2]) : null;
+    }
+    var x = toMin(a), y = toMin(b);
+    if (x == null || y == null) return "";
+    var d = y - x;
+    if (d <= 0) d += 24 * 60;          // 跨零点兜底
+    if (d <= 0) return "";
+    var hh = Math.floor(d / 60), mm = d % 60;
+    return (hh ? hh + "小时" : "") + (mm ? mm + "分" : "");
+  }
+
+  window.photoOk = function(){
+    photoStat.ok++;
+    document.getElementById("diagPhoto").textContent =
+      "成功 " + photoStat.ok + " / 失败 " + photoStat.fail;
+  };
+  window.photoFail = function(el){
+    photoStat.fail++;
+    el.style.display = "none";        // 破图不留占位框，但计数留痕
+    document.getElementById("diagPhoto").textContent =
+      "成功 " + photoStat.ok + " / 失败 " + photoStat.fail
+      + "（失败多为 CSP 拦截或 URL 失效）";
+  };
+
   function render(plan){
     var box = document.getElementById("content");
     if (!plan){
-      box.innerHTML = '<div class="empty">还没有行程。请对助手说一句需求，例如「杭州2天，带8岁孩子，想看西湖和灵隐寺」。</div>';
+      box.innerHTML = '<div class="empty">还没有行程。请对助手说一句需求，'
+        + '例如「杭州2天，带8岁孩子，想看西湖和灵隐寺」。</div>';
+      setDiag("render 入参", "plan 为空（server 侧 hasPlan=false）");
       return;
     }
+
+    // 拿到数据先算结构摘要 —— 出问题时「数据没到」与「渲染出错」一眼可分
+    var keys = Object.keys(plan);
+    var dl = plan.dayList || [];
+    var tlTot = 0, poiTot = 0;
+    dl.forEach(function(d){
+      var tl = d.timeline || [];
+      tlTot += tl.length;
+      tl.forEach(function(s){ if (s.type === "poi") poiTot++; });
+    });
+    setDiag("render 入参",
+      "字段 " + keys.length + " 个｜dayList=" + dl.length
+      + " 天｜timeline=" + tlTot + " 条｜poi=" + poiTot);
+    log("!", "render: keys=" + keys.join(",") + " dayList=" + dl.length
+      + " timeline=" + tlTot);
 
     document.getElementById("titleCity").textContent = "【" + plan.city + "】" + plan.days + " 天行程";
     var modeBadge = /^llm/.test(plan.mode || "") ? '<span class="badge b-ok">LLM 规划</span>'
@@ -197,7 +255,20 @@
     }
     h += '</div>';
 
-    (plan.dayList || []).forEach(function(d){
+    // 数据不完整时给出明确诊断，别让用户对着空面板猜
+    if (!dl.length){
+      h += '<div class="card"><h2>⚠ 行程数据不完整</h2>';
+      h += '<div class="row"><span class="k">已收到字段</span><span class="v">'
+        + esc(keys.join("、")) + '</span></div>';
+      h += '<div class="row"><span class="k">缺失</span><span class="v">'
+        + 'dayList（每天的时间线）</span></div>';
+      h += '<div class="hint">server 返回了顶层字段却没有 dayList —— '
+        + '请把这段连同「协议诊断 → 原始消息日志」一起反馈。</div></div>';
+      box.innerHTML = h;
+      return;
+    }
+
+    dl.forEach(function(d){
       h += '<div class="day"><div class="day-h">';
       h += '<div class="t">Day ' + d.day + ' · ' + esc(d.theme || "未命名主题") + '</div>';
       h += '<div class="meta">日交通 ' + d.travel_km + 'km / ' + d.travel_h + 'h'
@@ -210,10 +281,13 @@
         var cls = s.type === "hop" ? "hop" : (s.type === "meal" ? "meal" : "poi");
         var icon = s.type === "hop" ? "→" : (s.type === "meal" ? "🍽" : "📍");
         h += '<li class="' + cls + '">';
-        h += '<span class="time">' + esc(s.start) + (s.end ? "–" + esc(s.end) : "") + '</span>';
+        var durTxt = (cls === "poi" || cls === "meal") ? durText(s.start, s.end) : "";
+        h += '<span class="time">' + esc(s.start) + (s.end ? "–" + esc(s.end) : "")
+          + (durTxt ? '<i class="dur">' + durTxt + '</i>' : "") + '</span>';
         if (cls === "poi" && s.photo){
           h += '<img class="thumb" src="' + esc(s.photo) + '" alt="" '
-            + 'onerror="this.style.display=\'none\'">';
+            + 'title="' + esc(s.name) + '" '
+            + 'onload="photoOk()" onerror="photoFail(this)">';
         }
         h += '<span class="body"><span class="nm">' + icon + " " + esc(s.name) + '</span>';
         if (cls === "hop" && (s.km || s.min)){
@@ -276,7 +350,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.1.0-m1" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.1.0-m2" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -292,6 +366,10 @@
         if (m) appInstanceId = m[1];
       }
       document.getElementById("iid").textContent = appInstanceId || "（宿主未提供）";
+      // A 方案为何取不到：把真实路径摊出来（iframe 可能是 sandbox-proxy 包裹层，
+      // 路径里就没有 mcp-apps/<id>/ 这一段）。下次据此改提取规则。
+      var href = String(location.href || "");
+      setDiag("页面路径", href.length > 140 ? href.slice(0, 140) + "…" : href, "diag3");
 
       send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
       document.getElementById("btnPing").disabled = false;

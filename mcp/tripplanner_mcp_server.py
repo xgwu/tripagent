@@ -41,7 +41,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m1"
+PANEL_VERSION = "m2"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -196,22 +196,116 @@ def resolve_city(city_arg: str | None, query: str) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# 跨进程状态落盘 + 文件诊断日志
+# ---------------------------------------------------------------------------
+# ⚠️ 为什么要落盘（2026-10-09 实测）：
+#   宿主（WorkBuddy）对 stdio MCP server 是**按需 spawn 进程**的 —— `daemon.log` 里
+#   `[MCP-AuthDiag] stdio-connected {"pidSpawned":16440 / 4556 / 32072 / 21000}` 每次都不一样。
+#   于是「agent 调 plan_trip 的进程」与「面板调 get_plan 的进程」**未必是同一个**，
+#   纯进程内存的 last_plan 会读到空 ⇒ 面板渲染不出行程（本次线上就是这个现象）。
+#   结论：**凡是「一次调用写、另一次调用读」的状态，都必须落盘，不能只放进程内存。**
+def state_dir() -> str:
+    return os.path.join(project_root(), "output")
+
+
+def plan_state_path() -> str:
+    return os.path.join(state_dir(), "mcp_last_plan.json")
+
+
+def debug_log_path() -> str:
+    return os.path.join(state_dir(), "mcp_debug.log")
+
+
+def dbg(event: str, **kw) -> None:
+    """写文件诊断日志（output/mcp_debug.log），每行带 pid。
+
+    宿主环境下 stderr 拿不到，跨进程问题只能靠落盘日志才看得见；
+    有了 pid，一眼就能判断「这次调用是不是新起的进程」。
+    """
+    try:
+        path = debug_log_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        extra = " " + json.dumps(kw, ensure_ascii=False) if kw else ""
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"[{_now()}] pid={os.getpid()} {event}{extra}\n")
+    except Exception:
+        pass
+
+
+def _plan_state_read():
+    try:
+        with open(plan_state_path(), encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict) and data.get("city"):
+            dbg("last_plan.read.hit", city=data.get("city"), days=data.get("days"))
+            return data
+        dbg("last_plan.read.miss", reason="empty-or-bad")
+        return None
+    except FileNotFoundError:
+        dbg("last_plan.read.miss", reason="no-file")
+        return None
+    except Exception as e:
+        log("last_plan 读盘失败", err=str(e))
+        dbg("last_plan.read.miss", reason=str(e))
+        return None
+
+
+def _plan_state_write(value) -> None:
+    if value is None:
+        return
+    try:
+        path = plan_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(value, f, ensure_ascii=False)
+        os.replace(tmp, path)          # 原子替换，避免面板读到半截 JSON
+        dbg("last_plan.write.ok", city=value.get("city"),
+            days=value.get("days"), bytes=os.path.getsize(path))
+    except Exception as e:
+        log("last_plan 落盘失败", err=str(e))
+        dbg("last_plan.write.fail", err=str(e))
+
+
+# ---------------------------------------------------------------------------
 # A + C 面板分流状态 + M1 行程缓存
 # ---------------------------------------------------------------------------
 class _Session:
-    """本 server 进程内的一次「会话」状态。stdio server 由宿主按需拉起，
-    一个进程对应宿主侧的一个连接；进程重启即重置，正合语义。
+    """一次「会话」的状态。
+
+    ⚠️ **持久性分两类**（2026-10-09 修正）：
+      - **进程级**：`opened_any` / `instances` —— 控制流用，生命周期短，
+        放内存即可（宿主按需起进程时它只会「少判一次已开」，不会读到脏数据）。
+      - **必须落盘**：`last_plan` —— 「一次调用写、另一次调用读」，而宿主
+        按需 spawn 进程（pidSpawned 每次都不同）⇒ 纯内存必空。见 `_plan_state_*`。
 
     C（兜底）：opened_any  —— 本进程是否已经开过面板。
     A（精确）：instances   —— 面板自报的 appInstanceId 集合（谁在看着这个面板）。
-    M1：last_plan          —— 最近一次规划结果，供面板 get_plan 拉取。
+    M1：last_plan          —— 最近一次规划结果，面板 get_plan 拉取（内存优先、磁盘兜底）。
     """
 
     def __init__(self) -> None:
         self.opened_any = False
         self.instances: set[str] = set()
         self.proposals: int = 0
-        self.last_plan: dict | None = None
+        self._last_plan = None
+        self._plan_loaded = False
+        self.pid = os.getpid()
+
+    @property
+    def last_plan(self):
+        """内存未命中就回磁盘读一次 —— 跨进程取数靠它。"""
+        if not self._plan_loaded:
+            self._plan_loaded = True
+            self._last_plan = _plan_state_read()
+            dbg("last_plan.property.load", pid=self.pid, hit=self._last_plan is not None)
+        return self._last_plan
+
+    @last_plan.setter
+    def last_plan(self, value):
+        self._last_plan = value
+        self._plan_loaded = True
+        _plan_state_write(value)
 
     def register_panel(self, instance_id: str | None, label: str = "") -> dict:
         iid = (instance_id or "").strip()
@@ -567,6 +661,10 @@ def handle(msg: dict):
         if not tool:
             return fail(id_, -32602, f"Unknown tool: {name}")
         args = params.get("arguments") or {}
+        # 诊断：记录 pid 与「磁盘上是否已有行程」——前者判断是否跨进程，后者判断取数是否命中
+        dbg("tools/call", name=name, pid=os.getpid(),
+            planOnDisk=os.path.exists(plan_state_path()),
+            openedAny=SESSION.opened_any)
 
         # ---------------- M1：列城市 ----------------
         if name == LIST_CITIES_TOOL:
