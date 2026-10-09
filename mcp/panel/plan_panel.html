@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TripPlanner 行程面板 · M0 协议探针</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
+    --ok:#0f6e56; --okbg:#e1f5ee; --warn:#854f0b; --warnbg:#faeeda; --bad:#a32d2d; --badbg:#fcebeb;
+    --blue:#185fa5; --bluebg:#e6f1fb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:18px 20px 24px;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:13px;line-height:1.6;
+  }
+  h1{font-size:16px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:10px;background:var(--bluebg);color:var(--blue);font-size:11px;font-weight:500;vertical-align:2px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+  .card h2{font-size:13px;font-weight:600;margin:0 0 8px}
+  .row{display:flex;gap:8px;align-items:baseline;margin:3px 0}
+  .k{color:var(--muted);min-width:132px;flex:0 0 132px}
+  .v{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500}
+  .b-idle{background:var(--panel);color:var(--muted);border:1px solid var(--line)}
+  .b-run{background:var(--warnbg);color:var(--warn)}
+  .b-ok{background:var(--okbg);color:var(--ok)}
+  .b-bad{background:var(--badbg);color:var(--bad)}
+  button{
+    font:inherit;font-size:12px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);
+    background:#fff;color:var(--ink);cursor:pointer;
+  }
+  button:hover:not(:disabled){border-color:#b8bec6}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
+  #log{
+    margin:8px 0 0;padding:9px 11px;background:#1b1f24;color:#d8dee6;border-radius:8px;
+    font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;
+    max-height:190px;overflow:auto;white-space:pre-wrap;word-break:break-all;
+  }
+  .hint{color:var(--muted);font-size:11px;margin-top:6px}
+  code{background:#eceff3;padding:1px 5px;border-radius:4px;font-size:11.5px}
+</style>
+</head>
+<body>
+
+<h1>TripPlanner 行程面板 <span class="tag">M0 协议探针</span></h1>
+<div class="sub">这个面板不是真实行程 —— 它的唯一任务是回答三个问题：面板能不能开、桥接能不能握手、面板能不能反向调工具。</div>
+
+<div class="card">
+  <h2>渲染自检</h2>
+  <div class="row"><span class="k">面板加载时间</span><span class="v" id="ts">—</span></div>
+  <div class="row"><span class="k">内联 JS</span><span class="v"><span class="badge b-ok">已执行</span></span></div>
+  <div class="row"><span class="k">内联 CSS</span><span class="v"><span class="badge b-ok">已生效</span></span></div>
+  <div class="row"><span class="k">外部资源引用</span><span class="v">0 个（自包含，规避 256KiB 与相对路径陷阱）</span></div>
+</div>
+
+<div class="card">
+  <h2>V1 + V2 · 面板已开 + AppBridge 握手</h2>
+  <div class="row"><span class="k">桥接状态</span><span class="v"><span class="badge b-idle" id="st">未探测</span></span></div>
+  <div class="row"><span class="k">宿主信息</span><span class="v" id="host">—</span></div>
+  <div class="row"><span class="k">appInstanceId</span><span class="v" id="iid">—</span></div>
+  <div class="row"><span class="k">自报登记（A）</span><span class="v"><span class="badge b-idle" id="st3">待握手</span> <span id="reg">—</span></span></div>
+  <div class="btns">
+    <button class="primary" id="btnProbe" onclick="probe()">探测桥接（发 ui/initialize）</button>
+  </div>
+  <div class="hint">面板已渲染出来本身就说明 V1 通过；这一步验的是 postMessage 握手能不能对上 ext-apps 标准。握手成功后会自动把 appInstanceId 报给 server（M1 前置 A 方案）。</div>
+</div>
+
+<div class="card">
+  <h2>CSP 放行验证 · 高德图片直链</h2>
+  <div class="row"><span class="k">图片加载</span><span class="v"><span class="badge b-idle" id="st4">未测试</span></span></div>
+  <div class="row"><span class="k">探测 URL</span><span class="v" id="imgurl">—</span></div>
+  <div class="btns">
+    <button id="btnImg" onclick="probeImage()" disabled>加载一张高德直链图</button>
+  </div>
+  <div class="hint">M1 定案 2：照片走 <code>photo_cache</code> 里的高德直链（<code>store.is.autonavi.com</code>），需靠 <code>_meta.ui.csp.resourceDomains</code> 放行。若这里显示加载失败，说明 CSP 对图片另有约束，M1 得改走本地代理。</div>
+  <div id="imgbox" style="margin-top:8px"></div>
+</div>
+
+<div class="card">
+  <h2>V3 · 面板反向调工具（tools/call）</h2>
+  <div class="row"><span class="k">回传状态</span><span class="v"><span class="badge b-idle" id="st2">待握手</span></span></div>
+  <div class="row"><span class="k">回传内容</span><span class="v" id="echo">—</span></div>
+  <div class="btns">
+    <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
+    <button id="btnReopen" onclick="callReopen()" disabled>重复调 open_plan（验 A+C 分流）</button>
+  </div>
+  <div class="hint">通了就意味着 M2 的「换点 / 挪时段 / 导出」链路可以直接复用这套机制。「重复调 open_plan」用来验 M1 前置的分流：同一个面板再调一次，server 应回「已打开」而非再开一扇。</div>
+  <div class="row"><span class="k">分流判定</span><span class="v" id="split">—</span></div>
+</div>
+
+<div class="card">
+  <h2>原始消息日志（排查用）</h2>
+  <pre id="log">（等待消息…）</pre>
+  <div class="hint">收发的每一条消息都原样列在这里。握手对不上时，这份日志就是唯一的真相来源。</div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var logEl = document.getElementById("log");
+  var first = true;
+
+  function log(dir, obj){
+    var line;
+    try { line = dir + " " + JSON.stringify(obj); }
+    catch(e){ line = dir + " [无法序列化] " + String(obj); }
+    if (first){ logEl.textContent = ""; first = false; }
+    logEl.textContent += line + "\n";
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  document.getElementById("ts").textContent = new Date().toLocaleString();
+
+  function setBadge(id, text, cls){
+    var el = document.getElementById(id);
+    el.textContent = text;
+    el.className = "badge " + cls;
+  }
+
+  var nextId = 1;
+  var pending = {};
+  var appInstanceId = "";   // A 方案：宿主的实例 id，握手后从 hostContext 里捞
+
+  function send(obj){
+    log("→", obj);
+    try { window.parent.postMessage(obj, "*"); }
+    catch(e){ log("!", "postMessage 失败: " + e.message); }
+  }
+
+  // 宿主可能把 appInstanceId 塞在不同层级，这里按 ext-apps 常见位置全试一遍。
+  // 取不到不算错 —— server 有 C 兜底，只是判据退化为「本进程开过没」。
+  function extractInstanceId(src){
+    if (!src || typeof src !== "object") return "";
+    var cands = [
+      src.appInstanceId, src.instanceId,
+      src.appInfo && src.appInfo.appInstanceId,
+      src.hostContext && src.hostContext.appInstanceId,
+      src.hostContext && src.hostContext.instanceId,
+      src.hostInfo && src.hostInfo.appInstanceId,
+      src.hostInfo && src.hostInfo.instanceId,
+    ];
+    for (var i = 0; i < cands.length; i++){
+      if (typeof cands[i] === "string" && cands[i].trim()) return cands[i].trim();
+    }
+    return "";
+  }
+
+  function request(method, params){
+    var id = nextId++;
+    return new Promise(function(resolve, reject){
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
+      setTimeout(function(){
+        if (pending[id]){ delete pending[id]; reject(new Error("超时（8s）：" + method)); }
+      }, 8000);
+    });
+  }
+
+  // 探针就该什么都记，不预先过滤 —— 否则会把「不认识的宿主消息」误当成「没消息」
+  window.addEventListener("message", function(ev){
+    log("←", ev.data);
+    var d = ev.data;
+    if (!d || typeof d !== "object") return;
+    if (d.id != null && pending[d.id]){
+      var p = pending[d.id];
+      delete pending[d.id];
+      if (d.error){ p.reject(new Error((d.error && d.error.message) || "宿主返回错误")); }
+      else { p.resolve(d.result); }
+    }
+  });
+
+  window.probe = function(){
+    setBadge("st", "探测中…", "b-run");
+    request("ui/initialize", {
+      appInfo: { name: "tripplanner-plan-panel", version: "0.0.2" },
+      appCapabilities: {},
+      protocolVersion: "2025-06-18"
+    }).then(function(res){
+      setBadge("st", "握手成功", "b-ok");
+      var info = res || {};
+      var hi = info.hostInfo || {};
+      document.getElementById("host").textContent =
+        "名称=" + (hi.name || "?") + " · 版本=" + (hi.version || "?") +
+        " · 协商协议=" + (info.protocolVersion || "?");
+
+      // A 方案：握手回包里找 appInstanceId，找不到再回退到 URL 路径里的那一段。
+      // 宿主面板 URL 形如 …/mcp-apps/<appInstanceId>/app.html —— 这是最后的兜底来源。
+      appInstanceId = extractInstanceId(info);
+      if (!appInstanceId){
+        var m = (location.pathname || "").match(/mcp-apps\/([^/]+)\//i);
+        if (m) appInstanceId = m[1];
+      }
+      document.getElementById("iid").textContent = appInstanceId || "（宿主未提供）";
+
+      // 按 ext-apps 惯例补一条 initialized 通知（宿主若不认也不会报错）
+      send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+      setBadge("st2", "可回传", "b-run");
+      document.getElementById("btnPing").disabled = false;
+      document.getElementById("btnReopen").disabled = false;
+      document.getElementById("btnImg").disabled = false;
+
+      registerSelf();
+    }).catch(function(e){
+      setBadge("st", "握手失败", "b-bad");
+      document.getElementById("host").textContent = e.message;
+      log("!", "握手失败：" + e.message + "（看上面 ← 的原始消息）");
+      // 握手失败也照样上报一次 —— 让 server 至少建立 C 兜底，避免堆面板
+      registerSelf();
+    });
+  };
+
+  window.registerSelf = function(){
+    setBadge("st3", "上报中…", "b-run");
+    request("tools/call", {
+      name: "tripplanner_panel_ready",
+      arguments: { app_instance_id: appInstanceId, label: "m0-panel" }
+    }).then(function(res){
+      var sc = (res && res.structuredContent) || {};
+      setBadge("st3", "已登记", "b-ok");
+      document.getElementById("reg").textContent =
+        "server 已知实例数=" + (sc.count != null ? sc.count : "?") +
+        (sc.hasInstanceId === false ? "（C 兜底，无实例 id）" : "");
+    }).catch(function(e){
+      setBadge("st3", "上报失败", "b-bad");
+      document.getElementById("reg").textContent = e.message;
+    });
+  };
+
+  // M1 定案 2 的验收探针：高德直链图能不能在 iframe 里显示出来。
+  window.probeImage = function(){
+    setBadge("st4", "加载中…", "b-run");
+    // 一个稳定可用的高德静态图地址（门店封面图，不带参数也能返回图）
+    var url = "https://store.is.autonavi.com/showpic/7e1b1b1b0b1b1b1b1b1b1b1b1b1b1b1b";
+    document.getElementById("imgurl").textContent = url;
+    var box = document.getElementById("imgbox");
+    box.innerHTML = "";
+    var img = document.createElement("img");
+    img.style.cssText = "max-width:220px;border-radius:8px;border:1px solid #e3e6ea;display:block";
+    img.onload = function(){
+      setBadge("st4", "加载成功（CSP 放行 OK）", "b-ok");
+      log("!", "高德图片加载成功 w=" + img.naturalWidth + " h=" + img.naturalHeight);
+    };
+    img.onerror = function(){
+      setBadge("st4", "加载失败（CSP 可能拦了 / 或 URL 失效）", "b-bad");
+      log("!", "高德图片加载失败：" + url);
+    };
+    img.src = url;
+    box.appendChild(img);
+  };
+
+  window.callPing = function(){
+    setBadge("st2", "回传中…", "b-run");
+    var note = "来自面板的回调 " + new Date().toLocaleTimeString();
+    request("tools/call", { name: "tripplanner_ping", arguments: { note: note } })
+      .then(function(res){
+        setBadge("st2", "回传成功", "b-ok");
+        var txt = "(无文本)";
+        if (res && res.content && res.content[0] && res.content[0].text) txt = res.content[0].text;
+        else if (res && res.structuredContent) txt = JSON.stringify(res.structuredContent);
+        document.getElementById("echo").textContent = txt;
+      })
+      .catch(function(e){
+        setBadge("st2", "回传失败", "b-bad");
+        document.getElementById("echo").textContent = e.message;
+      });
+  };
+
+  // 验 A+C 分流：带着自己的 appInstanceId 再调一次 open_plan。
+  // 期望：server 返回 panelOpened=false / reason=panel-already-open。
+  window.callReopen = function(){
+    document.getElementById("split").textContent = "调用中…";
+    request("tools/call", {
+      name: "tripplanner_open_plan",
+      arguments: { app_instance_id: appInstanceId }
+    }).then(function(res){
+      var sc = (res && res.structuredContent) || {};
+      var opened = sc.panelOpened;
+      document.getElementById("split").textContent =
+        "panelOpened=" + opened + " · reason=" + (sc.reason || "-") +
+        " · 已知实例=" + JSON.stringify(sc.knownInstances || []);
+      log("!", "分流结果：panelOpened=" + opened);
+    }).catch(function(e){
+      document.getElementById("split").textContent = "失败：" + e.message;
+    });
+  };
+})();
+</script>
+</body>
+</html>
