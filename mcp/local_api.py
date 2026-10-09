@@ -34,8 +34,9 @@ MCP App 面板 → 宿主 → MCP server 的 `tools/call` 通道在**本宿主�
   - **状态走磁盘**：行程仍是 `output/mcp_last_plan.json`（跨进程共享的唯一真相），
     本进程与 MCP server 读同一个文件。
   - **端口尽量固定**：优先 51900 起的一小段，让面板 URL 跨重启稳定；被占用才退化随机端口。
-  - **token 校验**：只监听 127.0.0.1，且要求 `X-Tripplanner-Token`（随机生成、写进 portfile、
-    随面板 HTML 注入）—— 防本机其它网页驱动行程。
+  - **token 校验**：只监听 127.0.0.1，且要求 `X-Tripplanner-Token`（**跨重启稳定**，
+    由 `srv.local_api_token()` 生成一次后落盘）—— 防本机其它网页驱动行程，
+    同时保证「本进程被宿主回收后重启」不会让面板手里那份 token 失效。
 
 ## ⚠️ 改了这里（或 `tripplanner_mcp_server.py`）必须 bump `SERVER_VERSION`
 
@@ -216,6 +217,10 @@ class _Handler(BaseHTTPRequestHandler):
                 "stage": STAGE, "pid": os.getpid(), "ts": srv._now(),
             })
         if not self._token_ok():
+            # ⚠️ 把「token 被拒」也落日志：这是「health 显示可用、其余全失败」的分水岭，
+            #    不记下来就只能靠猜（踩过：面板拿的是上一代进程注入的旧 token）。
+            srv.dbg("local_api.token.reject", path=path, method="GET",
+                    has_token=bool(self.headers.get("X-Tripplanner-Token")))
             return self._json(403, {"ok": False, "error": "token 校验失败"})
         if path == "/api/plan":
             plan = srv.read_plan_state()
@@ -234,11 +239,23 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(400, {"ok": False, "error": f"请求体解析失败：{e}"})
 
         if not self._token_ok():
+            srv.dbg("local_api.token.reject", path=path, method="POST",
+                    has_token=bool(self.headers.get("X-Tripplanner-Token")))
             return self._json(403, {"ok": False, "error": "token 校验失败"})
 
         try:
+            # 面板侧的动作轨迹（观测缺陷也是缺陷：面板是黑盒，失败时得能留下证词）。
+            # 面板每次交互都会打一条，哪怕后面主调用失败 —— 于是「点了没反应」到底是
+            # 「面板没发」还是「服务端没收」一眼可分。
+            if path == "/api/log":
+                try:
+                    srv.dbg("panel.trace", **{str(k): v for k, v in args.items()})
+                except Exception as e:                          # noqa: BLE001
+                    srv.dbg("panel.trace.fail", err=repr(e))
+                return self._json(200, {"ok": True})
             if path == "/api/replace":
                 return self._json(200, _do_replace(args))
+
             if path == "/api/move":
                 return self._json(200, _do_move(args))
             if path == "/api/export":
@@ -290,6 +307,31 @@ def _bind():
     return 0, ThreadingHTTPServer((HOST, 0), _Handler)          # 退化为随机端口
 
 
+def _in_job():
+    """本进程是否落在某个 job object 里 —— 宿主的 job 会「关掉即全杀」。
+
+    纯诊断用：`local_api.spawn` 里的 mode 若显示 `launcher`（没能 breakaway）
+    且这里是 True，就说明进程生命周期仍被宿主牵着，需要再想办法。
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        # ⚠️ 必须显式声明 argtypes：不声明时 64 位下伪句柄会被截断，调用直接失败
+        #    （踩过：日志里 `in_job: null`，看起来像「不在 job 里」，其实是没测出来）。
+        k.GetCurrentProcess.restype = ctypes.c_void_p
+        k.IsProcessInJob.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
+                                     ctypes.POINTER(ctypes.c_int)]
+        k.IsProcessInJob.restype = ctypes.c_int
+        out = ctypes.c_int(0)
+        if not k.IsProcessInJob(k.GetCurrentProcess(), None, ctypes.byref(out)):
+            return None
+        return bool(out.value)
+    except Exception:
+        return None
+
+
 def main() -> int:
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -304,10 +346,13 @@ def main() -> int:
 
     want, httpd = _bind()
     port = httpd.server_address[1]
-    token = __import__("secrets").token_hex(16)
+    # token **跨重启稳定**：面板 HTML 里注入过的那份必须一直有效，
+    # 否则会出现「health 说可用、实际请求全 403」的假象。见 srv.local_api_token 文档。
+    token = srv.local_api_token()
     httpd.token = token                      # type: ignore[attr-defined]
     _write_portfile(port, token)
-    srv.dbg("local_api.listen", base=f"http://{HOST}:{port}", preferred=bool(want))
+    srv.dbg("local_api.listen", base=f"http://{HOST}:{port}", preferred=bool(want),
+            in_job=_in_job(), pid=os.getpid())
 
     try:
         httpd.serve_forever(poll_interval=0.5)

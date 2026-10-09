@@ -41,7 +41,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.2.2-m2.1"
+SERVER_VERSION = "0.2.4-m2.2"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +50,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m5"
+PANEL_VERSION = "m6"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -377,6 +377,43 @@ def local_api_portfile_path() -> str:
     return os.path.join(state_dir(), "mcp_local_api.json")
 
 
+def local_api_token_path() -> str:
+    return os.path.join(state_dir(), "mcp_local_api_token.txt")
+
+
+def local_api_token() -> str:
+    """本地 API 的**稳定** token：跨进程重启保持不变（首次生成后落盘）。
+
+    ⚠️ 为什么必须稳定（2026-10-09 实测抓到的坑，别改回随机）：
+      宿主会连同 MCP server 进程树回收常驻的 `local_api.py`（日志实证：无 kill
+      记录却消失，端口文件停在旧 pid，几分钟就换一次）。若 token 每次启动随机，
+      面板 HTML 里注入的那份就立刻过期；而 `/api/health` **不校验 token**，
+      于是「诊断区测试本地 API = 可用」与「换点/拖拽 403 全灭」同时成立，
+      用户看到的就是「诊断说没问题，功能就是不动」。
+      token 稳定 + 端口稳定（51900）⇒ 面板即使经历 API 重启也照样能用。
+    """
+    path = local_api_token_path()
+    try:
+        with open(path, encoding="utf-8") as f:
+            t = f.read().strip()
+        if t:
+            return t
+    except Exception:
+        pass
+    import secrets as _secrets
+    t = _secrets.token_hex(16)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(t)
+        os.replace(tmp, path)
+        dbg("local_api.token.created", chars=len(t))
+    except Exception as e:
+        dbg("local_api.token.write.fail", err=str(e))
+    return t
+
+
 def _local_api_read_portfile():
     try:
         with open(local_api_portfile_path(), encoding="utf-8") as f:
@@ -420,6 +457,19 @@ def _local_api_kill(pid: int) -> None:
 
 
 _LOCAL_API_CACHE = {"base": "", "token": "", "checked": 0.0}
+
+# 拉起本地 API 用的「中转 launcher」：自己立刻退出，把真正的服务进程变成孤儿，
+# 这样宿主按进程树回收 MCP server 时找不到它。见 ensure_local_api 的注释。
+_SPAWN_LAUNCHER_SRC = (
+    "import subprocess,sys\n"
+    "fl=int(sys.argv[1]);cmd=sys.argv[2:]\n"
+    "kw=dict(stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL,"
+    "stderr=subprocess.DEVNULL,close_fds=True)\n"
+    "try:\n"
+    "    subprocess.Popen(cmd,creationflags=fl,**kw)\n"
+    "except OSError:\n"
+    "    subprocess.Popen(cmd,creationflags=fl & ~0x01000000,**kw)\n"
+)
 
 
 def ensure_local_api(force: bool = False) -> tuple:
@@ -465,18 +515,33 @@ def ensure_local_api(force: bool = False) -> tuple:
                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                         close_fds=True)
         if os.name == "nt":
-            # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB
-            # → 脱离宿主控制台，也不会被宿主的 job object 顺手带走
-            flags = 0x00000008 | 0x00000200 | 0x01000000
-            try:
-                subprocess.Popen([sys.executable, script], creationflags=flags, **popen_kw)
-            except OSError:
-                # 某些 job 不允许 breakaway → 退回不脱离（仍在，只是可能被回收）
+            # 两层保险，缺一层都会被宿主顺手回收（2026-10-09 实测）：
+            #  ① CREATE_BREAKAWAY_FROM_JOB：宿主若用 job object 管 MCP 子进程，
+            #     不脱离就会随 job 一起没。job 不允许 breakaway 时 Popen 抛 OSError。
+            #  ② **经 launcher 中转**：真正的 API 进程的父进程是一个「立刻退出」的
+            #     小 launcher ⇒ 变成孤儿，宿主按「进程树」枚举也找不到它。
+            # 失败一律降级并如实落日志（mode），不静默。
+            flags_detach = 0x00000008 | 0x00000200          # DETACHED | NEW_GROUP
+            flags_break = flags_detach | 0x01000000         # + BREAKAWAY_FROM_JOB
+            mode = ""
+            for tag, fl in (("launcher+breakaway", flags_break),
+                            ("launcher", flags_detach)):
+                try:
+                    subprocess.Popen([sys.executable, "-c", _SPAWN_LAUNCHER_SRC,
+                                      str(fl), sys.executable, script],
+                                     creationflags=fl, **popen_kw)
+                    mode = tag
+                    break
+                except OSError as e:
+                    dbg("local_api.spawn.try.fail", mode=tag, err=str(e))
+            if not mode:
                 subprocess.Popen([sys.executable, script],
-                                 creationflags=0x00000008 | 0x00000200, **popen_kw)
+                                 creationflags=flags_detach, **popen_kw)
+                mode = "direct"
         else:
             subprocess.Popen([sys.executable, script], start_new_session=True, **popen_kw)
-        dbg("local_api.spawn", script=script, python=sys.executable)
+            mode = "setsid"
+        dbg("local_api.spawn", script=script, python=sys.executable, mode=mode)
     except Exception as e:
         log("local_api 拉起失败", err=str(e))
         dbg("local_api.spawn.fail", err=str(e))
@@ -788,10 +853,15 @@ def read_panel() -> str:
     # 注入失败就留空串 —— 面板侧会退化为默认端口 / 回落宿主通道并**如实报错**，
     # 绝不静默。
     if LOCAL_API_BASE_PLACEHOLDER in html or LOCAL_API_TOKEN_PLACEHOLDER in html:
-        base, token = ensure_local_api()
-        html = html.replace(LOCAL_API_BASE_PLACEHOLDER, base or "")
-        html = html.replace(LOCAL_API_TOKEN_PLACEHOLDER, token or "")
-        log("panel 本地 API 注入", base=base or "(失败)",
+        base, _tok = ensure_local_api()
+        # 注入失败也要给出**可用**的默认值：端口固定 51900，token 稳定 ⇒ 面板照样能连上。
+        # （只注入空串的话，面板只能降级到已经实测不通的宿主通道。）
+        # token 一律从「落盘文件」取 —— 常驻进程读的是同一个文件，重启也不换。
+        base = base or f"http://127.0.0.1:{LOCAL_API_DEFAULT_PORT}"
+        token = local_api_token()
+        html = html.replace(LOCAL_API_BASE_PLACEHOLDER, base)
+        html = html.replace(LOCAL_API_TOKEN_PLACEHOLDER, token)
+        log("panel 本地 API 注入", base=base,
             has_token=bool(token), default_port=LOCAL_API_DEFAULT_PORT)
     return html
 
@@ -1126,6 +1196,14 @@ def handle(msg: dict):
         dbg("tools/call", name=name, pid=os.getpid(),
             planOnDisk=os.path.exists(plan_state_path()),
             openedAny=SESSION.opened_any)
+
+        # 每次工具调用都顺手确保本地 API 在跑（内部带 30s 缓存，命中时几乎零成本）。
+        # 宿主会回收常驻进程，而面板只能在「MCP server 真的被唤起」时拿到新实例 ——
+        # 把「确保」挂在这里 + resources/read，两个入口都覆盖，恢复窗口最小。
+        try:
+            ensure_local_api()
+        except Exception as e:                                  # noqa: BLE001
+            dbg("tools/call.ensure_local_api.fail", err=repr(e))
 
         # ---------------- M1：列城市 ----------------
         if name == LIST_CITIES_TOOL:

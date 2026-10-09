@@ -735,6 +735,34 @@ def phase_local_api():
               code == 200 and j.get("ok") is False and "行程" in (j.get("error") or ""),
               json.dumps(j, ensure_ascii=False)[:110])
 
+        # ---- M2.2：token 必须**跨重启稳定** ----
+        # 宿主会连进程树回收常驻 API（日志实证：无 kill 记录却消失）。若 token 每次
+        # 随机，面板手里那份就过期；而 health **不校验 token** ⇒ 「诊断说可用、
+        # 换点/拖拽全 403」的假象。这里锁死「token 来自落盘文件」这一机制。
+        out_dir = os.path.join(os.path.dirname(HERE), "output")
+        tokfile = os.path.join(out_dir, "mcp_local_api_token.txt")
+        saved = ""
+        if os.path.exists(tokfile):
+            with open(tokfile, encoding="utf-8") as f:
+                saved = f.read().strip()
+        check("token 已落盘（跨重启稳定，不是每次随机）", bool(saved) and saved == tok,
+              f"file_len={len(saved)} injected_len={len(tok)}")
+        pffile = os.path.join(out_dir, "mcp_local_api.json")
+        pf_tok = ""
+        if os.path.exists(pffile):
+            with open(pffile, encoding="utf-8") as f:
+                pf_tok = str((json.load(f) or {}).get("token") or "")
+        check("端口文件 token == 注入面板的 token", pf_tok == tok,
+              "mismatch" if pf_tok != tok else "ok")
+
+        # ---- M2.2：面板轨迹端点（观测缺陷也是缺陷）----
+        code, j = _http(base + "/api/log", token=tok,
+                        body={"action": "selftest", "detail": "trace probe"})
+        check("POST /api/log 接收面板轨迹", code == 200 and j.get("ok") is True,
+              f"{code} {json.dumps(j, ensure_ascii=False)[:80]}")
+        code, j = _http(base + "/api/log", body={"action": "selftest"})
+        check("无 token 打 /api/log 被拒（防本机页面刷日志）", code == 403, str(code))
+
         # ---- 先经 MCP 工具生成行程，再验本地 API 能读到同一份（跨进程共享磁盘状态）----
         r = rpc(proc, {"jsonrpc": "2.0", "id": 72, "method": "tools/call",
                        "params": {"name": "tripplanner_plan_trip",

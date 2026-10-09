@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TripPlanner 行程面板 · M2.1</title>
+<title>TripPlanner 行程面板 · M2.2</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
@@ -81,15 +81,23 @@
   .days button{padding:3px 12px;font-size:11.5px}
   .days button.on{background:var(--blue);border-color:var(--blue);color:#fff}
   .maperr{padding:16px;color:var(--muted);font-size:12px}
+
+  /* ---- 醒目失败提示：面板此前失败只在 11px 灰字里说一句 ⇒ 用户看到的是「点了没反应」 ---- */
+  .alert{display:none;margin:0 0 12px;padding:9px 12px;border-radius:8px;
+         background:var(--badbg);border:1px solid #e6b3b3;color:#5f2020;font-size:12px;
+         line-height:1.6;white-space:pre-line}
+  .alert.ok{background:var(--okbg);border-color:#a9d9c8;color:#0f4a3a}
 </style>
 </head>
 <body>
 
-<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2.1</span></h1>
+<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2.2</span></h1>
 <div class="sub" id="subLine">正在连接宿主并读取行程…</div>
+<div id="alert" class="alert"></div>
 
 <div class="toolbar" id="toolbar" style="display:none">
   <button class="primary" id="btnExport" onclick="exportMd()">⬇ 导出 Markdown</button>
+  <span class="badge b-idle" id="chan">通道未探测</span>
   <span class="hint" id="toolHint"></span>
 </div>
 
@@ -218,27 +226,72 @@
     });
   }
 
-  // ---------------- M2.1：本地 API 客户端 ----------------
+  // ---------------- M2.1/2.2：本地 API 客户端 ----------------
+  function showAlert(msg, ok){
+    var el = document.getElementById("alert");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = "alert" + (ok ? " ok" : "");
+    el.style.display = "block";
+  }
+  function clearAlert(){
+    var el = document.getElementById("alert");
+    if (el) el.style.display = "none";
+  }
+
   function setDiagApi(){
     var el = document.getElementById("diagApi");
-    if (!el) return;
+    var badge = document.getElementById("chan");
+    var text;
     if (apiMode === "http"){
-      el.textContent = "✅ 本地 API 可用　" + API_BASE
+      text = "✅ 本地 API 可用　" + API_BASE
         + (apiInfo ? "（pid=" + apiInfo.pid + " / v" + apiInfo.version + "）" : "")
-        + (API_TOKEN ? "" : "　⚠ 无 token（注入可能失败）");
+        + (API_TOKEN ? "" : "　⚠ 未注入 token");
+      if (badge){ badge.textContent = "本地服务就绪"; badge.className = "badge b-ok"; }
+    } else if (apiMode === "down"){
+      text = "⚠ 本地 API 不可达：" + (apiErr || "连接失败")
+        + "　→ 换点/拖拽/导出暂不可用；对助手重新生成一次行程即可恢复";
+      if (badge){ badge.textContent = "本地服务已停止"; badge.className = "badge b-bad"; }
     } else if (apiMode === "host"){
-      el.textContent = "⚠ 本地 API 不可用：" + apiErr
-        + "　→ 互动将回落宿主 tools/call（该通道在本机已实测不通）";
+      text = "⚠ 本地 API 不可用：" + apiErr
+        + "　→ 已回落宿主 tools/call（该通道在本机已实测不通）";
+      if (badge){ badge.textContent = "回落宿主通道"; badge.className = "badge b-bad"; }
     } else {
-      el.textContent = "未探测";
+      text = "未探测";
+      if (badge){ badge.textContent = "通道未探测"; badge.className = "badge b-idle"; }
     }
+    if (el) el.textContent = text;
+  }
+
+  // 面板侧动作轨迹 → 落服务端 output/mcp_debug.log（panel.trace）。
+  // 为什么值得做：面板是黑盒，失败时只能靠猜。有了它，「点了没反应」到底是
+  // 「按钮没触发」「本地服务死了」还是「服务端拒绝」一眼可分。
+  function trace(action, detail){
+    var payload = { action: action, detail: String(detail == null ? "" : detail),
+                    api: apiMode, has_plan: !!LAST,
+                    t: new Date().toLocaleTimeString() };
+    log("!", "trace " + action + " " + payload.detail);
+    try {
+      var h = { "Content-Type": "application/json" };
+      if (API_TOKEN) h["X-Tripplanner-Token"] = API_TOKEN;
+      fetch(API_BASE + "/api/log", { method: "POST", headers: h,
+                                     body: JSON.stringify(payload) })["catch"](function(){});
+    } catch (e) {}
   }
 
   // 直连本地 HTTP：返回结构化结果（形状与工具的 structuredContent 一致）
   function httpJson(path, body, method){
-    var opt = { method: method || (body ? "POST" : "GET"), headers: {} };
+    var m = method || (body ? "POST" : "GET");
+    var opt = { method: m, headers: {} };
     if (API_TOKEN) opt.headers["X-Tripplanner-Token"] = API_TOKEN;
-    if (body){ opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+    // 🔴 GET/HEAD **绝不能带 body**：浏览器会**同步**抛
+    //    TypeError: Request with GET/HEAD method cannot be used with a body。
+    //    踩过（2026-10-09）：启动时的 GET /api/plan 因为这个连请求都没发出去，
+    //    整条「探通路 → 拉行程」链静默断掉，日志里连一条 /api/plan 都看不到。
+    if (body && m !== "GET" && m !== "HEAD"){
+      opt.headers["Content-Type"] = "application/json";
+      opt.body = JSON.stringify(body);
+    }
     var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
     var timer = setTimeout(function(){ if (ctl) ctl.abort(); }, 8000);
     return fetch(API_BASE + path, opt).then(function(r){
@@ -259,21 +312,71 @@
       .then(function(res){ return (res && res.structuredContent) || {}; });
   }
 
-  // 统一入口：本地 API 优先，失败即回落宿主通道
+  function retriable(msg){
+    return /Failed to fetch|NetworkError|aborted|超时|HTTP 5\d\d/.test(String(msg || ""));
+  }
+
+  var reviveTried = false;
+  // 自愈尝试（尽力而为，不阻塞报错）：请宿主重新读一次面板资源。
+  // server 侧的 resources/read 会调 ensure_local_api() ⇒ 等于**远程重启本地服务**。
+  // 宿主是否代理这条请求未经实测（app→server 通道本来就是死的），
+  // 所以这里只做「试一下、不等待结果」，失败只写日志。
+  function reviveViaHostBestEffort(){
+    if (reviveTried) return;
+    reviveTried = true;
+    request("resources/read", { uri: "ui://tripplanner/plan" })
+      .then(function(){ log("!", "已请宿主重读面板资源（server 侧会顺带确保本地服务在跑）"); })
+      ["catch"](function(e){ log("!", "宿主通道重读资源失败（预期内）：" + e.message); });
+  }
+
+  // 廉价探活：仅当「上次不是健康态」或「距上次探活 >20s」才真的打请求。
+  // 目的：每次交互前先确认服务在不在 —— 不在就**立刻**给出准确提示，
+  // 而不是让用户等 8s 超时 + 1.2s 重试才看到一句含糊的失败。
+  var lastProbeAt = 0;
+  function ensureApi(){
+    var now = Date.now();
+    if (apiMode === "http" && now - lastProbeAt < 20000) return Promise.resolve(true);
+    return probeApi().then(function(ok){ lastProbeAt = Date.now(); return ok; });
+  }
+
+  // 统一入口：本地 API 优先。
+  // ⚠️ 失败**不再**静默回落到已知不通的宿主通道（那只会换来 10s 静默等待，
+  //    用户侧就是「点了没反应」）。改为：先探活 → 重试一次 → 复探 → 响亮报错。
   function apiCall(path, toolName, args, method){
     if (apiMode === "host"){
       return toolCall(toolName, args);
     }
-    return httpJson(path, args, method).catch(function(e){
-      apiErr = e.message;
-      apiMode = "host";
-      setDiagApi();
-      log("!", "本地 API 失败，回落宿主通道：" + e.message);
-      return toolCall(toolName, args);
+    var attempt = function(left){
+      return httpJson(path, args, method)["catch"](function(e){
+        if (left > 0 && retriable(e.message)){
+          log("!", "本地 API 调用失败，1.2s 后重试：" + path + " · " + e.message);
+          return new Promise(function(res){ setTimeout(res, 1200); })
+            .then(function(){ return attempt(left - 1); });
+        }
+        return probeApi().then(function(okNow){
+          apiErr = e.message;
+          apiMode = okNow ? "http" : "down";
+          setDiagApi();
+          throw e;
+        });
+      });
+    };
+    return ensureApi().then(function(okNow){
+      if (!okNow) throw new Error("本地服务未运行（已尝试自动重连）");
+      return attempt(1);
+    })["catch"](function(e){
+      showAlert("⚠ 无法访问本地服务（" + e.message + "）—— 换点 / 拖拽 / 导出暂不可用。\n"
+        + "原因通常是宿主回收了后台常驻进程（几分钟空闲就会发生）。"
+        + "已自动尝试重连：请等 2~3 秒后再点一次；仍不行就对助手说一句需求，"
+        + "让助手重新生成一次行程即可恢复。");
+      log("!", "apiCall 最终失败 " + path + "：" + e.message);
+      reviveViaHostBestEffort();
+      throw e;
     });
   }
 
   window.probeApi = function(){
+    var before = apiMode;
     apiMode = "未探测";
     setDiagApi();
     return httpJson("/api/health", null, "GET").then(function(j){
@@ -281,10 +384,12 @@
       setDiagApi();
       log("!", "本地 API 可用 " + JSON.stringify(j));
       return true;
-    }).catch(function(e){
-      apiMode = "host"; apiErr = e.message;
+    })["catch"](function(e){
+      // 探活失败：**保持**走 HTTP 的意图（服务可能马上就回来），只是标记为不可达。
+      apiMode = (before === "host") ? "host" : "down";
+      apiErr = e.message;
       setDiagApi();
-      log("!", "本地 API 不可用：" + e.message);
+      log("!", "本地 API 不可达：" + e.message);
       return false;
     });
   };
@@ -383,8 +488,10 @@
     h += '<div class="row"><span class="k">需求</span><span class="v">' + esc(plan.query) + '</span></div>';
     h += '<div class="metrics">';
     h += '<span>总里程 <b>' + plan.totalTravelKm + ' km</b></span>';
-    h += '<span>候选池 <b>' + plan.candidates + '</b> 个点</span>';
-    h += '<span>剔除 <b>' + plan.droppedPois.length + '</b></span>';
+    h += '<span>候选池 <b>' + (plan.candidates == null ? "—" : plan.candidates) + '</b> 个点</span>';
+    // ⚠️ 一律用 (x || []) 兜底：少一个字段就抛异常 ⇒ innerHTML 永不赋值 ⇒
+    //    整个行程区空白，且用户看不出为什么（这类故障最难查）。
+    h += '<span>剔除 <b>' + (plan.droppedPois || []).length + '</b></span>';
     h += '<span>模式 <b>' + esc(plan.mode) + '</b></span>';
     if (plan.date0) h += '<span>起始 <b>' + esc(plan.date0) + '</b></span>';
     h += '</div>';
@@ -605,7 +712,13 @@
 
   // ---------------- M2：换点 ----------------
   window.replacePoi = function(day, poiId){
-    if (!LAST) return;
+    trace("replace.click", "day=" + day + " poi=" + poiId);
+    if (!LAST){
+      // ⚠️ 以前这里直接 return ⇒ 用户点了完全没反应，也查不到任何痕迹。
+      showAlert("⚠ 面板还没有行程数据，换点暂不可用。请点「重新拉取行程」，"
+        + "或直接对助手说一句需求重新生成行程。");
+      return;
+    }
     var d = null, used = [];
     (LAST.dayList || []).forEach(function(x){
       (x.timeline || []).forEach(function(s){
@@ -613,7 +726,10 @@
       });
       if (+x.day === +day) d = x;
     });
-    if (!d) return;
+    if (!d){
+      showAlert("⚠ 找不到第 " + day + " 天的数据，无法换点（面板数据可能已过期，请点「重新拉取行程」）。");
+      return;
+    }
     var ids = (d.timeline || []).filter(function(s){ return s.type === "poi" && s.id; })
                                 .map(function(s){ return s.id; });
     toast("换点中…");
@@ -622,11 +738,19 @@
       query: LAST.query || "", date0: LAST.date0 || "",
       hotel_text: (LAST.hotel && LAST.hotel.name) || ""
     }).then(function(sc){
-      if (!sc || !sc.ok){ toast("换点失败：" + ((sc && sc.error) || "未知原因")); return; }
+      if (!sc || !sc.ok){
+        var m = (sc && sc.error) || "未知原因";
+        toast("换点失败：" + m);
+        showAlert("⚠ 换点失败：" + m);
+        trace("replace.fail", m);
+        return;
+      }
       var sw = sc.swap || {};
+      clearAlert();
       toast("🔁 " + sw.from + " → " + sw.to + (sw.same_category ? "（同类目）" : "（就近）"));
+      trace("replace.ok", sw.from + "→" + sw.to);
       if (sc.plan){ render(sc.plan); }
-    }).catch(function(e){ toast("换点失败：" + e.message); });
+    })["catch"](function(e){ toast("换点失败：" + e.message); });
   };
 
   // ---------------- M2：拖拽排序（挪时段） ----------------
@@ -640,16 +764,30 @@
   }
 
   function callMove(day, ids){
+    trace("move.call", "day=" + day + " ids=" + ids.join(","));
+    if (!LAST){
+      showAlert("⚠ 面板还没有行程数据，拖拽排序暂不可用。请点「重新拉取行程」，"
+        + "或直接对助手说一句需求重新生成行程。");
+      return;
+    }
     toast("调整顺序…");
     apiCall("/api/move", "tripplanner_move_poi", {
       city: LAST.city, day: +day, ordered_ids: ids,
       query: LAST.query || "", date0: LAST.date0 || "",
       hotel_text: (LAST.hotel && LAST.hotel.name) || ""
     }).then(function(sc){
-      if (!sc || !sc.ok){ toast("调整失败：" + ((sc && sc.error) || "未知原因")); return; }
+      if (!sc || !sc.ok){
+        var m = (sc && sc.error) || "未知原因";
+        toast("调整失败：" + m);
+        showAlert("⚠ 调整顺序失败：" + m);
+        trace("move.fail", m);
+        return;
+      }
+      clearAlert();
       toast(sc.order_respected ? "顺序已更新" : "顺序已更新（部分受开放时间/餐窗约束微调）");
+      trace("move.ok", "day=" + day + " respected=" + !!sc.order_respected);
       if (sc.plan){ render(sc.plan); }
-    }).catch(function(e){ toast("调整失败：" + e.message); });
+    })["catch"](function(e){ toast("调整失败：" + e.message); });
   }
 
   (function bindDrag(){
@@ -662,6 +800,7 @@
       try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", "x"); }
       catch(err){}
       log("!", "drag start day=" + dragFrom.day + " idx=" + dragFrom.idx);
+      trace("drag.start", "day=" + dragFrom.day + " idx=" + dragFrom.idx);
     });
     box.addEventListener("dragover", function(e){
       if (!dragFrom) return;
@@ -681,7 +820,10 @@
       var from = dragFrom.idx;
       var sameDay = (day === dragFrom.day);
       clearDrag();
-      if (!sameDay || to === from) return;
+      if (!sameDay || to === from){
+        trace("drag.skip", "sameDay=" + sameDay + " from=" + from + " to=" + to);
+        return;
+      }
       var ids = (dayPoiIds[day] || []).slice();
       if (from < 0 || from >= ids.length) return;
       var moved = ids.splice(from, 1)[0];
@@ -695,13 +837,20 @@
   // ---------------- M2：导出 Markdown ----------------
   window.exportMd = function(){
     var hint = document.getElementById("toolHint");
+    trace("export.click", "format=markdown");
     hint.textContent = "导出中…";
     apiCall("/api/export", "tripplanner_export", { format: "markdown" })
       .then(function(sc){
-        if (!sc || !sc.ok){ hint.textContent = "导出失败：" + ((sc && sc.error) || "未知原因"); return; }
+        if (!sc || !sc.ok){
+          var m = (sc && sc.error) || "未知原因";
+          hint.textContent = "导出失败：" + m;
+          showAlert("⚠ 导出失败：" + m);
+          return;
+        }
+        clearAlert();
+        trace("export.ok", (sc.filename || "") + " " + (sc.text || "").length + "字");
         deliver(sc.filename || "TripPlanner.md", sc.text || "");
-      })
-      .catch(function(e){ hint.textContent = "导出失败：" + e.message; });
+      })["catch"](function(e){ hint.textContent = "导出失败：" + e.message; });
   };
 
   function deliver(filename, text){
@@ -764,8 +913,9 @@
         sc = sc || {};
         if (sc.hasPlan && sc.plan){
           render(sc.plan);
-          document.getElementById("stage").textContent = "M2.1 · 已加载";
+          document.getElementById("stage").textContent = "M2.2 · 已加载";
           log("!", "行程加载成功 city=" + sc.plan.city + " via=" + apiMode);
+          trace("plan.loaded", "city=" + sc.plan.city + " via=" + apiMode);
         } else {
           // ⚠️ 不要用空结果覆盖已渲染好的内容。
           // 宿主对 stdio MCP 是按需 spawn 进程的，面板的 get_plan 有可能落在
@@ -792,7 +942,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.2.1-m2.1" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.2.3-m2.2" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -907,9 +1057,29 @@
 
   // 「重新拉取行程」走本地 API，与宿主握手无关 ⇒ 一开始就可用
   document.getElementById("btnReload").disabled = false;
+
+  // 🔴 兜底：任何未捕获异常 / 未处理的 Promise 拒绝都必须**看得见**。
+  //    面板是黑盒，之前一次「GET 带 body 同步抛错」就让启动链静默断掉，
+  //    用户看到的是「点了没反应」、日志里一片空白 —— 观测缺陷本身就是缺陷。
+  window.addEventListener("error", function(ev){
+    var m = ev.message || (ev.error && ev.error.message) || "未知错误";
+    showAlert("⚠ 面板脚本出错：" + m + "（详情见下方「协议诊断 → 原始消息日志」）");
+    log("!", "window.onerror " + m);
+  });
+  window.addEventListener("unhandledrejection", function(ev){
+    var r = ev.reason;
+    var m = (r && (r.message || String(r))) || "未知";
+    showAlert("⚠ 面板异步操作失败：" + m);
+    log("!", "unhandledrejection " + m);
+  });
+
   // 启动顺序：先探本地 API（它决定交互走哪条通路），再拉行程；宿主握手并行做，
   // 只用于诊断与 A+C 登记（那条通道在本机已实测不通，不阻塞任何功能）。
-  probeApi().then(function(){ loadPlan(); });
+  trace("panel.boot", "v=m6 base=" + API_BASE + " token=" + (API_TOKEN ? "yes" : "no"));
+  probeApi().then(function(okNow){
+    trace("panel.apiProbe", okNow ? "ok" : "down");
+    loadPlan();
+  });
   probe();
 })();
 </script>

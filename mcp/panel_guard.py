@@ -57,8 +57,18 @@ def main() -> int:
                    # M2.1：本地 HTTP API（宿主 tools/call 通道已实测不通）
                    "__LOCAL_API_BASE__", "__LOCAL_API_TOKEN__",
                    "/api/health", "/api/plan", "/api/replace", "/api/move", "/api/export",
-                   "probeApi"):
+                   "probeApi",
+                   # M2.2：可观测性（失败必须看得见，否则又回到「点了没反应」）
+                   "showAlert", "unhandledrejection", "/api/log", "ensureApi"):
         chk(f"含锚点 {anchor}", anchor in html)
+
+    # 3b) M2.2 专项守卫 —— 这几条都是踩过的真坑，写死防复发
+    # GET/HEAD 带 body 会让 fetch **同步**抛 TypeError，启动链静默断掉（2026-10-09 实测：
+    # 日志里连一条 /api/plan 都没有，用户侧就是「点了没反应」）。
+    chk("GET/HEAD 不带 body 的守卫仍在",
+        'm !== "GET" && m !== "HEAD"' in html)
+    chk("面板带醒目失败横幅（#alert）", 'id="alert"' in html)
+    chk("启动即打印面板轨迹（panel.boot）", 'trace("panel.boot"' in html)
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)
