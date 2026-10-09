@@ -61,7 +61,10 @@ def main() -> int:
                    # M2.2：可观测性（失败必须看得见，否则又回到「点了没反应」）
                    "showAlert", "unhandledrejection", "/api/log", "ensureApi",
                    # M2.3：掉线自愈（常驻进程会被宿主回收 ⇒ 面板必须能自己等到它回来）
-                   "waitForApi", "startWatchdog", "watchdogTick", "retryApi"):
+                   "waitForApi", "startWatchdog", "watchdogTick", "retryApi",
+                   # M3：双后端（本地优先 → 线上兜底）+ 前端写回（后端可能只回「一天」）
+                   "__REMOTE_API_BASE__", "REMOTE_BASE", "BACKENDS", "pickBackend",
+                   "applyDayToPlan", "applyActionResult"):
         chk(f"含锚点 {anchor}", anchor in html)
 
     # 3b) M2.2 专项守卫 —— 这几条都是踩过的真坑，写死防复发
@@ -71,6 +74,24 @@ def main() -> int:
         'm !== "GET" && m !== "HEAD"' in html)
     chk("面板带醒目失败横幅（#alert）", 'id="alert"' in html)
     chk("启动即打印面板轨迹（panel.boot）", 'trace("panel.boot"' in html)
+
+    # 3c) M3 专项守卫
+    # 线上兜底 base 的初值必须是占位符（真实域名只在服务端注入；仓库里不留硬编码地址）
+    mrem = re.search(r'var\s+REMOTE_BASE\s*=\s*"([^"]*)"', html)
+    chk("REMOTE_BASE 初值是占位符（真实域名只在服务端注入）",
+        bool(mrem) and mrem.group(1) == "__REMOTE_API_BASE__",
+        repr(mrem.group(1)) if mrem else "未找到 REMOTE_BASE 定义")
+    # 后端列表必须**本地在前** —— 「本地优先」是 M3 的设计前提
+    mlist = re.search(r'var\s+BACKENDS\s*=\s*\[\{([^}]*)\}', html)
+    chk("BACKENDS 首个后端是本地（本地优先）",
+        bool(mlist) and "本地" in mlist.group(1),
+        (mlist.group(1).strip()[:60] if mlist else "未找到 BACKENDS 定义"))
+    # 导出必须把当前行程带给后端（线上无状态，不带就没有内容可导）
+    chk("导出把当前行程传给后端（plan: LAST）",
+        re.search(r'apiCall\(\s*"/api/export"[^)]*plan:\s*LAST', html, re.S) is not None)
+    # 「拉行程」必须限定本地（线上无会话状态，给不出「当前行程」）
+    chk("拉行程限定本地后端（localOnly）",
+        re.search(r'apiCall\(\s*"/api/plan"[^)]*localOnly:\s*true', html, re.S) is not None)
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)

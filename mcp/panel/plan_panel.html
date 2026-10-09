@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TripPlanner 行程面板 · M2.3</title>
+<title>TripPlanner 行程面板 · M3</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
@@ -91,7 +91,7 @@
 </head>
 <body>
 
-<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M2.3</span></h1>
+<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M3</span></h1>
 <div class="sub" id="subLine">正在连接宿主并读取行程…</div>
 <div id="alert" class="alert"></div>
 
@@ -168,11 +168,23 @@
   //   而面板里点 ping 是 10s 超时）。
   // ⇒ 交互改走 127.0.0.1 的本地 HTTP（宿主 CSP 的 connectDomains 已放行
   //   http://127.0.0.1:*）。宿主通道保留为兜底，并**如实显示**走的是哪条。
+  // M3：**双后端** —— 本地（127.0.0.1，快、可离线）优先；线上（已部署的 Web UI）兜底。
+  // 为什么必须有线上兜底：本地常驻进程会被宿主 job 连坐回收（M2.3 只做到「可判定 +
+  // 自愈」，根治需外部代理）。回收窗口内用户看到的就是「点了没反应」。有了远端兜底，
+  // 本地一死交互自动落到线上后端（线上无会话状态、入参自包含），用户几乎无感。
   var API_BASE = "__LOCAL_API_BASE__";
   var API_TOKEN = "__LOCAL_API_TOKEN__";
   if (!API_BASE || API_BASE.indexOf("__LOCAL") === 0) API_BASE = "http://127.0.0.1:51900";
   if (!API_TOKEN || API_TOKEN.indexOf("__LOCAL") === 0) API_TOKEN = "";
-  var apiMode = "未探测";        // "http" | "host" | "未探测"
+  var REMOTE_BASE = "__REMOTE_API_BASE__";           // server 在 resources/read 时注入
+  if (!REMOTE_BASE || REMOTE_BASE.indexOf("__REMOTE") === 0) REMOTE_BASE = "";
+  REMOTE_BASE = REMOTE_BASE.replace(/\/+$/, "");
+
+  var BACKENDS = [{ name: "本地", base: API_BASE, token: API_TOKEN }];
+  if (REMOTE_BASE) BACKENDS.push({ name: "线上", base: REMOTE_BASE, token: "" });
+
+  var apiBk = null;              // 当前选中的后端（探活后确定）
+  var apiMode = "未探测";        // "http" | "down" | "host" | "未探测"
   var apiErr = "";
   var apiInfo = null;
 
@@ -244,14 +256,23 @@
     var badge = document.getElementById("chan");
     var text;
     if (apiMode === "http"){
-      text = "✅ 本地 API 可用　" + API_BASE
-        + (apiInfo ? "（pid=" + apiInfo.pid + " / v" + apiInfo.version + "）" : "")
-        + (API_TOKEN ? "" : "　⚠ 未注入 token");
-      if (badge){ badge.textContent = "本地服务就绪"; badge.className = "badge b-ok"; }
+      var via = apiBk ? apiBk.name : "本地";
+      if (via === "线上"){
+        text = "✅ 已切到**线上后端** " + (apiBk ? apiBk.base : "")
+          + "（本地服务不可用 —— 交互照常，走线上）"
+          + (apiInfo && apiInfo.version ? "　v" + apiInfo.version : "");
+        if (badge){ badge.textContent = "线上后端"; badge.className = "badge b-blue"; }
+      } else {
+        text = "✅ 本地 API 可用　" + API_BASE
+          + (apiInfo ? "（pid=" + apiInfo.pid + " / v" + apiInfo.version + "）" : "")
+          + (API_TOKEN ? "" : "　⚠ 未注入 token");
+        if (badge){ badge.textContent = "本地服务就绪"; badge.className = "badge b-ok"; }
+      }
     } else if (apiMode === "down"){
-      text = "⚠ 本地 API 不可达：" + (apiErr || "连接失败")
-        + "　→ 换点/拖拽/导出暂不可用；对助手重新生成一次行程即可恢复";
-      if (badge){ badge.textContent = "本地服务已停止"; badge.className = "badge b-bad"; }
+      text = "⚠ 本地与线上后端均不可达：" + (apiErr || "连接失败")
+        + (REMOTE_BASE ? "　线上：" + REMOTE_BASE : "　（未配置线上兜底）")
+        + "　→ 换点/拖拽/导出暂不可用";
+      if (badge){ badge.textContent = "后端均不可用"; badge.className = "badge b-bad"; }
     } else if (apiMode === "host"){
       text = "⚠ 本地 API 不可用：" + apiErr
         + "　→ 已回落宿主 tools/call（该通道在本机已实测不通）";
@@ -268,22 +289,23 @@
   // 「按钮没触发」「本地服务死了」还是「服务端拒绝」一眼可分。
   function trace(action, detail){
     var payload = { action: action, detail: String(detail == null ? "" : detail),
-                    api: apiMode, has_plan: !!LAST,
+                    api: apiMode, via: apiBk ? apiBk.name : "", has_plan: !!LAST,
                     t: new Date().toLocaleTimeString() };
     log("!", "trace " + action + " " + payload.detail);
     try {
+      var bk = apiBk || BACKENDS[0];
       var h = { "Content-Type": "application/json" };
-      if (API_TOKEN) h["X-Tripplanner-Token"] = API_TOKEN;
-      fetch(API_BASE + "/api/log", { method: "POST", headers: h,
-                                     body: JSON.stringify(payload) })["catch"](function(){});
+      if (bk && bk.token) h["X-Tripplanner-Token"] = bk.token;
+      fetch(bk.base + "/api/log", { method: "POST", headers: h,
+                                    body: JSON.stringify(payload) })["catch"](function(){});
     } catch (e) {}
   }
 
-  // 直连本地 HTTP：返回结构化结果（形状与工具的 structuredContent 一致）
-  function httpJson(path, body, method){
+  // 直连某个后端 HTTP：返回结构化结果（形状与工具的 structuredContent 一致）
+  function httpJsonOn(bk, path, body, method){
     var m = method || (body ? "POST" : "GET");
     var opt = { method: m, headers: {} };
-    if (API_TOKEN) opt.headers["X-Tripplanner-Token"] = API_TOKEN;
+    if (bk && bk.token) opt.headers["X-Tripplanner-Token"] = bk.token;
     // 🔴 GET/HEAD **绝不能带 body**：浏览器会**同步**抛
     //    TypeError: Request with GET/HEAD method cannot be used with a body。
     //    踩过（2026-10-09）：启动时的 GET /api/plan 因为这个连请求都没发出去，
@@ -293,8 +315,10 @@
       opt.body = JSON.stringify(body);
     }
     var ctl = (typeof AbortController !== "undefined") ? new AbortController() : null;
-    var timer = setTimeout(function(){ if (ctl) ctl.abort(); }, 8000);
-    return fetch(API_BASE + path, opt).then(function(r){
+    // 线上后端可能撞上 CloudStudio 冷启动 ⇒ 给更宽的超时（探活另有短超时，见 pickBackend）
+    var to = (bk && bk.name === "线上") ? 25000 : 8000;
+    var timer = setTimeout(function(){ if (ctl) ctl.abort(); }, to);
+    return fetch(bk.base + path, opt).then(function(r){
       return r.text().then(function(t){
         var j = null;
         try { j = JSON.parse(t); } catch (e){}
@@ -304,6 +328,11 @@
       });
     }).then(function(j){ clearTimeout(timer); return j; },
             function(e){ clearTimeout(timer); throw e; });
+  }
+
+  // 便捷封装：对「当前后端」（未选定时用第一个 = 本地）发请求 —— trace / 旁路用
+  function httpJson(path, body, method){
+    return httpJsonOn(apiBk || BACKENDS[0], path, body, method);
   }
 
   // 宿主通道（保留为兜底 + 对照；实测在本机不通）
@@ -345,30 +374,59 @@
     setDiagApi();
   }
 
-  function ensureApi(){
+  // 选后端：20s 内探活过且未被排除 → 直接用；否则按顺序探活（**本地优先**）。
+  // 探活不抛异常（返回 null 交给调用方决定怎么报错），单后端失败立即试下一个。
+  function pickBackend(localOnly, tried){
+    tried = tried || {};
     var now = Date.now();
-    if (apiMode === "http" && now - lastProbeAt < 20000) return Promise.resolve(true);
-    return probeApi().then(function(ok){ lastProbeAt = Date.now(); return ok; });
+    if (apiBk && !tried[apiBk.name] && (now - lastProbeAt) < 20000
+        && (!localOnly || apiBk.name === "本地")){
+      return Promise.resolve(apiBk);
+    }
+    var list = BACKENDS.filter(function(b){
+      return !tried[b.name] && (!localOnly || b.name === "本地");
+    });
+    var i = 0;
+    return new Promise(function(resolve){
+      (function next(){
+        if (i >= list.length){ resolve(null); return; }
+        var bk = list[i++];
+        httpJsonOn(bk, "/api/health", null, "GET").then(function(j){
+          apiBk = bk; apiInfo = j; apiErr = "";
+          lastProbeAt = Date.now(); apiMode = "http";
+          setDiagApi();
+          log("!", "后端可用：" + bk.name + " " + bk.base);
+          resolve(bk);
+        })["catch"](function(e){
+          log("!", "后端不可达 " + bk.name + "（" + bk.base + "）：" + e.message);
+          next();
+        });
+      })();
+    });
   }
 
-  // 掉线后**等它回来**：每 2s 复探一次，横幅上显示已等多久。
-  // 常驻进程会被宿主回收，而它只在「MCP server 被唤起」时才被复活
-  // （server 侧 handle() 总入口挂着 ensure_local_api）⇒ 用户/助手只要碰一次
-  // MCP，服务就回来了。等到的瞬间请求**照原样发出**，用户不会白点一次。
+  function ensureApi(){
+    return pickBackend(false, {}).then(function(bk){ return !!bk; });
+  }
+
+  // 掉线后**等它回来**：每 2s 复探一次，横幅显示已等多久。
+  // （M3 起 apiCall 不再「先死等再发」——有线上兜底时直接换后端更快；
+  //   此函数保留给「所有后端都不可用」时的显式重试 / 自动重试使用。）
   function waitForApi(maxMs, note){
     var t0 = Date.now();
     return new Promise(function(resolve){
       (function loop(){
-        httpJson("/api/health", null, "GET").then(function(j){
-          markHealthy(j);
-          clearAlert();
-          toast("✅ 本地服务已恢复，正在继续…");
-          trace("api.recovered", "pid=" + j.pid);
-          resolve(true);
-        })["catch"](function(e){
+        pickBackend(false, {}).then(function(bk){
+          if (bk){
+            clearAlert();
+            toast("✅ 后端已恢复（" + bk.name + "），正在继续…");
+            trace("api.recovered", bk.name);
+            resolve(true);
+            return;
+          }
           if (Date.now() - t0 >= maxMs){ resolve(false); return; }
-          apiMode = "down"; apiErr = e.message; setDiagApi();
-          showAlert("⏳ 本地服务暂时不可用，正在等待它恢复…（已等 "
+          apiMode = "down"; setDiagApi();
+          showAlert("⏳ 后端仍不可用，正在等待恢复…（已等 "
             + Math.round((Date.now() - t0) / 1000) + "s / 最多 "
             + Math.round(maxMs / 1000) + "s）\n" + (note || ""));
           setTimeout(loop, 2000);
@@ -377,41 +435,46 @@
     });
   }
 
-  // 统一入口：本地 API 优先。
+  // 统一入口：**多后端**（本地优先 → 线上兜底）。
   // ⚠️ 失败**不再**静默回落到已知不通的宿主通道（那只会换来 10s 静默等待）。
-  //    顺序：探活 → 掉线则等它回来（最长 60s）→ 发出请求 → 连接级失败再重试一次。
-  function apiCall(path, toolName, args, method){
-    if (apiMode === "host"){
-      return toolCall(toolName, args);
-    }
-    var send = function(left){
-      return httpJson(path, args, method)["catch"](function(e){
-        if (left > 0 && retriable(e.message)){
-          log("!", "本地 API 调用失败，1.2s 后重试：" + path + " · " + e.message);
-          return new Promise(function(res){ setTimeout(res, 1200); })
-            .then(function(){ return send(left - 1); });
-        }
-        throw e;
-      });
-    };
-    return ensureApi().then(function(okNow){
-      if (okNow) return true;
-      reviveViaHostBestEffort();
-      trace("api.wait", path);
-      apiWaiting = true;                 // 等待期间看门狗不要再抢横幅
-      return waitForApi(WAIT_API_MS,
-        "（请求尚未发出，服务一恢复就会立即继续，不用重新点）")
-        .then(function(ok){ apiWaiting = false; return ok; });
-    }).then(function(okNow){
-      if (!okNow){
-        showAlert("⚠ 本地服务长时间未恢复 —— 换点 / 拖拽 / 导出暂不可用。\n"
-          + "原因：宿主回收了后台常驻进程（空闲几分钟就会发生）。"
-          + "请在对话里对助手说一句话（例如「刷新行程」）即可唤醒它，然后再点一次。");
-        throw new Error("本地服务未运行");
+  //    顺序：探活选出可用后端 → 发请求；连接级失败 ⇒ 排除该后端、换下一个再试。
+  //    `opts.localOnly` 用于「只有本地才有语义」的调用（如从本地磁盘状态拉行程）。
+  function apiCall(path, toolName, args, method, opts){
+    opts = opts || {};
+    var tried = {};
+    function hasUntried(){
+      for (var i = 0; i < BACKENDS.length; i++){
+        if (!tried[BACKENDS[i].name]) return true;
       }
-      return send(1);
-    })["catch"](function(e){
+      return false;
+    }
+    function attempt(){
+      return pickBackend(!!opts.localOnly, tried).then(function(bk){
+        if (!bk){
+          throw new Error(opts.localOnly ? "本地服务不可用" : "本地与线上后端都不可用");
+        }
+        tried[bk.name] = true;
+        apiBk = bk; apiMode = "http"; setDiagApi();
+        return httpJsonOn(bk, path, args, method)["catch"](function(e){
+          if (!opts.localOnly && hasUntried() && retriable(e.message)){
+            log("!", "调用失败，切下一后端（" + bk.name + " · " + e.message + "）");
+            return attempt();
+          }
+          throw e;
+        });
+      });
+    }
+    return attempt()["catch"](function(e){
       log("!", "apiCall 失败 " + path + "：" + e.message);
+      if (opts.localOnly){
+        // 本地不可用是**预期内**的（宿主回收常驻进程）——不刷红色横幅，交调用方温和处理。
+        return Promise.reject(e);
+      }
+      apiMode = "down"; apiErr = e.message; setDiagApi();
+      showAlert("⚠ 操作失败：" + e.message + "\n"
+        + "· 本地服务可能被宿主回收了 —— 对助手说一句话（如「刷新行程」）即可唤醒；\n"
+        + "· 线上后端：" + (REMOTE_BASE || "未配置（编译时未注入 __REMOTE_API_BASE__）")
+        + "（若正在冷启动，稍等几秒再点一次）。");
       throw e;
     });
   }
@@ -420,22 +483,25 @@
   // 恢复则**自动重新拉取行程** —— 面板不需要用户干预就能回到可用状态。
   var lastHealthy = null;
   function watchdogTick(){
-    httpJson("/api/health", null, "GET").then(function(j){
+    var bk = apiBk || BACKENDS[0];
+    httpJsonOn(bk, "/api/health", null, "GET").then(function(j){
       var wasDown = (lastHealthy === false) || (apiMode === "down");
-      markHealthy(j);
+      apiBk = bk; markHealthy(j);
       lastHealthy = true;
       if (wasDown){
         clearAlert();
-        toast("✅ 本地服务已恢复");
-        trace("api.up", "pid=" + j.pid);
+        toast("✅ 后端已恢复（" + bk.name + "）");
+        trace("api.up", bk.name);
         loadPlan();                       // 重新对齐磁盘上的行程（真相同在磁盘）
       }
     })["catch"](function(e){
       if (lastHealthy !== false && !apiWaiting){
+        apiBk = null;                     // 下次操作重新选后端（有线上兜底 ⇒ 不会卡死）
         apiMode = "down"; apiErr = e.message; setDiagApi();
-        showAlert("⚠ 本地服务已停止（" + e.message + "）—— 换点 / 拖拽 / 导出暂停。\n"
-          + "面板会在它恢复后自动继续；对助手说一句话（例如「刷新行程」）可立刻唤醒。");
-        trace("api.down", e.message);
+        showAlert("⚠ " + bk.name + "后端已停止（" + e.message + "）—— 下次操作会自动切到另一后端。\n"
+          + "· 本地被回收时：对助手说一句话（例如「刷新行程」）即可唤醒；\n"
+          + "· 线上冷启动通常几秒，稍等即可。");
+        trace("api.down", bk.name + ":" + e.message);
       }
       lastHealthy = false;
     });
@@ -448,39 +514,34 @@
   var apiWaiting = false;
 
   window.probeApi = function(){
-    var before = apiMode;
-    apiMode = "未探测";
-    setDiagApi();
-    return httpJson("/api/health", null, "GET").then(function(j){
-      apiMode = "http"; apiInfo = j; apiErr = "";
-      setDiagApi();
-      log("!", "本地 API 可用 " + JSON.stringify(j));
-      return true;
-    })["catch"](function(e){
-      // 探活失败：**保持**走 HTTP 的意图（服务可能马上就回来），只是标记为不可达。
-      apiMode = (before === "host") ? "host" : "down";
-      apiErr = e.message;
-      setDiagApi();
-      log("!", "本地 API 不可达：" + e.message);
+    apiBk = null; lastProbeAt = 0;
+    return pickBackend(false, {}).then(function(bk){
+      if (bk){
+        log("!", "后端可用 " + bk.name + " " + JSON.stringify(apiInfo || {}));
+        return true;
+      }
+      apiMode = "down"; apiErr = "无可用后端"; setDiagApi();
+      log("!", "无可用后端（本地与线上都不可达）");
       return false;
     });
   };
 
-  // 诊断区「测试本地 API / 重试」：不但探活，还会**等它回来并自动重拉行程**。
+  // 诊断区「测试 / 重试」：重探**所有**后端，通了就自动重拉行程。
   window.retryApi = function(){
     trace("api.retry", "");
     apiWaiting = false;
     return probeApi().then(function(okNow){
       if (okNow){
         clearAlert(); lastHealthy = true;
-        toast("✅ 本地服务正常");
+        toast("✅ 后端正常（" + (apiBk ? apiBk.name : "") + "）");
         loadPlan();
         return true;
       }
       reviveViaHostBestEffort();
       apiWaiting = true;
-      showAlert("⏳ 本地服务不可用，正在自动重试…（最多 20s）\n"
-        + "若一直不通：对助手说一句话（例如「刷新行程」）即可唤醒它。");
+      showAlert("⚠ 本地与线上后端都不可用。\n"
+        + "· 本地：对助手说一句话（例如「刷新行程」）即可唤醒；\n"
+        + "· 线上：" + (REMOTE_BASE || "未配置") + "（可能正在冷启动，稍等几秒再试）。");
       return waitForApi(20000, "（自动重试中…）").then(function(ok){
         apiWaiting = false;
         if (ok) loadPlan();
@@ -806,6 +867,53 @@
   window.retryMap = function(){ setMapHint("重试中…"); drawMap(); };
 
   // ---------------- M2：换点 ----------------
+  // ---------------- M3：统一收敛后端返回（plan 或 day） ----------------
+  // 两个后端返回的形态不同，但语义相同：
+  //   · `plan` —— 完整行程（本地 local_api 经 src/plan_view.apply_day 后返回；服务端有状态）
+  //   · `day`  —— 只有被改的那一天（线上后端无状态；可能归一化形状，也可能是内核形状）
+  // ⇒ 统一收敛成「一份新 plan」再渲染；只有 day 时在前端**复现 apply_day**。
+  function applyDayToPlan(dayObj){
+    if (!LAST || !dayObj) return null;
+    // 补 photo / 坐标：内核形状的 day 没有这些字段（线上 /api/replace 返回的就是内核 day）。
+    // 从当前已渲染的行程里按 id 找（同一 POI 落在哪一天都行）。
+    var byId = {};
+    (LAST.dayList || []).forEach(function(d){
+      (d.timeline || []).forEach(function(s){
+        if (s.type === "poi" && s.id && !byId[s.id]) byId[s.id] = s;
+      });
+    });
+    (dayObj.timeline || []).forEach(function(s){
+      if (s.type !== "poi" || !s.id) return;
+      var o = byId[s.id];
+      if (!o) return;
+      if (!s.photo && o.photo) s.photo = o.photo;
+      if (s.lat == null && o.lat != null){ s.lat = o.lat; s.lng = o.lng; }
+    });
+    var d0 = +dayObj.day;
+    var days = (LAST.dayList || []).map(function(x){ return (+x.day === d0) ? dayObj : x; });
+    var plan = {};
+    for (var k in LAST){
+      if (Object.prototype.hasOwnProperty.call(LAST, k)) plan[k] = LAST[k];
+    }
+    plan.dayList = days;
+    var km = 0;
+    days.forEach(function(x){ km += (+(x.travel_km || 0)); });
+    plan.totalTravelKm = Math.round(km * 10) / 10;
+    plan.updatedAt = new Date().toLocaleString();
+    return plan;
+  }
+
+  function applyActionResult(sc){
+    if (!sc) return;
+    if (sc.plan){ render(sc.plan); return; }        // 本地：完整行程
+    if (sc.day){                                    // 线上：只有一天 → 前端写回
+      var p = applyDayToPlan(sc.day);
+      if (p) render(p);
+      return;
+    }
+    log("!", "结果里既没有 plan 也没有 day —— 画面未更新");
+  }
+
   window.replacePoi = function(day, poiId){
     trace("replace.click", "day=" + day + " poi=" + poiId);
     if (!LAST){
@@ -843,8 +951,8 @@
       var sw = sc.swap || {};
       clearAlert();
       toast("🔁 " + sw.from + " → " + sw.to + (sw.same_category ? "（同类目）" : "（就近）"));
-      trace("replace.ok", sw.from + "→" + sw.to);
-      if (sc.plan){ render(sc.plan); }
+      trace("replace.ok", sw.from + "→" + sw.to + " via=" + (apiBk ? apiBk.name : ""));
+      applyActionResult(sc);
     })["catch"](function(e){ toast("换点失败：" + e.message); });
   };
 
@@ -865,9 +973,17 @@
         + "或直接对助手说一句需求重新生成行程。");
       return;
     }
+    // 线上后端无状态：把「当天原有 id 集合」一并带上，让它也能做点集守门。
+    var origIds = [];
+    (LAST.dayList || []).forEach(function(x){
+      if (+x.day === +day){
+        origIds = (x.timeline || []).filter(function(s){ return s.type === "poi" && s.id; })
+                                   .map(function(s){ return s.id; });
+      }
+    });
     toast("调整顺序…");
     apiCall("/api/move", "tripplanner_move_poi", {
-      city: LAST.city, day: +day, ordered_ids: ids,
+      city: LAST.city, day: +day, ordered_ids: ids, day_ids: origIds,
       query: LAST.query || "", date0: LAST.date0 || "",
       hotel_text: (LAST.hotel && LAST.hotel.name) || ""
     }).then(function(sc){
@@ -880,8 +996,9 @@
       }
       clearAlert();
       toast(sc.order_respected ? "顺序已更新" : "顺序已更新（部分受开放时间/餐窗约束微调）");
-      trace("move.ok", "day=" + day + " respected=" + !!sc.order_respected);
-      if (sc.plan){ render(sc.plan); }
+      trace("move.ok", "day=" + day + " respected=" + !!sc.order_respected
+            + " via=" + (apiBk ? apiBk.name : ""));
+      applyActionResult(sc);
     })["catch"](function(e){ toast("调整失败：" + e.message); });
   }
 
@@ -933,8 +1050,16 @@
   window.exportMd = function(){
     var hint = document.getElementById("toolHint");
     trace("export.click", "format=markdown");
+    if (!LAST){
+      hint.textContent = "还没有行程可导出";
+      showAlert("⚠ 面板还没有行程数据，导出暂不可用。请点「重新拉取行程」，"
+        + "或直接对助手说一句需求重新生成行程。");
+      return;
+    }
     hint.textContent = "导出中…";
-    apiCall("/api/export", "tripplanner_export", { format: "markdown" })
+    // M3：把**当前渲染的行程**一并带上 —— 线上后端无状态，必须自带内容；
+    // 本地 local_api 也以传入的 plan 为准（保证导出的一定是用户眼前这份）。
+    apiCall("/api/export", "tripplanner_export", { format: "markdown", plan: LAST })
       .then(function(sc){
         if (!sc || !sc.ok){
           var m = (sc && sc.error) || "未知原因";
@@ -1003,12 +1128,14 @@
   //   structuredContent，M1 以来面板能显示行程一直靠它）。
   window.loadPlan = function(){
     document.getElementById("subLine").textContent = "正在读取行程…";
-    return apiCall("/api/plan", "tripplanner_get_plan", {}, "GET")
+    // ⚠️ localOnly：线上后端**无会话状态**（入参自包含的设计），给不出「当前行程」，
+    //    所以「拉行程」只在本地后端有意义；线上兜底负责的是换点 / 挪时段 / 导出。
+    return apiCall("/api/plan", "tripplanner_get_plan", {}, "GET", { localOnly: true })
       .then(function(sc){
         sc = sc || {};
         if (sc.hasPlan && sc.plan){
           render(sc.plan);
-          document.getElementById("stage").textContent = "M2.3 · 已加载";
+          document.getElementById("stage").textContent = "M3 · 已加载";
           log("!", "行程加载成功 city=" + sc.plan.city + " via=" + apiMode);
           trace("plan.loaded", "city=" + sc.plan.city + " via=" + apiMode);
         } else {
@@ -1037,7 +1164,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.2.5-m2.3" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.3.0-m3" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){

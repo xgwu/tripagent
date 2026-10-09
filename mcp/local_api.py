@@ -175,15 +175,22 @@ def _do_move(args: dict) -> dict:
 
 
 def _do_export(args: dict) -> dict:
-    plan = srv.read_plan_state()
+    # M3：面板**统一把 plan 传上来**（远端兜底端点无会话状态，必须自带内容）。
+    # 本地有磁盘状态，但**面板传入的优先** —— 导出的一定是「用户眼前这份行程」，
+    # 而不是可能已被别的进程改写过的磁盘版本。缺 plan 时回落磁盘（向后兼容）。
+    plan = args.get("plan")
+    from_panel = isinstance(plan, dict) and bool(plan.get("dayList"))
+    if not from_panel:
+        plan = srv.read_plan_state()
     if not plan:
         return {"ok": False, "error": "还没有行程可导出，请先生成行程"}
     fmt = str(args.get("format") or "markdown").lower()
     if fmt not in ("markdown", "md"):
         return {"ok": False, "error": f"暂不支持的导出格式：{fmt}（目前仅 markdown）"}
     text = srv.plan_to_markdown(plan)
-    fname = f"TripPlanner-{plan.get('city') or 'trip'}-{plan.get('days') or ''}天.md"
-    srv.dbg("local_api.export.ok", city=plan.get("city"), chars=len(text))
+    fname = srv.export_filename(plan)
+    srv.dbg("local_api.export.ok", city=plan.get("city"), chars=len(text),
+            from_panel=from_panel)
     return {"ok": True, "filename": fname, "mimeType": "text/markdown", "text": text}
 
 

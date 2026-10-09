@@ -41,7 +41,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.2.5-m2.3"
+SERVER_VERSION = "0.3.0-m3"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +50,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m7"
+PANEL_VERSION = "m8"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -70,11 +70,20 @@ AMAP_DOMAINS = [
     "https://*.autonavi.com",             # 地图瓦片 webrd0*.is.autonavi.com
 ]
 
+# M3：面板交互的**远端兜底**后端（线上已部署的 Web UI）。
+# 面板侧「本地优先、线上兜底」—— 本地常驻进程被宿主回收时，交互自动切到线上，
+# 用户不再看到「点了没反应」。域名只需进 `connectDomains`（走 fetch/XHR）；
+# 面板并不 iframe 线上页面，故无需 frameDomains。
+REMOTE_API_DOMAINS = [
+    "https://tripagent-planner2.app.workbuddy.host",        # 线上 Web UI（旧域名，实测可用）
+    "https://tripagent-planner2-80644.app.workbuddy.host",  # 新域名（2026-10-09 实测 404，留待恢复）
+]
+
 UI_RESOURCE_META = {
     "ui": {
         "csp": {
             "frameDomains": ["http://127.0.0.1:*"],
-            "connectDomains": ["http://127.0.0.1:*"] + AMAP_DOMAINS,
+            "connectDomains": ["http://127.0.0.1:*"] + AMAP_DOMAINS + REMOTE_API_DOMAINS,
             "resourceDomains": ["http://127.0.0.1:*"] + AMAP_DOMAINS,
         },
         "permissions": {},
@@ -136,54 +145,34 @@ def kernel():
         return None, f"{type(e).__name__}: {e}"
 
 
-_PHOTO_CACHE = None
+# ---------------------------------------------------------------------------
+# 行程视图层：委托给 src/plan_view.py（Web UI 与 MCP **共用一份**，不复制）
+#   M3（面板交互远端化）后，线上 webui 后端也要做同样的「归一化 / 写回」，
+#   故实现搬到 src/ 由两边 import。这里保留**同名薄封装**：内部调用点零改动，
+#   且 src/ 依然**懒加载**（initialize 阶段不 import，保持启动轻快）。
+# ---------------------------------------------------------------------------
+_PLAN_VIEW = None
+
+
+def _plan_view():
+    global _PLAN_VIEW
+    if _PLAN_VIEW is None:
+        root = project_root()
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from src import plan_view as _pv
+        _PLAN_VIEW = _pv
+    return _PLAN_VIEW
 
 
 def photo_of(poi_id: str) -> str:
-    """POI 照片（高德直链）。查不到返回空串 —— 面板侧据此隐藏 img，不留占位框。"""
-    global _PHOTO_CACHE
-    if not poi_id:
-        return ""
-    if _PHOTO_CACHE is None:
-        path = os.path.join(project_root(), "data", "photo_cache.json")
-        try:
-            with open(path, encoding="utf-8") as f:
-                _PHOTO_CACHE = json.load(f)
-        except Exception as e:
-            log("photo_cache 不可用", err=str(e))
-            _PHOTO_CACHE = {}
-    url = _PHOTO_CACHE.get(poi_id) or ""
-    return url if isinstance(url, str) and url.startswith("http") else ""
-
-
-_COORD_CACHE: dict = {}
+    """POI 照片（高德直链）。实现见 src/plan_view.py。"""
+    return _plan_view().photo_of(poi_id)
 
 
 def poi_coords(city: str) -> dict:
-    """{poi_id: (lat, lng)} —— M2 地图需要坐标，而内核 timeline 不提供。
-
-    坐标是 **GCJ-02**（POI 库来源即高德），可直接交给高德 JS API，无需转换。
-    按城市缓存：一次规划后的多次换点 / 重排都复用，不必反复解析整个库。
-    """
-    if not city:
-        return {}
-    if city in _COORD_CACHE:
-        return _COORD_CACHE[city]
-    k, err = kernel()
-    m: dict = {}
-    if err:
-        log("poi_coords：内核不可用", err=err)
-    else:
-        try:
-            city_data = k["poi_db"].load_city(city)
-            for p in city_data.get("pois", []):
-                pp = k["poi_db"].parse_poi(p, city_data)
-                if pp.get("id") is not None:
-                    m[pp["id"]] = (pp.get("lat"), pp.get("lng"))
-        except Exception as e:
-            log("poi_coords 加载失败", city=city, err=str(e))
-    _COORD_CACHE[city] = m
-    return m
+    """{poi_id: (lat, lng)}（GCJ-02）。实现见 src/plan_view.py。"""
+    return _plan_view().poi_coords(city)
 
 
 def amap_js_key() -> str:
@@ -371,6 +360,9 @@ def write_plan_state(value) -> None:
 LOCAL_API_BASE_PLACEHOLDER = "__LOCAL_API_BASE__"
 LOCAL_API_TOKEN_PLACEHOLDER = "__LOCAL_API_TOKEN__"
 LOCAL_API_DEFAULT_PORT = 51900          # 与 local_api.PREFERRED_PORTS 起点一致
+# M3：线上后端 base（面板交互的远端兜底）。与本地 base/token 同一套「占位符不入库」手法。
+REMOTE_API_BASE_PLACEHOLDER = "__REMOTE_API_BASE__"
+REMOTE_API_DEFAULT_BASE = REMOTE_API_DOMAINS[0]
 
 
 def local_api_portfile_path() -> str:
@@ -882,6 +874,10 @@ def read_panel() -> str:
         html = html.replace(LOCAL_API_TOKEN_PLACEHOLDER, token)
         log("panel 本地 API 注入", base=base,
             has_token=bool(token), default_port=LOCAL_API_DEFAULT_PORT)
+    # M3：注入**线上后端** base（远端兜底）。它是公开地址、无 token ⇒ 注入失败也能用默认值。
+    if REMOTE_API_BASE_PLACEHOLDER in html:
+        html = html.replace(REMOTE_API_BASE_PLACEHOLDER, REMOTE_API_DEFAULT_BASE)
+        log("panel 线上后端注入", base=REMOTE_API_DEFAULT_BASE)
     return html
 
 
@@ -937,58 +933,13 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
 
 
 def _normalize_day(d: dict, coords: dict | None = None) -> dict:
-    """把内核一天的原始编排压成面板/模型好消化的形状。
-
-    ⚠️ M2 起被 `normalize_plan` 与「换点 / 挪时段」的写回共用 —— 必须**幂等**：
-    已归一化过的一天再走一遍，结果要与原来逐字段一致（否则重排后的那天会掉字段）。
-
-    `coords`：{poi_id: (lat, lng)}，用来给 poi 项补坐标（面板地图需要，
-    而内核 timeline 只有 id/name/时刻）。
-    """
-    tl = []
-    for s in d.get("timeline", []):
-        item = {"type": s.get("type"), "name": s.get("name"),
-                "start": s.get("start"), "end": s.get("end")}
-        if s.get("type") == "poi":
-            item["id"] = s.get("id")
-            item["photo"] = photo_of(s.get("id") or "")
-            c = (coords or {}).get(s.get("id"))
-            if c and c[0] is not None and c[1] is not None:
-                item["lat"], item["lng"] = c[0], c[1]
-        if s.get("type") == "hop":
-            item["min"] = s.get("min")
-            item["km"] = s.get("km")
-        tl.append(item)
-    return {
-        "day": d.get("day"),
-        "theme": d.get("theme") or "",
-        "reason": d.get("reason") or "",
-        "weekday": d.get("weekday"),
-        "travel_km": round(float(d.get("travel_km") or 0), 1),
-        "travel_h": round(float(d.get("travel_h") or 0), 1),
-        "finish": d.get("finish"),
-        "violations": d.get("violations") or [],
-        "dropped": d.get("dropped") or [],
-        "reordered": bool(d.get("reordered")),
-        "timeline": tl,
-    }
+    """（M3：实现已移到 src/plan_view.py，Web UI 与 MCP 共用一份）"""
+    return _plan_view().normalize_day(d, coords)
 
 
 def apply_day(plan: dict, day_obj: dict) -> dict:
-    """把换点 / 挪时段后的一天写回整个行程，并刷新总里程。
-
-    返回**新的** plan（不改原对象），面板拿到后整体重渲染即可。
-    """
-    if not isinstance(plan, dict):
-        return plan
-    nd = _normalize_day(day_obj, poi_coords(plan.get("city") or ""))
-    new = dict(plan)
-    days = [(nd if d.get("day") == nd.get("day") else d)
-            for d in (plan.get("dayList") or [])]
-    new["dayList"] = days
-    new["totalTravelKm"] = round(sum(float(d.get("travel_km") or 0) for d in days), 1)
-    new["updatedAt"] = _now()
-    return new
+    """（M3：实现已移到 src/plan_view.py，Web UI 与 MCP 共用一份）"""
+    return _plan_view().apply_day(plan, day_obj)
 
 
 def normalize_plan(raw: dict, city: str, city_note: str) -> dict:
@@ -1043,108 +994,31 @@ def plan_summary(plan: dict) -> str:
     return "\n".join(lines)
 
 
-def _to_min(t):
-    """HH:MM → 分钟数；非法返回 None。"""
-    p = str(t or "").split(":")
-    if len(p) != 2:
-        return None
-    try:
-        return int(p[0]) * 60 + int(p[1])
-    except ValueError:
-        return None
+# ---------------------------------------------------------------------------
+# 导出：委托给 src/md_export.py（Web UI 的 POST /api/export 与 MCP 共用一份）
+# ---------------------------------------------------------------------------
+_MD_EXPORT = None
 
 
-def _dur_text(a, b) -> str:
-    """由 start/end 反推停留时长文本（内核 timeline 只给时刻，不给时长）。"""
-    x, y = _to_min(a), _to_min(b)
-    if x is None or y is None:
-        return ""
-    d = y - x
-    if d <= 0:
-        d += 24 * 60            # 跨零点兜底
-    if d <= 0:
-        return ""
-    hh, mm = divmod(d, 60)
-    return (f"{hh} 小时" if hh else "") + (f"{mm} 分" if mm else "")
-
-
-TYPE_ICON = {"poi": "📍", "hop": "→", "meal": "🍽", "hotel": "🏨"}
+def _md_export():
+    global _MD_EXPORT
+    if _MD_EXPORT is None:
+        root = project_root()
+        if root not in sys.path:
+            sys.path.insert(0, root)
+        from src import md_export as _me
+        _MD_EXPORT = _me
+    return _MD_EXPORT
 
 
 def plan_to_markdown(plan: dict) -> str:
-    """把行程导出成 Markdown（面板「导出」用；也可直接粘进文档 / 微信 / 笔记）。"""
-    md = []
-    md.append(f"# 【{plan.get('city', '')}】{plan.get('days', '')} 天行程")
-    md.append("")
-    mode = str(plan.get("mode") or "")
-    mode_txt = "LLM 规划" if mode.startswith("llm") else f"离线兜底（{mode or '未知'}）"
-    md.append(f"**需求**：{plan.get('query') or '—'}  ")
-    md.append(f"**模式**：{mode_txt} ｜ **总里程**：{plan.get('totalTravelKm')} km ｜ "
-              f"**硬约束违规**：{plan.get('totalViolations')} ｜ "
-              f"**候选池**：{plan.get('candidates')} 个点  ")
-    stamp = str(plan.get("generatedAt") or "")
-    if plan.get("updatedAt"):
-        stamp += f"（更新于 {plan['updatedAt']}）"
-    md.append(f"**生成时间**：{stamp}")
-    if plan.get("hotel"):
-        h = plan["hotel"]
-        md.append(f"**住宿锚点**：{h.get('name')}（{h.get('resolved')}）")
-    md.append("")
-    md.append("---")
+    """行程 → Markdown。实现见 src/md_export.py（单一实现，两处共用）。"""
+    return _md_export().plan_to_markdown(plan)
 
-    for d in plan.get("dayList") or []:
-        md.append("")
-        md.append(f"## Day {d.get('day')} · {d.get('theme') or '未命名主题'}")
-        meta = [f"日交通 {d.get('travel_km')} km / {d.get('travel_h')} h",
-                f"收工 {d.get('finish') or '—'}"]
-        if d.get("weekday"):
-            meta.append(str(d["weekday"]))
-        md.append("")
-        md.append("> " + " ｜ ".join(meta))
-        md.append("")
-        for s in d.get("timeline") or []:
-            t = s.get("type")
-            icon = TYPE_ICON.get(t, "·")
-            span = f"`{s.get('start') or ''}`"
-            if s.get("end"):
-                span = f"`{s.get('start')}–{s.get('end')}`"
-            name = s.get("name") or ""
-            if t == "hop":
-                extra = []
-                if s.get("km") is not None:
-                    extra.append(f"{s['km']} km")
-                if s.get("min") is not None:
-                    extra.append(f"{s['min']} 分钟")
-                md.append(f"- {span} {icon} 前往 {name}"
-                          + (f"（{' · '.join(extra)}）" if extra else ""))
-            else:
-                dur = _dur_text(s.get("start"), s.get("end")) if t in ("poi", "meal") else ""
-                md.append(f"- {span} {icon} **{name}**" + (f"（{dur}）" if dur else ""))
-        if d.get("reason"):
-            md.append("")
-            md.append(f"*{d['reason']}*")
-        if d.get("violations"):
-            md.append("")
-            md.append("> ⚠️ 违规：" + "；".join(str(v) for v in d["violations"]))
-        if d.get("dropped"):
-            md.append("")
-            md.append("> ✕ 当天剔除：" + "；".join(
-                f"{p.get('name')}（{p.get('reason')}）" for p in d["dropped"]))
 
-    if plan.get("droppedPois"):
-        md.append("")
-        md.append("---")
-        md.append("")
-        md.append("## 被剔除的点")
-        md.append("")
-        for p in plan["droppedPois"]:
-            md.append(f"- {p.get('name')} —— {p.get('reason')}")
-
-    md.append("")
-    md.append("---")
-    md.append("")
-    md.append("*由 TripPlanner 生成*")
-    return "\n".join(md)
+def export_filename(plan: dict) -> str:
+    """导出文件名。实现见 src/md_export.py（单一实现，两处共用）。"""
+    return _md_export().export_filename(plan)
 
 
 def handle(msg: dict):
@@ -1447,7 +1321,7 @@ def handle(msg: dict):
             if fmt not in ("markdown", "md"):
                 return ok(id_, tool_error(f"暂不支持的导出格式：{fmt}（目前仅 markdown）"))
             text = plan_to_markdown(plan)
-            fname = f"TripPlanner-{plan.get('city') or 'trip'}-{plan.get('days') or ''}天.md"
+            fname = _md_export().export_filename(plan)
             log("export ok", city=plan.get("city"), chars=len(text))
             return ok(id_, {
                 "content": [{"type": "text", "text": text}],

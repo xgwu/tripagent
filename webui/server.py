@@ -26,6 +26,10 @@ sys.path.insert(0, ROOT)
 from src import poi_db, m1_planner, llm_client, poi_swap  # m2_planner 懒加载：云端 ortools 缺失也不阻塞启动
 from src import gap_log  # POI 库缺口台账：规划缺口持久化（旁路，失败不拖垮主链路）
 from src import intercity  # 城际转移段：跨城驾车时长（travel_cache 不建跨城对）
+# M3：面板交互（换点 / 挪时段 / 导出）的**远端兜底**端点共用内核。
+# 与本地 MCP server 是**同一份实现**（src/ 单一真相），避免两处漂移。
+from src import plan_view  # 行程视图：归一化 / 写回
+from src import md_export  # 行程 → Markdown
 
 # ---- 直连 opener：本机代理会拦截外网 API，urllib 需显式绕过 ----
 _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -34,6 +38,9 @@ _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 # 否则 CFG 只在 main() 里由 `global CFG` 创建，任何**不经启动**就调用规划函数的
 # 路径（单测、脚本直接 import plan_multi）都会 NameError。
 CFG: dict = {}
+
+# M3：本服务的版本标识 —— `GET /api/health` 把它回给面板，用于明确「线上跑的是哪一版」。
+WEBUI_VERSION = "m3"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -1403,6 +1410,10 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
         if u.path == "/" or u.path == "/index.html":
             return self._html(os.path.join(WEBUI_DIR, "index.html"))
+        if u.path == "/api/health":  # M3：面板远端兜底的探活端点（无需鉴权，只回版本/时间）
+            return self._json({"ok": True, "server": "tripagent-webui",
+                               "version": WEBUI_VERSION, "stage": "M3",
+                               "ts": int(time.time())})
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
                                "llm": llm_client.llm_available(),
@@ -1747,6 +1758,53 @@ class Handler(BaseHTTPRequestHandler):
                 query=payload.get("query") or "",
                 hotel_text=payload.get("hotel_text") or None)
             return self._json(data, code=code)
+
+        # ------------- M3：面板交互的远端兜底端点 -------------
+        # 面板侧「本地优先、线上兜底」——本地常驻进程被宿主回收时，交互自动切到这里。
+        # 入参**自包含**（day_ids / ordered_ids / plan 全由面板带上）⇒ 本服务无需保存
+        # 任何会话状态，天然支持多用户 / 多面板并发。
+        if u.path in ("/api/move", "/api/export"):
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                payload = json.loads(self.rfile.read(n).decode("utf-8")) if 0 < n <= 3_000_000 else None
+            except (ValueError, json.JSONDecodeError):
+                payload = None
+            if not isinstance(payload, dict):
+                return self._json({"ok": False, "error": "请求体格式错误"}, code=400)
+
+            if u.path == "/api/move":  # 挪时段：按给定新顺序重排某一天
+                cname = payload.get("city")
+                day = payload.get("day")
+                ordered = [str(x) for x in (payload.get("ordered_ids") or [])]
+                day_ids = [str(x) for x in (payload.get("day_ids") or [])]
+                if cname not in CITIES or not day or not ordered:
+                    return self._json({"ok": False, "error": "参数缺失（city/day/ordered_ids）"}, code=400)
+                # 守门：拖拽只改顺序，**不允许**悄悄丢点或加点（与本地 MCP 侧同一条规则）
+                if day_ids and set(ordered) != set(day_ids):
+                    return self._json({"ok": False, "error":
+                                       f"新顺序的点集与当天不一致（原 {len(day_ids)} 个，"
+                                       f"收到 {len(ordered)} 个）"})
+                code, data = poi_swap.reorder_day(
+                    cname, day, ordered,
+                    date0=payload.get("date0") or None,
+                    query=payload.get("query") or "",
+                    hotel_text=payload.get("hotel_text") or None)
+                if data.get("ok"):  # 归一化：补照片 / 坐标，面板无需再自己拼
+                    data["day"] = plan_view.normalize_day(
+                        data["day"], plan_view.poi_coords(cname))
+                return self._json(data, code=code)
+
+            # /api/export：把面板传来的行程导出为 Markdown
+            plan = payload.get("plan")
+            if not isinstance(plan, dict):
+                return self._json({"ok": False, "error": "缺少 plan（要导出的行程内容）"}, code=400)
+            fmt = str(payload.get("format") or "markdown").lower()
+            if fmt not in ("markdown", "md"):
+                return self._json({"ok": False, "error": f"暂不支持的导出格式：{fmt}"}, code=400)
+            text = md_export.plan_to_markdown(plan)
+            return self._json({"ok": True, "filename": md_export.export_filename(plan),
+                               "mimeType": "text/markdown", "text": text})
+
         return self._json({"error": "not found"}, code=404)
 
     def log_message(self, fmt, *args):  # 静默默认访问日志

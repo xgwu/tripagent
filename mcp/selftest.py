@@ -861,8 +861,9 @@ def phase_local_api():
               and 'not str(method).startswith("notifications/")' in sv)
         pan = io.open(os.path.join(HERE, "panel", "plan_panel.html"),
                       encoding="utf-8").read()
-        check("面板掉线后会「等恢复再发请求」（不是直接报错）",
-              "function waitForApi" in pan and "waitForApi(WAIT_API_MS" in pan)
+        # M3 起：本地掉线**不再死等** —— 直接切线上后端（waitForApi 保留给「都不可用」时用）
+        check("面板保留 waitForApi（全后端不可用时显式重试）",
+              "function waitForApi" in pan and "waitForApi(20000" in pan)
         check("面板有服务看门狗（掉线提示 + 恢复自动重拉）",
               "function watchdogTick" in pan and "startWatchdog" in pan)
 
@@ -875,6 +876,107 @@ def phase_local_api():
             os.replace(backup6, state6)
         err = shutdown(proc)
     return err
+
+
+# ===========================================================================
+# 阶段七：M3 —— 面板交互远端化（公共内核单一实现 + 线上后端端点）
+# ===========================================================================
+def phase_m3_remote():
+    print("=== 阶段七：M3 面板交互远端化 ===")
+    root = os.path.dirname(HERE)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+
+    # ---- 1) 公共内核必须是**单一实现**（Web UI 与 MCP 共用，不复制）----
+    # 本项目的既有教训：多副本实现必然漂移。M3 让「同一天的处理」同时跑在本地与线上，
+    # 所以实现只能有一份 —— 搬进 src/，两边 import。
+    pv_path = os.path.join(root, "src", "plan_view.py")
+    md_path = os.path.join(root, "src", "md_export.py")
+    check("src/plan_view.py 存在（行程视图公共内核）", os.path.exists(pv_path))
+    check("src/md_export.py 存在（导出公共内核）", os.path.exists(md_path))
+
+    sv = io.open(SERVER, encoding="utf-8").read()
+    wv = io.open(os.path.join(root, "webui", "server.py"), encoding="utf-8").read()
+    check("MCP server 引用公共内核（plan_view / md_export）",
+          "from src import plan_view" in sv and "from src import md_export" in sv)
+    check("Web UI 引用**同一份**公共内核（杜绝多副本漂移）",
+          "from src import plan_view" in wv and "from src import md_export" in wv)
+    # 反向守卫：实现体已搬走，server 里不该再残留渲染实现的关键片段
+    check("MCP server 不再内联 Markdown 渲染实现（已搬到 src/md_export.py）",
+          "TYPE_ICON = {" not in sv and "_dur_text(" not in sv)
+
+    # ---- 2) 行为等价性：normalize_day 幂等 + apply_day 语义 ----
+    from src import plan_view, md_export  # noqa: E402
+    day_raw = {
+        "day": 1, "theme": "西湖", "reason": "经典线", "weekday": "周一",
+        "travel_km": 3.24, "travel_h": 0.4, "finish": "17:30",
+        "violations": [], "dropped": [], "reordered": False,
+        "timeline": [
+            {"type": "poi", "id": "HZ001", "name": "断桥残雪", "start": "09:00", "end": "10:30"},
+            {"type": "hop", "name": "苏堤", "start": "10:30", "end": "10:42", "km": 1.2, "min": 8},
+        ],
+    }
+    n1 = plan_view.normalize_day(day_raw, {})
+    n2 = plan_view.normalize_day(n1, {})
+    check("normalize_day 幂等（换点/重排后不会掉字段）", n1 == n2)
+    check("normalize_day 保留 hop 的 km/min",
+          n1["timeline"][1].get("km") == 1.2 and n1["timeline"][1].get("min") == 8)
+
+    plan0 = {"city": "杭州", "days": 2, "dayList": [
+        {"day": 1, "travel_km": 1.0, "timeline": []},
+        {"day": 2, "travel_km": 2.5, "timeline": []},
+    ], "totalTravelKm": 3.5}
+    out = plan_view.apply_day(plan0, dict(day_raw, day=2))
+    check("apply_day 不改原对象（返回新 plan）",
+          plan0["dayList"][1].get("travel_km") == 2.5 and plan0["dayList"][1].get("timeline") == [])
+    # day1 保留 1.0 + day2 换成归一化后的 3.2（day_raw.travel_km=3.24 → 保留 1 位）= 4.2
+    check("apply_day 刷新总里程", out["totalTravelKm"] == 4.2, f"-> {out['totalTravelKm']}")
+    check("apply_day 打上 updatedAt", bool(out.get("updatedAt")))
+
+    md = md_export.plan_to_markdown(out)
+    check("md_export 产出合法 Markdown（无 HTML 标签）",
+          md.startswith("# ") and "<div" not in md and "<span" not in md)
+    check("md_export 文件名含城市与天数",
+          md_export.export_filename(out).endswith("杭州-2天.md"),
+          md_export.export_filename(out))
+
+    # ---- 3) 线上后端端点（面板的远端兜底）----
+    for ep in ('"/api/health"', '"/api/move"', '"/api/export"'):
+        check(f"Web UI 含端点源码锚点 {ep}", ep in wv)
+    check("Web UI 有版本标识（/api/health 会回给面板）", "WEBUI_VERSION" in wv)
+    check("Web UI 的 /api/move 复用公共换点内核（poi_swap.reorder_day）",
+          "poi_swap.reorder_day" in wv)
+    check("Web UI 的 /api/export 复用公共导出内核（md_export.plan_to_markdown）",
+          "md_export.plan_to_markdown" in wv)
+
+    # ---- 4) 面板侧：远端 base 占位符 + CSP 放行 + 双形态消费 ----
+    pan = io.open(os.path.join(HERE, "panel", "plan_panel.html"), encoding="utf-8").read()
+    check("面板含远端 base 占位符（仓库里不留硬编码域名）", "__REMOTE_API_BASE__" in pan)
+    check("面板能消费两种返回形态（plan 或 day → 前端写回）",
+          "applyDayToPlan" in pan and "applyActionResult" in pan)
+    check("面板后端列表**本地在前**（本地优先是 M3 设计前提）",
+          'name: "本地"' in pan and 'name: "线上"' in pan
+          and pan.index('name: "本地"') < pan.index('name: "线上"'))
+
+    # ---- 5) server 常量：CSP 与远端 base（直接载入模块读常量，不拉进程）----
+    import importlib.util  # noqa: E402
+    spec = importlib.util.spec_from_file_location("_tpmcp_m3", SERVER)
+    srvmod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(srvmod)
+    conn = srvmod.UI_RESOURCE_META["ui"]["csp"]["connectDomains"]
+    check("CSP connectDomains 放行线上域名（否则远端兜底被静默拦）",
+          any("workbuddy.host" in d for d in conn), f"-> {conn}")
+    check("CSP connectDomains 仍放行本地 127.0.0.1（保住本地优先）",
+          any("127.0.0.1" in d for d in conn))
+    check("CSP frameDomains 未把线上算进去（面板不 iframe 线上页面）",
+          not any("workbuddy.host" in d
+                  for d in srvmod.UI_RESOURCE_META["ui"]["csp"]["frameDomains"]))
+    check("server 侧有线上兜底 base 常量（https）",
+          str(srvmod.REMOTE_API_DEFAULT_BASE).startswith("https://"),
+          srvmod.REMOTE_API_DEFAULT_BASE)
+    check("read_panel 会注入远端 base（占位符替换）",
+          "REMOTE_API_BASE_PLACEHOLDER in html" in sv)
+    return ""
 
 
 def main() -> int:
@@ -897,6 +999,7 @@ def main() -> int:
         err4 = phase_cross_process()
         err5 = phase_interactions()
         err6 = phase_local_api()
+        err7 = phase_m3_remote()
     finally:
         if had and os.path.exists(backup):
             os.replace(backup, state)
@@ -905,7 +1008,8 @@ def main() -> int:
         if os.path.exists(backup):
             os.remove(backup)
 
-    err = (err1 or "") + (err2 or "") + (err3 or "") + (err4 or "") + (err5 or "") + (err6 or "")
+    err = ((err1 or "") + (err2 or "") + (err3 or "") + (err4 or "")
+           + (err5 or "") + (err6 or "") + (err7 or ""))
     print()
     print("--- stderr 末 12 行（server 日志，确认没污染 stdout）---")
     for ln in (err or "").strip().splitlines()[-12:]:
