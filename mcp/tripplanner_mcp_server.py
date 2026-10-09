@@ -41,7 +41,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m2"
+PANEL_VERSION = "m3"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -643,11 +643,16 @@ def handle(msg: dict):
         return ok(id_, {"prompts": []})
 
     if method == "resources/read":
-        uri = params.get("uri")
-        if uri != VIEWER_URI:
+        uri = params.get("uri") or ""
+        # ⚠️ 容忍**任意** plan-* 版本（不只当前 VIEWER_URI）。
+        # 为什么：改 PANEL_VERSION 后宿主**注册表里仍是旧 uri**（注册表要等宿主重连才更新），
+        # 若这里严格比对，就会出现「宿主拿旧 uri 来请求 → 404 → 面板彻底打不开」的窗口期。
+        # 放宽后无论 m1/m2/m3 来请求，都返回磁盘上的最新面板（内容始终是最新的）。
+        if not str(uri).startswith("ui://tripplanner/plan"):
             return fail(id_, -32602, f"Resource not found: {uri}")
         text = read_panel()
-        log("resources/read", uri=uri, html_bytes=len(text.encode("utf-8")))
+        log("resources/read", uri=uri, current=VIEWER_URI,
+            html_bytes=len(text.encode("utf-8")))
         return ok(id_, {"contents": [{
             "uri": VIEWER_URI,
             "mimeType": UI_MIME,

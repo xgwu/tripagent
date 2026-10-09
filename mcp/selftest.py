@@ -172,6 +172,21 @@ def phase_protocol():
         check("面板含 M1 数据通道（get_plan）", "tripplanner_get_plan" in html)
         check("面板渲染时间轴（timeline）", "timeline" in html)
 
+        # 兼容性（2026-10-09 踩坑）：改 PANEL_VERSION 后宿主**注册表里仍是旧 uri**
+        # （注册表要等宿主重连才更新）。若 resources/read 严格比对当前 uri，
+        # 就会出现「宿主拿旧 uri 请求 → 404 → 面板彻底打不开」的窗口期。
+        r_old = rpc(proc, {"jsonrpc": "2.0", "id": 41, "method": "resources/read",
+                           "params": {"uri": "ui://tripplanner/plan-m0"}})
+        old_c = (((r_old or {}).get("result") or {}).get("contents") or [{}])[0]
+        check("旧版本 uri 也能读到面板（防升级窗口期 404）",
+              (old_c.get("text") or "").startswith("<!DOCTYPE html"),
+              f"{(old_c.get('text') or '')[:12]!r} {len(old_c.get('text') or '')} chars")
+        r_bad = rpc(proc, {"jsonrpc": "2.0", "id": 42, "method": "resources/read",
+                           "params": {"uri": "ui://someone-else/thing"}})
+        check("非本 server 的 uri 仍返回错误",
+              bool((r_bad or {}).get("error")),
+              str(((r_bad or {}).get("error") or {}).get("code")))
+
         # ---- A+C 分流 ----
         r = rpc(proc, {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
                        "params": {"name": "tripplanner_open_plan", "arguments": {}}})

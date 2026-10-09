@@ -176,6 +176,7 @@
 
   // ---------------- 行程渲染 ----------------
   var photoStat = { ok: 0, fail: 0 };
+  var renderedOnce = false;     // 是否成功渲染过行程 —— 防「空结果覆盖好内容」
 
   // 由 start/end 反推停留时长 —— 内核的 timeline 只给时刻，不给 duration，
   // 但「每个点待多久」是用户最关心的信息之一。
@@ -224,6 +225,7 @@
       tlTot += tl.length;
       tl.forEach(function(s){ if (s.type === "poi") poiTot++; });
     });
+    renderedOnce = true;
     setDiag("render 入参",
       "字段 " + keys.length + " 个｜dayList=" + dl.length
       + " 天｜timeline=" + tlTot + " 条｜poi=" + poiTot);
@@ -336,8 +338,19 @@
           document.getElementById("stage").textContent = "M1 · 已加载";
           log("!", "行程加载成功 city=" + sc.plan.city);
         } else {
-          render(null);
-          log("!", "server 侧暂无行程（hasPlan=false）");
+          // ⚠️ 不要用空结果覆盖已渲染好的内容。
+          // 宿主对 stdio MCP 是按需 spawn 进程的，面板的 get_plan 有可能落在
+          // 「还没写过行程」的另一个进程上而读到空；此时若清空 DOM，
+          // 用户就会看到一片空白 —— 而之前那次渲染其实是好的。
+          if (renderedOnce){
+            setDiag("get_plan", "读到空（hasPlan=" + sc.hasPlan
+              + "），已保留上一次渲染结果；可点「重新拉取行程」再试");
+            log("!", "get_plan 读到空，保留已有渲染（不清空）");
+          } else {
+            render(null);
+            setDiag("get_plan", "读到空且尚无任何渲染（hasPlan=" + sc.hasPlan + "）");
+            log("!", "server 侧暂无行程（hasPlan=false）");
+          }
         }
       })
       .catch(function(e){
@@ -350,7 +363,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.1.0-m2" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.1.0-m3" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
