@@ -2,8 +2,10 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 协议 spike ✅ 已完成 → M1 前置改造 ✅ 已完成 → M1 主体待开工**
-面板内容是协议探针，**不是真实行程**；M1 起接真实行程数据。
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅（2026-10-09，自检 60/60）→ M2 待开工**
+
+面板已渲染**真实行程**：按天时间轴（含交通段/用餐）、主题与理由、日里程、硬约束违规徽标、
+被剔除点位及原因、POI 照片缩略图。数据来自本地 31 城 POI 库 + 交通/路线缓存，无需联网。
 
 ---
 
@@ -67,6 +69,42 @@ resourceDomains = ["http://127.0.0.1:*",
 - **加载失败** → CSP 对图片另有约束，M1 改走本地代理（`/api/photo` 已有现成实现）
 
 ⚠️ 这一条**必须在 WorkBuddy 里肉眼验收**，`selftest.py` 只能验声明写没写对。
+
+---
+
+## ✅ M1 主体（2026-10-09 完成，自检 60/60）
+
+对话 → 城市识别 → 规划内核 → 时间轴面板，全链路接通。
+
+### 工具分层（只有带 `_meta.ui.resourceUri` 的才开面板）
+
+| 工具 | 面板 | 作用 |
+|---|---|---|
+| `tripplanner_plan_trip` | ★开 | **主入口**。一句话需求 → 真实行程 + 打开面板 |
+| `tripplanner_open_plan` | ★开 | 只开面板，复用上次行程 |
+| `tripplanner_get_plan` | — | 面板握手后主动拉行程（M1 数据通道） |
+| `tripplanner_list_cities` | — | 列出 31 个可规划城市 + POI 数 |
+| `tripplanner_panel_ready` | — | 面板自报 `appInstanceId`（A 方案） |
+| `tripplanner_ping` | — | 连通性对照组 |
+
+### 关键实现要点
+
+- **城市识别**：显式 `city` 参数优先；否则取「在需求文本中出现且**最长**」的城市名
+  —— 最长匹配避免「上海」命中「海上」，也让「六盘水」压过「水」。
+  识别不出时**明确报错并列出可用城市**，绝不猜一个默认城市。
+- **天数**：`query_days.extract_days(query)` 优先于 `days` 参数，再 clamp 到 1–7。
+- **stdout 保护**：规划期间 `sys.stdout = sys.stderr`，内核任何 print 都不会污染
+  JSON-RPC 通道（写脏一个字节宿主就断连）。
+- **数据双通道**：主通道是面板握手后主动 `tools/call → tripplanner_get_plan`；
+  同时兼容宿主下发 `ui/notifications/tool-result` 的 bootstrap 结果。
+- **照片**：server 侧从 `photo_cache` 解析高德直链后随行程下发；面板 `onerror` 隐藏，不留占位框。
+- **内核懒加载**：`initialize` 阶段不 import `src/`（ortools 等），首次规划才加载，保持启动轻快。
+
+### ⚠️ 改面板必须 +1 版本号
+
+宿主按 uri 缓存面板 HTML（`resolver.resolve.cacheHit`）。`PANEL_VERSION` 常量在
+`tripplanner_mcp_server.py` 顶部 —— **每次改完 `panel/plan_panel.html` 就 +1**
+（uri 随之变成 `ui://tripplanner/plan-<v>`），否则用户看到的还是旧面板。
 
 ---
 
@@ -143,7 +181,7 @@ MCP server 只是一层 stdio JSON-RPC 壳，直接 import 现有内核即可，
 mcp/
   tripplanner_mcp_server.py   # stdio MCP server（M0+M1pre：纯标准库、零依赖）
   panel/plan_panel.html     # 面板（自包含，零外部引用）
-  selftest.py               # 不开 WorkBuddy 也能验协议（29 项）
+  selftest.py               # 不开 WorkBuddy 也能验协议与真实规划（60 项）
   register.py               # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖）
 ```
 
@@ -152,7 +190,7 @@ mcp/
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
-"$PY" mcp/selftest.py          # 1. 本地自检（29 项，不开 WorkBuddy）
+"$PY" mcp/selftest.py          # 1. 本地自检（60 项，含真实规划）
 "$PY" mcp/register.py          # 2. 注册进 WorkBuddy 配置
 # 3. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
 # 4. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
@@ -275,8 +313,8 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 |---|---|---|
 | **M0** | 协议 spike：验证面板可开、桥接可握手、可反向调工具 | ✅ **完成（2026-10-09）** |
 | **M1-pre** | CSP 放行高德图片 + A+C 面板分流（防堆叠） | ✅ **完成（2026-10-09，自检 29/29）** |
-| **M1** | 最小闭环：`plan_trip` + `list_cities` + 只读时间轴面板（违规徽标 / 里程 / 剔除原因） | ⏳ 下一步 |
-| **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图 | ⏳ |
+| **M1** | 最小闭环：`plan_trip` + `list_cities` + `get_plan` + 只读时间轴面板 | ✅ **完成（2026-10-09，自检 60/60）** |
+| **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ⏳ 下一步 |
 | **M3** | 远端化：换 `streamable-http` transport，复用线上后端 | ⏳ |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`

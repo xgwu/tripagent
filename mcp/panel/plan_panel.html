@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TripPlanner 行程面板 · M0 协议探针</title>
+<title>TripPlanner 行程面板 · M1</title>
 <style>
   :root{
     --bg:#ffffff; --panel:#f7f8fa; --line:#e3e6ea; --ink:#1b1f24; --muted:#666e78;
@@ -12,92 +12,95 @@
   }
   *{box-sizing:border-box}
   body{
-    margin:0;padding:18px 20px 24px;background:var(--bg);color:var(--ink);
+    margin:0;padding:16px 18px 24px;background:var(--bg);color:var(--ink);
     font-family:-apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;font-size:13px;line-height:1.6;
   }
   h1{font-size:16px;font-weight:600;margin:0 0 4px}
-  .sub{color:var(--muted);font-size:12px;margin-bottom:16px}
+  h2{font-size:13px;font-weight:600;margin:0 0 8px}
+  .sub{color:var(--muted);font-size:12px;margin-bottom:14px}
   .tag{display:inline-block;padding:1px 7px;border-radius:10px;background:var(--bluebg);color:var(--blue);font-size:11px;font-weight:500;vertical-align:2px}
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
-  .card h2{font-size:13px;font-weight:600;margin:0 0 8px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
   .row{display:flex;gap:8px;align-items:baseline;margin:3px 0}
-  .k{color:var(--muted);min-width:132px;flex:0 0 132px}
+  .k{color:var(--muted);min-width:120px;flex:0 0 120px}
   .v{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
-  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500}
+  .badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:500;margin-right:4px}
   .b-idle{background:var(--panel);color:var(--muted);border:1px solid var(--line)}
   .b-run{background:var(--warnbg);color:var(--warn)}
   .b-ok{background:var(--okbg);color:var(--ok)}
   .b-bad{background:var(--badbg);color:var(--bad)}
-  button{
-    font:inherit;font-size:12px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);
-    background:#fff;color:var(--ink);cursor:pointer;
-  }
+  .b-blue{background:var(--bluebg);color:var(--blue)}
+  button{font:inherit;font-size:12px;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;color:var(--ink);cursor:pointer}
   button:hover:not(:disabled){border-color:#b8bec6}
   button:disabled{opacity:.45;cursor:not-allowed}
   button.primary{background:var(--blue);border-color:var(--blue);color:#fff}
   .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}
-  #log{
-    margin:8px 0 0;padding:9px 11px;background:#1b1f24;color:#d8dee6;border-radius:8px;
-    font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;
-    max-height:190px;overflow:auto;white-space:pre-wrap;word-break:break-all;
-  }
+  #log{margin:8px 0 0;padding:9px 11px;background:#1b1f24;color:#d8dee6;border-radius:8px;
+       font-family:ui-monospace,Consolas,monospace;font-size:11px;line-height:1.5;
+       max-height:190px;overflow:auto;white-space:pre-wrap;word-break:break-all}
   .hint{color:var(--muted);font-size:11px;margin-top:6px}
   code{background:#eceff3;padding:1px 5px;border-radius:4px;font-size:11.5px}
+
+  /* ---- 行程区 ---- */
+  .head{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:2px}
+  .head .city{font-size:15px;font-weight:600}
+  .metrics{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12px;color:var(--muted)}
+  .metrics b{color:var(--ink);font-weight:600}
+  .day{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;overflow:hidden}
+  .day-h{background:var(--panel);padding:9px 12px;border-bottom:1px solid var(--line)}
+  .day-h .t{font-weight:600;font-size:13px}
+  .day-h .meta{color:var(--muted);font-size:11.5px;margin-top:2px}
+  .day-b{padding:8px 12px 10px}
+  .tl{list-style:none;margin:0;padding:0}
+  .tl li{display:flex;gap:10px;padding:5px 0;border-bottom:1px dashed #eef0f3}
+  .tl li:last-child{border-bottom:0}
+  .time{flex:0 0 92px;font-family:ui-monospace,Consolas,monospace;font-size:11.5px;color:var(--muted);padding-top:1px}
+  .body{flex:1 1 auto;min-width:0}
+  .nm{font-weight:500}
+  .hop .nm{color:var(--muted);font-weight:400;font-size:12px}
+  .meal .nm{color:var(--warn);font-weight:500;font-size:12px}
+  .thumb{width:44px;height:44px;border-radius:6px;object-fit:cover;flex:0 0 44px;border:1px solid var(--line)}
+  .sub-reason{color:var(--muted);font-size:11.5px;margin-top:6px;padding-top:6px;border-top:1px solid #eef0f3}
+  .drop{margin-top:8px;padding:8px 10px;background:var(--badbg);border-radius:8px;font-size:11.5px;color:#5f2020}
+  .viol{margin-top:8px;padding:8px 10px;background:var(--warnbg);border-radius:8px;font-size:11.5px;color:#5c3a08}
+  .empty{color:var(--muted);font-size:12px;padding:18px 2px}
+  details{margin-top:12px;border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--muted)}
 </style>
 </head>
 <body>
 
-<h1>TripPlanner 行程面板 <span class="tag">M0 协议探针</span></h1>
-<div class="sub">这个面板不是真实行程 —— 它的唯一任务是回答三个问题：面板能不能开、桥接能不能握手、面板能不能反向调工具。</div>
+<h1><span id="titleCity">TripPlanner 行程面板</span> <span class="tag" id="stage">M1</span></h1>
+<div class="sub" id="subLine">正在连接宿主并读取行程…</div>
 
-<div class="card">
-  <h2>渲染自检</h2>
-  <div class="row"><span class="k">面板加载时间</span><span class="v" id="ts">—</span></div>
-  <div class="row"><span class="k">内联 JS</span><span class="v"><span class="badge b-ok">已执行</span></span></div>
-  <div class="row"><span class="k">内联 CSS</span><span class="v"><span class="badge b-ok">已生效</span></span></div>
-  <div class="row"><span class="k">外部资源引用</span><span class="v">0 个（自包含，规避 256KiB 与相对路径陷阱）</span></div>
-</div>
+<div id="content"><div class="empty">等待行程数据…</div></div>
 
-<div class="card">
-  <h2>V1 + V2 · 面板已开 + AppBridge 握手</h2>
-  <div class="row"><span class="k">桥接状态</span><span class="v"><span class="badge b-idle" id="st">未探测</span></span></div>
-  <div class="row"><span class="k">宿主信息</span><span class="v" id="host">—</span></div>
-  <div class="row"><span class="k">appInstanceId</span><span class="v" id="iid">—</span></div>
-  <div class="row"><span class="k">自报登记（A）</span><span class="v"><span class="badge b-idle" id="st3">待握手</span> <span id="reg">—</span></span></div>
-  <div class="btns">
-    <button class="primary" id="btnProbe" onclick="probe()">探测桥接（发 ui/initialize）</button>
+<details>
+  <summary>协议诊断（M0 探针，排查用）</summary>
+  <div class="card" style="margin-top:10px">
+    <h2>AppBridge 握手</h2>
+    <div class="row"><span class="k">桥接状态</span><span class="v"><span class="badge b-idle" id="st">未探测</span></span></div>
+    <div class="row"><span class="k">宿主信息</span><span class="v" id="host">—</span></div>
+    <div class="row"><span class="k">appInstanceId</span><span class="v" id="iid">—</span></div>
+    <div class="row"><span class="k">自报登记（A）</span><span class="v"><span class="badge b-idle" id="st3">待握手</span> <span id="reg">—</span></span></div>
+    <div class="btns">
+      <button class="primary" id="btnProbe" onclick="probe()">探测桥接</button>
+      <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
+      <button id="btnReload" onclick="loadPlan()" disabled>重新拉取行程</button>
+    </div>
+    <div class="row" style="margin-top:6px"><span class="k">ping 回显</span><span class="v" id="echo">—</span></div>
   </div>
-  <div class="hint">面板已渲染出来本身就说明 V1 通过；这一步验的是 postMessage 握手能不能对上 ext-apps 标准。握手成功后会自动把 appInstanceId 报给 server（M1 前置 A 方案）。</div>
-</div>
-
-<div class="card">
-  <h2>CSP 放行验证 · 高德图片直链</h2>
-  <div class="row"><span class="k">图片加载</span><span class="v"><span class="badge b-idle" id="st4">未测试</span></span></div>
-  <div class="row"><span class="k">探测 URL</span><span class="v" id="imgurl">—</span></div>
-  <div class="btns">
-    <button id="btnImg" onclick="probeImage()" disabled>加载一张高德直链图</button>
+  <div class="card">
+    <h2>CSP 放行验证 · 高德图片直链</h2>
+    <div class="row"><span class="k">图片加载</span><span class="v"><span class="badge b-idle" id="st4">未测试</span></span></div>
+    <div class="btns"><button id="btnImg" onclick="probeImage()" disabled>加载一张高德直链图</button></div>
+    <div id="imgbox" style="margin-top:8px"></div>
   </div>
-  <div class="hint">M1 定案 2：照片走 <code>photo_cache</code> 里的高德直链（<code>store.is.autonavi.com</code>），需靠 <code>_meta.ui.csp.resourceDomains</code> 放行。若这里显示加载失败，说明 CSP 对图片另有约束，M1 得改走本地代理。</div>
-  <div id="imgbox" style="margin-top:8px"></div>
-</div>
-
-<div class="card">
-  <h2>V3 · 面板反向调工具（tools/call）</h2>
-  <div class="row"><span class="k">回传状态</span><span class="v"><span class="badge b-idle" id="st2">待握手</span></span></div>
-  <div class="row"><span class="k">回传内容</span><span class="v" id="echo">—</span></div>
-  <div class="btns">
-    <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
-    <button id="btnReopen" onclick="callReopen()" disabled>重复调 open_plan（验 A+C 分流）</button>
+  <div class="card">
+    <h2>原始消息日志</h2>
+    <pre id="log">（等待消息…）</pre>
+    <div class="hint">握手或取数对不上时，这份日志是唯一的真相来源。</div>
   </div>
-  <div class="hint">通了就意味着 M2 的「换点 / 挪时段 / 导出」链路可以直接复用这套机制。「重复调 open_plan」用来验 M1 前置的分流：同一个面板再调一次，server 应回「已打开」而非再开一扇。</div>
-  <div class="row"><span class="k">分流判定</span><span class="v" id="split">—</span></div>
-</div>
-
-<div class="card">
-  <h2>原始消息日志（排查用）</h2>
-  <pre id="log">（等待消息…）</pre>
-  <div class="hint">收发的每一条消息都原样列在这里。握手对不上时，这份日志就是唯一的真相来源。</div>
-</div>
+</details>
 
 <script>
 (function(){
@@ -105,6 +108,7 @@
 
   var logEl = document.getElementById("log");
   var first = true;
+  var nextId = 1, pending = {}, appInstanceId = "";
 
   function log(dir, obj){
     var line;
@@ -115,17 +119,17 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  document.getElementById("ts").textContent = new Date().toLocaleString();
-
   function setBadge(id, text, cls){
     var el = document.getElementById(id);
-    el.textContent = text;
-    el.className = "badge " + cls;
+    if (!el) return;
+    el.textContent = text; el.className = "badge " + cls;
   }
 
-  var nextId = 1;
-  var pending = {};
-  var appInstanceId = "";   // A 方案：宿主的实例 id，握手后从 hostContext 里捞
+  function esc(s){
+    return String(s == null ? "" : s)
+      .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")
+      .replace(/"/g,"&quot;");
+  }
 
   function send(obj){
     log("→", obj);
@@ -133,8 +137,17 @@
     catch(e){ log("!", "postMessage 失败: " + e.message); }
   }
 
-  // 宿主可能把 appInstanceId 塞在不同层级，这里按 ext-apps 常见位置全试一遍。
-  // 取不到不算错 —— server 有 C 兜底，只是判据退化为「本进程开过没」。
+  function request(method, params){
+    var id = nextId++;
+    return new Promise(function(resolve, reject){
+      pending[id] = { resolve: resolve, reject: reject };
+      send({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
+      setTimeout(function(){
+        if (pending[id]){ delete pending[id]; reject(new Error("超时（10s）：" + method)); }
+      }, 10000);
+    });
+  }
+
   function extractInstanceId(src){
     if (!src || typeof src !== "object") return "";
     var cands = [
@@ -151,46 +164,128 @@
     return "";
   }
 
-  function request(method, params){
-    var id = nextId++;
-    return new Promise(function(resolve, reject){
-      pending[id] = { resolve: resolve, reject: reject };
-      send({ jsonrpc: "2.0", id: id, method: method, params: params || {} });
-      setTimeout(function(){
-        if (pending[id]){ delete pending[id]; reject(new Error("超时（8s）：" + method)); }
-      }, 8000);
+  // ---------------- 行程渲染 ----------------
+  function render(plan){
+    var box = document.getElementById("content");
+    if (!plan){
+      box.innerHTML = '<div class="empty">还没有行程。请对助手说一句需求，例如「杭州2天，带8岁孩子，想看西湖和灵隐寺」。</div>';
+      return;
+    }
+
+    document.getElementById("titleCity").textContent = "【" + plan.city + "】" + plan.days + " 天行程";
+    var modeBadge = /^llm/.test(plan.mode || "") ? '<span class="badge b-ok">LLM 规划</span>'
+                                                 : '<span class="badge b-blue">离线兜底规划</span>';
+    var violBadge = (plan.totalViolations === 0)
+      ? '<span class="badge b-ok">硬约束 0 违规</span>'
+      : '<span class="badge b-bad">违规 ' + plan.totalViolations + '</span>';
+    document.getElementById("subLine").innerHTML =
+      modeBadge + violBadge + '<span class="badge b-idle">' + esc(plan.generatedAt) + '</span>';
+
+    var h = "";
+    h += '<div class="card"><h2>总览</h2>';
+    h += '<div class="row"><span class="k">需求</span><span class="v">' + esc(plan.query) + '</span></div>';
+    h += '<div class="metrics">';
+    h += '<span>总里程 <b>' + plan.totalTravelKm + ' km</b></span>';
+    h += '<span>候选池 <b>' + plan.candidates + '</b> 个点</span>';
+    h += '<span>剔除 <b>' + plan.droppedPois.length + '</b></span>';
+    h += '<span>模式 <b>' + esc(plan.mode) + '</b></span>';
+    if (plan.date0) h += '<span>起始 <b>' + esc(plan.date0) + '</b></span>';
+    h += '</div>';
+    if (plan.hotel){
+      h += '<div class="row" style="margin-top:6px"><span class="k">住宿锚点</span><span class="v">'
+        + esc(plan.hotel.name) + '（' + esc(plan.hotel.resolved) + '）</span></div>';
+    }
+    h += '</div>';
+
+    (plan.dayList || []).forEach(function(d){
+      h += '<div class="day"><div class="day-h">';
+      h += '<div class="t">Day ' + d.day + ' · ' + esc(d.theme || "未命名主题") + '</div>';
+      h += '<div class="meta">日交通 ' + d.travel_km + 'km / ' + d.travel_h + 'h'
+        + '　收工 ' + esc(d.finish || "-")
+        + (d.weekday ? '　' + esc(d.weekday) : '')
+        + (d.reordered ? '　<span class="badge b-blue">顺序经约束修复</span>' : '')
+        + '</div></div><div class="day-b"><ul class="tl">';
+
+      (d.timeline || []).forEach(function(s){
+        var cls = s.type === "hop" ? "hop" : (s.type === "meal" ? "meal" : "poi");
+        var icon = s.type === "hop" ? "→" : (s.type === "meal" ? "🍽" : "📍");
+        h += '<li class="' + cls + '">';
+        h += '<span class="time">' + esc(s.start) + (s.end ? "–" + esc(s.end) : "") + '</span>';
+        if (cls === "poi" && s.photo){
+          h += '<img class="thumb" src="' + esc(s.photo) + '" alt="" '
+            + 'onerror="this.style.display=\'none\'">';
+        }
+        h += '<span class="body"><span class="nm">' + icon + " " + esc(s.name) + '</span>';
+        if (cls === "hop" && (s.km || s.min)){
+          h += '<span class="hopx" style="color:#666e78;font-size:11.5px">　'
+            + (s.km != null ? s.km + "km" : "") + (s.min != null ? " · " + s.min + "分钟" : "")
+            + '</span>';
+        }
+        h += '</span></li>';
+      });
+      h += '</ul>';
+
+      if (d.reason) h += '<div class="sub-reason">' + esc(d.reason) + '</div>';
+      if (d.violations && d.violations.length){
+        h += '<div class="viol">⚠ 违规：' + esc(d.violations.join("；")) + '</div>';
+      }
+      if (d.dropped && d.dropped.length){
+        h += '<div class="drop">✕ 剔除：'
+          + d.dropped.map(function(p){ return esc(p.name) + "（" + esc(p.reason) + "）"; }).join("；")
+          + '</div>';
+      }
+      h += '</div></div>';
     });
+
+    if (plan.substitutes && plan.substitutes.length){
+      h += '<div class="card"><h2>替代推荐</h2>';
+      plan.substitutes.forEach(function(s){
+        h += '<div class="row"><span class="k">' + esc(s["for"]) + '</span><span class="v">'
+          + esc(s.reason) + '</span></div>';
+      });
+      h += '</div>';
+    }
+
+    box.innerHTML = h;
   }
 
-  // 探针就该什么都记，不预先过滤 —— 否则会把「不认识的宿主消息」误当成「没消息」
-  window.addEventListener("message", function(ev){
-    log("←", ev.data);
-    var d = ev.data;
-    if (!d || typeof d !== "object") return;
-    if (d.id != null && pending[d.id]){
-      var p = pending[d.id];
-      delete pending[d.id];
-      if (d.error){ p.reject(new Error((d.error && d.error.message) || "宿主返回错误")); }
-      else { p.resolve(d.result); }
-    }
-  });
+  // ---------------- 数据获取 ----------------
+  // 通道 1（主）：握手后面板主动 tools/call 拉 —— V3 已验证可用，最稳。
+  // 通道 2（补）：宿主若把 bootstrap 的 tool-result 推下来，直接用它。
+  window.loadPlan = function(){
+    document.getElementById("subLine").textContent = "正在读取行程…";
+    return request("tools/call", { name: "tripplanner_get_plan", arguments: {} })
+      .then(function(res){
+        var sc = (res && res.structuredContent) || {};
+        if (sc.hasPlan && sc.plan){
+          render(sc.plan);
+          document.getElementById("stage").textContent = "M1 · 已加载";
+          log("!", "行程加载成功 city=" + sc.plan.city);
+        } else {
+          render(null);
+          log("!", "server 侧暂无行程（hasPlan=false）");
+        }
+      })
+      .catch(function(e){
+        document.getElementById("subLine").textContent = "读取失败：" + e.message;
+        log("!", "get_plan 失败：" + e.message);
+      });
+  };
 
+  // ---------------- 握手 ----------------
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.0.2" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.1.0-m1" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
       setBadge("st", "握手成功", "b-ok");
-      var info = res || {};
-      var hi = info.hostInfo || {};
+      var info = res || {}, hi = info.hostInfo || {};
       document.getElementById("host").textContent =
         "名称=" + (hi.name || "?") + " · 版本=" + (hi.version || "?") +
-        " · 协商协议=" + (info.protocolVersion || "?");
+        " · 协议=" + (info.protocolVersion || "?");
 
-      // A 方案：握手回包里找 appInstanceId，找不到再回退到 URL 路径里的那一段。
-      // 宿主面板 URL 形如 …/mcp-apps/<appInstanceId>/app.html —— 这是最后的兜底来源。
       appInstanceId = extractInstanceId(info);
       if (!appInstanceId){
         var m = (location.pathname || "").match(/mcp-apps\/([^/]+)\//i);
@@ -198,20 +293,18 @@
       }
       document.getElementById("iid").textContent = appInstanceId || "（宿主未提供）";
 
-      // 按 ext-apps 惯例补一条 initialized 通知（宿主若不认也不会报错）
       send({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
-      setBadge("st2", "可回传", "b-run");
       document.getElementById("btnPing").disabled = false;
-      document.getElementById("btnReopen").disabled = false;
+      document.getElementById("btnReload").disabled = false;
       document.getElementById("btnImg").disabled = false;
 
       registerSelf();
+      loadPlan();                       // ← M1：握手成功即拉行程
     }).catch(function(e){
       setBadge("st", "握手失败", "b-bad");
       document.getElementById("host").textContent = e.message;
-      log("!", "握手失败：" + e.message + "（看上面 ← 的原始消息）");
-      // 握手失败也照样上报一次 —— 让 server 至少建立 C 兜底，避免堆面板
-      registerSelf();
+      log("!", "握手失败：" + e.message);
+      registerSelf();                   // 握手失败也上报，保证 C 兜底生效
     });
   };
 
@@ -219,76 +312,70 @@
     setBadge("st3", "上报中…", "b-run");
     request("tools/call", {
       name: "tripplanner_panel_ready",
-      arguments: { app_instance_id: appInstanceId, label: "m0-panel" }
+      arguments: { app_instance_id: appInstanceId, label: "m1-panel" }
     }).then(function(res){
       var sc = (res && res.structuredContent) || {};
       setBadge("st3", "已登记", "b-ok");
       document.getElementById("reg").textContent =
-        "server 已知实例数=" + (sc.count != null ? sc.count : "?") +
-        (sc.hasInstanceId === false ? "（C 兜底，无实例 id）" : "");
+        "已知实例数=" + (sc.count != null ? sc.count : "?") +
+        (sc.hasInstanceId === false ? "（C 兜底）" : "");
     }).catch(function(e){
       setBadge("st3", "上报失败", "b-bad");
       document.getElementById("reg").textContent = e.message;
     });
   };
 
-  // M1 定案 2 的验收探针：高德直链图能不能在 iframe 里显示出来。
+  window.callPing = function(){
+    request("tools/call", { name: "tripplanner_ping", arguments: { note: "来自面板 " + new Date().toLocaleTimeString() } })
+      .then(function(res){
+        var sc = (res && res.structuredContent) || {};
+        document.getElementById("echo").textContent = "pong · " + (sc.note || "") + " · " + (sc.ts || "");
+      })
+      .catch(function(e){ document.getElementById("echo").textContent = "失败：" + e.message; });
+  };
+
   window.probeImage = function(){
     setBadge("st4", "加载中…", "b-run");
-    // 一个稳定可用的高德静态图地址（门店封面图，不带参数也能返回图）
-    var url = "https://store.is.autonavi.com/showpic/7e1b1b1b0b1b1b1b1b1b1b1b1b1b1b1b";
-    document.getElementById("imgurl").textContent = url;
+    var url = "https://store.is.autonavi.com/showpic/b9c402b7d34ea98654cc915e567761dd";
     var box = document.getElementById("imgbox");
     box.innerHTML = "";
     var img = document.createElement("img");
     img.style.cssText = "max-width:220px;border-radius:8px;border:1px solid #e3e6ea;display:block";
     img.onload = function(){
       setBadge("st4", "加载成功（CSP 放行 OK）", "b-ok");
-      log("!", "高德图片加载成功 w=" + img.naturalWidth + " h=" + img.naturalHeight);
+      log("!", "高德图片加载成功 w=" + img.naturalWidth);
     };
     img.onerror = function(){
-      setBadge("st4", "加载失败（CSP 可能拦了 / 或 URL 失效）", "b-bad");
-      log("!", "高德图片加载失败：" + url);
+      setBadge("st4", "加载失败（CSP 拦了或 URL 失效）", "b-bad");
+      log("!", "高德图片加载失败");
     };
     img.src = url;
     box.appendChild(img);
   };
 
-  window.callPing = function(){
-    setBadge("st2", "回传中…", "b-run");
-    var note = "来自面板的回调 " + new Date().toLocaleTimeString();
-    request("tools/call", { name: "tripplanner_ping", arguments: { note: note } })
-      .then(function(res){
-        setBadge("st2", "回传成功", "b-ok");
-        var txt = "(无文本)";
-        if (res && res.content && res.content[0] && res.content[0].text) txt = res.content[0].text;
-        else if (res && res.structuredContent) txt = JSON.stringify(res.structuredContent);
-        document.getElementById("echo").textContent = txt;
-      })
-      .catch(function(e){
-        setBadge("st2", "回传失败", "b-bad");
-        document.getElementById("echo").textContent = e.message;
-      });
-  };
+  // ---------------- 收消息 ----------------
+  window.addEventListener("message", function(ev){
+    var d = ev.data;
+    if (!d || typeof d !== "object") return;
+    log("←", d);
 
-  // 验 A+C 分流：带着自己的 appInstanceId 再调一次 open_plan。
-  // 期望：server 返回 panelOpened=false / reason=panel-already-open。
-  window.callReopen = function(){
-    document.getElementById("split").textContent = "调用中…";
-    request("tools/call", {
-      name: "tripplanner_open_plan",
-      arguments: { app_instance_id: appInstanceId }
-    }).then(function(res){
-      var sc = (res && res.structuredContent) || {};
-      var opened = sc.panelOpened;
-      document.getElementById("split").textContent =
-        "panelOpened=" + opened + " · reason=" + (sc.reason || "-") +
-        " · 已知实例=" + JSON.stringify(sc.knownInstances || []);
-      log("!", "分流结果：panelOpened=" + opened);
-    }).catch(function(e){
-      document.getElementById("split").textContent = "失败：" + e.message;
-    });
-  };
+    if (d.id != null && pending[d.id]){
+      var p = pending[d.id];
+      delete pending[d.id];
+      if (d.error){ p.reject(new Error((d.error && d.error.message) || "宿主返回错误")); }
+      else { p.resolve(d.result); }
+      return;
+    }
+
+    // 通道 2：宿主把 bootstrap 的工具结果推下来（含 structuredContent.plan）
+    if (d.method === "ui/notifications/tool-result"){
+      var sc = (d.params && d.params.structuredContent)
+            || (d.params && d.params.result && d.params.result.structuredContent) || {};
+      if (sc.plan){ render(sc.plan); log("!", "收到宿主 bootstrap 行程"); }
+    }
+  });
+
+  probe();   // 面板一渲染就握手（不依赖用户点按钮）
 })();
 </script>
 </body>
