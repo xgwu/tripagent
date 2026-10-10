@@ -1,0 +1,15 @@
+{
+  "version": "2.0",
+  "statement": [
+    {
+      "effect": "allow",
+      "action": [
+        "cvm:DescribeInstances",
+        "vpc:DescribeSecurityGroups",
+        "vpc:DescribeSecurityGroupPolicies",
+        "vpc:CreateSecurityGroupPolicies"
+      ],
+      "resource": ["*"]
+    }
+  ]
+}
