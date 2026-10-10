@@ -64,7 +64,11 @@ def main() -> int:
                    "waitForApi", "startWatchdog", "watchdogTick", "retryApi",
                    # M3：双后端（本地优先 → 线上兜底）+ 前端写回（后端可能只回「一天」）
                    "__REMOTE_API_BASE__", "REMOTE_BASE", "BACKENDS", "pickBackend",
-                   "applyDayToPlan", "applyActionResult"):
+                   "applyDayToPlan", "applyActionResult",
+                   # M4：线上后端 = 自建云主机（HTTPS + nginx Basic 认证）
+                   "__REMOTE_API_AUTH__", "REMOTE_AUTH", "Authorization",
+                   # M4 诊断：上报宿主上下文 + 主动探远端（判定混合内容是否拦）
+                   "panel.remoteProbe", "location.protocol"):
         chk(f"含锚点 {anchor}", anchor in html)
 
     # 3b) M2.2 专项守卫 —— 这几条都是踩过的真坑，写死防复发
@@ -92,6 +96,21 @@ def main() -> int:
     # 「拉行程」必须限定本地（线上无会话状态，给不出「当前行程」）
     chk("拉行程限定本地后端（localOnly）",
         re.search(r'apiCall\(\s*"/api/plan"[^)]*localOnly:\s*true', html, re.S) is not None)
+    # M4：远端凭据的初值必须是占位符（真实 Basic 头只在服务端注入，绝不入库）
+    mauth = re.search(r'var\s+REMOTE_AUTH\s*=\s*"([^"]*)"', html)
+    chk("REMOTE_AUTH 初值是占位符（凭据只在服务端注入）",
+        bool(mauth) and mauth.group(1) == "__REMOTE_API_AUTH__",
+        repr(mauth.group(1)) if mauth else "未找到 REMOTE_AUTH 定义")
+    # 远端请求必须把凭据发出去（否则线上后端开了 Basic 认证就 401）
+    chk("httpJsonOn 给远端后端带 Authorization",
+        bool(re.search(r'bk\.auth\)\s*opt\.headers\[["\']Authorization["\']\]', html)))
+    # M4 诊断（2026-10-10）：远端走 http+IP 时能否成立，取决于宿主 iframe 的上下文
+    #   （https ⇒ 浏览器把 http://公网IP 当 active mixed content 直接 block）。
+    #   故面板必须**自报上下文**、并在启动时**主动探一次远端**，把结论落盘。
+    chk("启动诊断上报宿主上下文（location.protocol/origin）",
+        "location.protocol" in html and "location.origin" in html)
+    chk("启动即主动探远端后端（panel.remoteProbe 落盘）",
+        'trace("panel.remoteProbe"' in html)
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)

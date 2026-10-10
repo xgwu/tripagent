@@ -39,8 +39,10 @@ _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 # 路径（单测、脚本直接 import plan_multi）都会 NameError。
 CFG: dict = {}
 
-# M3：本服务的版本标识 —— `GET /api/health` 把它回给面板，用于明确「线上跑的是哪一版」。
-WEBUI_VERSION = "m3"
+# 本服务的版本标识 —— `GET /api/health` 把它回给面板，用于明确「线上跑的是哪一版」。
+# m4（2026-10-10）：补 CORS（面板跨域 fetch 远端后端的前提）+ OPTIONS 预检；
+#   云主机接入 M3 远端后端（HTTPS + nginx Basic 认证）。
+WEBUI_VERSION = "m4"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -1385,11 +1387,35 @@ def city_meta(name: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
+    # ---- CORS（m4）----
+    # 🔴 为什么必须加：M3 面板的「本地优先 → 线上兜底」是**跨域 fetch**
+    #   （面板 iframe 的 origin ≠ 本服务域名）。本服务原先一个 CORS 头都没有，
+    #   浏览器的同源策略会**直接丢弃响应体**（且 UA 控制台才看得到，面板只表现为
+    #   「后端不可达」）。所以远端兜底能否生效，**取决于这里**。
+    #   放行 Authorization 是为了配 nginx Basic 认证（面板带凭据访问线上后端）。
+    #   ⚠️ 用 `*` 而非回显 Origin：请求不带 Cookie（凭据走 Authorization 头），
+    #      `*` 即可，且能兼容面板 iframe 的 opaque/自定义 origin。
+    def _cors(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers",
+                         "Content-Type, Authorization, X-Tripplanner-Token")
+        self.send_header("Access-Control-Max-Age", "600")
+
+    # 浏览器对「带 Authorization / application/json 的跨界请求」会先发 OPTIONS 预检。
+    # nginx 侧已把 OPTIONS 从 Basic 认证里豁免（否则预检被 401，请求根本发不出去）。
+    def do_OPTIONS(self):
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self._cors()
+        self.end_headers()
+
     def _json(self, obj: dict, code: int = 200):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self._cors()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1402,6 +1428,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self._cors()
         self.end_headers()
         self.wfile.write(body)
 
@@ -1489,6 +1516,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self._cors()
             self.end_headers()
             self.wfile.write(body)
             return

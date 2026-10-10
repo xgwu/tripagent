@@ -179,9 +179,13 @@
   var REMOTE_BASE = "__REMOTE_API_BASE__";           // server 在 resources/read 时注入
   if (!REMOTE_BASE || REMOTE_BASE.indexOf("__REMOTE") === 0) REMOTE_BASE = "";
   REMOTE_BASE = REMOTE_BASE.replace(/\/+$/, "");
+  // M4：线上后端（云主机）的 HTTP Basic 认证头，同样由 server 注入（仓库里只留占位符）。
+  var REMOTE_AUTH = "__REMOTE_API_AUTH__";
+  if (!REMOTE_AUTH || REMOTE_AUTH.indexOf("__REMOTE") === 0) REMOTE_AUTH = "";
 
   var BACKENDS = [{ name: "本地", base: API_BASE, token: API_TOKEN }];
-  if (REMOTE_BASE) BACKENDS.push({ name: "线上", base: REMOTE_BASE, token: "" });
+  // auth = 远端后端要带的 Authorization 头（本地后端无）；两后端形态统一走 httpJsonOn
+  if (REMOTE_BASE) BACKENDS.push({ name: "线上", base: REMOTE_BASE, token: "", auth: REMOTE_AUTH });
 
   var apiBk = null;              // 当前选中的后端（探活后确定）
   var apiMode = "未探测";        // "http" | "down" | "host" | "未探测"
@@ -296,6 +300,7 @@
       var bk = apiBk || BACKENDS[0];
       var h = { "Content-Type": "application/json" };
       if (bk && bk.token) h["X-Tripplanner-Token"] = bk.token;
+      if (bk && bk.auth) h["Authorization"] = bk.auth;
       fetch(bk.base + "/api/log", { method: "POST", headers: h,
                                     body: JSON.stringify(payload) })["catch"](function(){});
     } catch (e) {}
@@ -306,6 +311,11 @@
     var m = method || (body ? "POST" : "GET");
     var opt = { method: m, headers: {} };
     if (bk && bk.token) opt.headers["X-Tripplanner-Token"] = bk.token;
+    // M4：线上后端（云主机）走 nginx Basic 认证 —— 必须带 Authorization 头。
+    // ⚠️ 带了它请求就**不再是简单请求** ⇒ 浏览器先发 OPTIONS 预检；
+    //    nginx 侧已把 OPTIONS 豁免出 Basic 认证，服务端 do_OPTIONS 回放 CORS，
+    //    否则预检被 401，请求根本发不出去（表现为「线上后端不可达」）。
+    if (bk && bk.auth) opt.headers["Authorization"] = bk.auth;
     // 🔴 GET/HEAD **绝不能带 body**：浏览器会**同步**抛
     //    TypeError: Request with GET/HEAD method cannot be used with a body。
     //    踩过（2026-10-09）：启动时的 GET /api/plan 因为这个连请求都没发出去，
@@ -1164,7 +1174,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.3.1-m3" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.4.1-m4" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -1297,12 +1307,29 @@
 
   // 启动顺序：先探本地 API（它决定交互走哪条通路），再拉行程；宿主握手并行做，
   // 只用于诊断与 A+C 登记（那条通道在本机已实测不通，不阻塞任何功能）。
-  trace("panel.boot", "v=m7 base=" + API_BASE + " token=" + (API_TOKEN ? "yes" : "no"));
+  // M4 诊断：把**宿主 iframe 的上下文**一并落盘 —— 这是判断「远端兜底能不能用」的
+  // 决定性证据：若 protocol=https，浏览器会把 http://<公网IP> 当 active mixed content
+  // **直接 block**（`127.0.0.1` 有 potentially-trustworthy 豁免，公网 IP **没有**）。
+  trace("panel.boot", "v=m7 base=" + API_BASE + " token=" + (API_TOKEN ? "yes" : "no")
+        + " proto=" + location.protocol + " origin=" + location.origin
+        + " remote=" + (REMOTE_BASE || "none"));
   probeApi().then(function(okNow){
     trace("panel.apiProbe", okNow ? "ok" : "down");
     lastHealthy = okNow;
     loadPlan();
   });
+  // M4 诊断：启动即**主动探一次远端后端**（不等掉线），把成功/失败明细落盘。
+  // 这样「远端到底通不通」不再靠猜 —— panel.remoteProbe 里直接有结论。
+  setTimeout(function(){
+    if (!REMOTE_BASE){ trace("panel.remoteProbe", "skipped(no REMOTE_BASE)"); return; }
+    var rb = { name: "线上", base: REMOTE_BASE, token: "", auth: REMOTE_AUTH };
+    httpJsonOn(rb, "/api/health", null, "GET").then(function(j){
+      trace("panel.remoteProbe", "OK " + REMOTE_BASE + " -> " + JSON.stringify(j).slice(0, 160));
+    })["catch"](function(e){
+      trace("panel.remoteProbe", "FAIL " + REMOTE_BASE + " :: "
+            + (e && e.message ? e.message : String(e)));
+    });
+  }, 1500);
   startWatchdog();      // 掉线自动提示、恢复自动重拉行程（用户无需干预）
   probe();
 })();

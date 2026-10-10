@@ -616,6 +616,84 @@ CSP `connectDomains` 放行线上且**不放** `frameDomains`。
 
 ---
 
+## 🟡 M4：云主机接入远端后端 + CORS 补缺 + Basic 认证（2026-10-10）
+
+### 🔴 先修的真缺陷：M3 的远端兜底**其实从没生效过**
+
+M3 把面板后端做成了「本地优先 → 线上兜底」，但 **`webui/server.py` 一个 CORS 头都没有**
+（只有 `mcp/local_api.py` 有）。面板 iframe 的 origin ≠ 线上域名 ⇒ 跨域 `fetch` 的响应
+会被浏览器**同源策略直接丢弃**（JS 侧只看到 `TypeError: Failed to fetch`，很容易被误读成
+「后端不可达 / 冷启动」）。因为「WorkBuddy 内实测 M3」一直没做，这个缺口一直没暴露。
+
+**M4 修法**：`webui/server.py` 新增 `_cors()`（`Access-Control-Allow-Origin: *` +
+`Allow-Methods: GET, POST, OPTIONS` + `Allow-Headers: Content-Type, Authorization,
+X-Tripplanner-Token`）并在 `_json`/`_html`/分享响应统一调用；新增 `do_OPTIONS` 回 204。
+`WEBUI_VERSION` m3 → **m4**。
+（用 `*` 而非回显 Origin：请求不带 Cookie，凭据走 `Authorization` 头，`*` 即可，
+且能兼容面板 iframe 的 opaque/自定义 origin。）
+
+### 接入方式：自建云主机成为 `REMOTE_API_DOMAINS[0]`
+
+云主机（腾讯云 Lighthouse `101.35.47.213`，详见仓库 `deploy/cvm/`）跑的是**本仓库同一份代码**，
+所以 M4 也顺带把它接成远端后端：
+
+- `REMOTE_API_DOMAINS[0] = "https://101-35-47-213.sslip.io"`（其后仍是 CloudStudio 两个域名）。
+- 新增占位符 **`__REMOTE_API_AUTH__`**：panel 侧 `BACKENDS` 的远端项带 `auth` 字段，
+  `httpJsonOn()` / `trace()` 在 `bk.auth` 存在时发 `Authorization` 头。
+  值由 `remote_basic_auth()` 从 `secrets.json` 的 `remote_basic_auth`（`"user:pass"`）现场
+  base64 成 `Basic …`，**只在 `resources/read` 时注入** —— 仓库里永远只有占位符
+  （与 `amap_js_key` / 本地 token 同一套「凭据不入库」做法）。
+
+### nginx HTTP Basic 认证（`deploy/cvm/setup_server.sh`）
+
+用 `BASIC_AUTH_USER` / `BASIC_AUTH_PASS` 环境变量开关（**须 `sudo -E`** 透传）：
+装 `apache2-utils`、写 `/etc/nginx/.htpasswd_tripagent`。关键一条：
+
+```nginx
+location / {
+    # OPTIONS = 浏览器 CORS 预检。面板远端请求带 Authorization（非简单请求）⇒
+    # 一定先发 OPTIONS；预检若也 401，请求根本发不出去（表现为「线上后端不可达」）。
+    limit_except OPTIONS {
+        auth_basic "TripAgent";
+        auth_basic_user_file /etc/nginx/.htpasswd_tripagent;
+    }
+    proxy_pass http://127.0.0.1:3000;
+}
+```
+
+`limit_except` 里允许 `auth_basic`（nginx 文档明确）⇒ 认证只对「非 OPTIONS」生效。
+自检三连：无凭据 `401` / 带凭据 `200` / `OPTIONS` `204` —— **实测全部符合**。
+
+### 🔴 未完成：HTTPS 被「未备案域名拦截」挡住（实测证据）
+
+本想用 `*.sslip.io`（免费泛解析）+ Let's Encrypt，`certbot --nginx` HTTP-01 **失败**：
+Let's Encrypt 收到的是腾讯云的 `dnspod.qcloud.com/.../webblock.html?d=101-35-47-213.sslip.io`。
+本机复核确认为**腾讯云境内节点对「未备案域名」的拦截**：
+
+| 访问 | 结果 |
+|---|---|
+| `http://101.35.47.213/api/health`（按 IP） | ✅ `401` + `WWW-Authenticate: Basic realm="TripAgent"` |
+| `http://101-35-47-213.sslip.io/...`（按域名） | ❌ 空响应（被拦） |
+
+且 **sslip.io 无法备案**：① 备案要求「域名持有人 = 备案主体」，sslip.io 注册人不是使用者；
+② `.io` 不在工信部批复的可备案后缀名单里。
+⇒ 想用域名只有三条路：**买可备案域名 + 备案（7–20 工作日）** / **换境外节点（香港、新加坡等，无需备案）** /
+**Cloudflare Tunnel**（`cloudflared` 出站映射出 https 地址，免备案、免开 443）。
+另有一条零成本验证：面板 iframe 上下文若非 https，则**根本没有混合内容问题**，直接用
+`http://101.35.47.213` 即可（尚未实测）。
+
+**现状**：云主机 = **纯 IP + Basic 认证可用**（`http://101.35.47.213/`，用户 `trip`）；
+443 未开、无证书；`REMOTE_API_DOMAINS[0]` 目前指向尚未打通的 `https://101-35-47-213.sslip.io`
+（若最终不走域名，应回落到 `http://101.35.47.213` 或 CloudStudio 域名 —— ⚠️ **面板侧注意混合内容**）。
+
+### 版本
+
+`SERVER_VERSION` → **0.4.0-m4**、`PANEL_VERSION` → **m10**、面板 `appInfo.version` → `0.4.0-m4`、
+`WEBUI_VERSION` → **m4**。`panel_guard.py` 新增：`__REMOTE_API_AUTH__` / `REMOTE_AUTH` 占位符守卫 +
+「`httpJsonOn` 给远端后端带 `Authorization`」结构守卫。
+
+---
+
 ## ⚠️ 最重要的一条：注册后必须「重载」才生效
 
 从 `app.asar` 取证（2026-10-09）：
@@ -910,6 +988,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M2.2** | 二次报障复修：GET 带 body 的同步异常 + token 跨重启漂移 + 常驻进程被杀；补齐「失败必须看得见」 | ✅ **完成（2026-10-09，自检 143/143）** |
 | **M2.3** | 常驻进程**死因取证**（心跳 / atexit / 信号 / 崩溃 + stderr 落盘）+ 把  挂到请求总入口 + 面板**掉线自愈**（等恢复再发请求 / 看门狗 / 重试按钮） | ✅ **完成（2026-10-09，自检 150/150，门禁四步全绿）；待 WorkBuddy 实测** |
 | **M3** | 面板交互**远端化**：线上后端补齐 `/api/health`、`/api/move`、`/api/export`；面板改「本地优先 → 线上兜底」；`normalize_day` / `apply_day` / `plan_to_markdown` 抽成 `src/` 公共内核（Web UI 与 MCP **共用一份**） | ✅ **已上线（2026-10-09，自检 176/176，门禁四步全绿，`tripagent-planner2-80644…` /api/health=m3）；待 WorkBuddy 实测** |
+| **M4** | 🔴 修 M3 真缺陷（`webui/server.py` **零 CORS** ⇒ 跨域兜底其实没生效）+ 把自建云主机接进 `REMOTE_API_DOMAINS[0]`（`__REMOTE_API_AUTH__` 注入 Basic 头）+ `deploy/cvm` 支持 HTTPS/Basic 认证（`limit_except OPTIONS` 豁免预检） | 🟡 **代码完成并已部署**（自检：无凭据 401 / 带凭据 200 / OPTIONS 204，panel_guard 全绿）；**HTTPS 未通** —— 腾讯云境内节点**拦截未备案域名**，`*.sslip.io` 亦不可备案（见上 M4 节） |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`
 

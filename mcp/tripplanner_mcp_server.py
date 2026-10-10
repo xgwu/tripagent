@@ -41,7 +41,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.3.1-m3"
+SERVER_VERSION = "0.4.1-m4"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +50,7 @@ PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m9"
+PANEL_VERSION = "m11"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -75,12 +75,20 @@ AMAP_DOMAINS = [
 # 用户不再看到「点了没反应」。域名只需进 `connectDomains`（走 fetch/XHR）；
 # 面板并不 iframe 线上页面，故无需 frameDomains。
 REMOTE_API_DOMAINS = [
-    # 2026-10-09 部署实测：本仓库目录对应的线上应用落在 **新域名**，
-    # 且跑的是含 M3 三端点的 m3 代码（/api/health 200）；旧域名是另一个
-    # 遗留应用、仍在跑**旧代码**（/api/health 404）⇒ 必须把新域名排在首位，
-    # 否则面板兜底会探活失败、被误判为「后端不可用」。
-    "https://tripagent-planner2-80644.app.workbuddy.host",  # 线上 Web UI（新域名，m3 代码，实测 /api/health 200）
-    "https://tripagent-planner2.app.workbuddy.host",         # 旧域名（遗留应用，旧代码；保留仅作 connectDomains 放行）
+    # 2026-10-10（M4）：**自建云主机**（腾讯云 Lighthouse）作长期主站 + M3 稳定远端后端。
+    #   ⚠️ 当前是**零成本实测**阶段：直接用 **http + 公网 IP** 当远端 base，
+    #      目的是绕开 sslip 域名的「未备案拦截」（见下面第 2 条）。云主机侧配
+    #      nginx HTTP Basic 认证（凭据经 `__REMOTE_API_AUTH__` 注入面板）。
+    #   🔴 唯一未决风险＝**混合内容（Mixed Content）**：
+    #      浏览器把 `http://127.0.0.1` / `localhost` 视为 *potentially trustworthy*
+    #      （安全上下文）⇒ 在 https 页面里 fetch 它**不算**混合内容（故本地后端一直能通）；
+    #      而 `http://<公网IP>` **不享受这个豁免** ⇒ 若面板 iframe 是 https 上下文，
+    #      浏览器会把它当 **active mixed content 直接 block**（CSP 放行也拦不住）。
+    #      ⇒ 本条需宿主实测：通了＝零成本；报 Mixed Content＝实锤必须上 HTTPS。
+    "http://101.35.47.213",                                  # 🖥️ 自建云主机（IP 直连；实测中）
+    "https://101-35-47-213.sslip.io",                        # ⛔ 同一台云主机，但域名被腾讯云「未备案」拦截（保留作对照）
+    "https://tripagent-planner2-80644.app.workbuddy.host",   # CloudStudio 线上 Web UI（m3；第二远端兜底）
+    "https://tripagent-planner2.app.workbuddy.host",         # 旧域名（遗留应用，旧代码；仅作 connectDomains 放行）
 ]
 
 UI_RESOURCE_META = {
@@ -196,6 +204,43 @@ def amap_js_key() -> str:
         log("amap_js_key 读取失败（地图将不可用）", err=str(e))
     _AMAP_KEY_CACHE = key
     return key
+
+
+_REMOTE_AUTH_CACHE = None
+
+
+def remote_basic_auth() -> str:
+    """远端后端（云主机）的 HTTP Basic 认证头，形如 `Basic <base64(user:pass)>`。
+
+    取值来源：`secrets.json` 的 `remote_basic_auth`
+      - "user:pass"      → 现场 base64 成 `Basic ...`
+      - "Basic xxxx"     → 已是成品头，原样返回
+      - 缺失/为空        → 返回 ""（面板退化为「不带凭据」，线上后端若开了
+                           Basic 认证则会 401 —— 面板会如实报「后端不可达」，
+                           绝不静默。这正是我们想要的：配错要看得见）。
+    与 amap key 一样**只经占位符注入**，不落仓库。
+    """
+    global _REMOTE_AUTH_CACHE
+    if _REMOTE_AUTH_CACHE is not None:
+        return _REMOTE_AUTH_CACHE
+    val = ""
+    try:
+        with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
+            val = str((json.load(f) or {}).get("remote_basic_auth") or "").strip()
+    except Exception as e:
+        log("remote_basic_auth 读取失败（线上后端将不带凭据）", err=str(e))
+    if not val:
+        _REMOTE_AUTH_CACHE = ""
+    elif val[:6].lower() == "basic ":
+        _REMOTE_AUTH_CACHE = val
+    elif ":" in val:
+        import base64 as _b64
+        _REMOTE_AUTH_CACHE = "Basic " + _b64.b64encode(val.encode("utf-8")).decode("ascii")
+    else:
+        # 既不是成品头、又没有冒号 —— 无法组成 Basic，视为未配置（报错可见）
+        log("remote_basic_auth 格式无效（应为 user:pass）", chars=len(val))
+        _REMOTE_AUTH_CACHE = ""
+    return _REMOTE_AUTH_CACHE
 
 
 _AMAP_KEY_CACHE = None
@@ -367,6 +412,11 @@ LOCAL_API_DEFAULT_PORT = 51900          # 与 local_api.PREFERRED_PORTS 起点�
 # M3：线上后端 base（面板交互的远端兜底）。与本地 base/token 同一套「占位符不入库」手法。
 REMOTE_API_BASE_PLACEHOLDER = "__REMOTE_API_BASE__"
 REMOTE_API_DEFAULT_BASE = REMOTE_API_DOMAINS[0]
+# M4：远端后端的 **HTTP Basic 认证头**（云主机 nginx auth_basic）。
+#   面板要带凭据才访问得了线上后端 ⇒ 值由 secrets.json 的 `remote_basic_auth`
+#   （形如 "user:pass"）在 **resources/read 时注入**，仓库里永远只是占位符
+#   （与 amap key / 本地 token 同一套「凭据不入库」做法）。
+REMOTE_API_AUTH_PLACEHOLDER = "__REMOTE_API_AUTH__"
 
 
 def local_api_portfile_path() -> str:
@@ -878,10 +928,16 @@ def read_panel() -> str:
         html = html.replace(LOCAL_API_TOKEN_PLACEHOLDER, token)
         log("panel 本地 API 注入", base=base,
             has_token=bool(token), default_port=LOCAL_API_DEFAULT_PORT)
-    # M3：注入**线上后端** base（远端兜底）。它是公开地址、无 token ⇒ 注入失败也能用默认值。
+    # M3/M4：注入**线上后端** base（远端兜底）+ Basic 认证头。
+    # 它是公开地址、无 token ⇒ 注入失败也能用默认值；但凭据缺失时线上后端会被
+    # nginx 401（面板如实报「不可达」）。
     if REMOTE_API_BASE_PLACEHOLDER in html:
         html = html.replace(REMOTE_API_BASE_PLACEHOLDER, REMOTE_API_DEFAULT_BASE)
         log("panel 线上后端注入", base=REMOTE_API_DEFAULT_BASE)
+    if REMOTE_API_AUTH_PLACEHOLDER in html:
+        auth = remote_basic_auth()
+        html = html.replace(REMOTE_API_AUTH_PLACEHOLDER, auth)
+        log("panel 线上后端凭据注入", has_auth=bool(auth))
     return html
 
 

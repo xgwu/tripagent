@@ -971,8 +971,11 @@ def phase_m3_remote():
     check("CSP frameDomains 未把线上算进去（面板不 iframe 线上页面）",
           not any("workbuddy.host" in d
                   for d in srvmod.UI_RESOURCE_META["ui"]["csp"]["frameDomains"]))
-    check("server 侧有线上兜底 base 常量（https）",
-          str(srvmod.REMOTE_API_DEFAULT_BASE).startswith("https://"),
+    # 2026-10-10：M4 试验期允许 **http + 公网 IP** 当远端 base（为绕开 sslip 域名的
+    #   「未备案拦截」）⇒ 断言从「必须 https」放宽为「必须是合法 http(s) URL」。
+    #   ⚠️ 混合内容风险改由**宿主实测**把关（见 server 里 REMOTE_API_DOMAINS 注释）。
+    check("server 侧有线上兜底 base 常量（合法 http/https URL）",
+          re.match(r"https?://", str(srvmod.REMOTE_API_DEFAULT_BASE)) is not None,
           srvmod.REMOTE_API_DEFAULT_BASE)
     check("read_panel 会注入远端 base（占位符替换）",
           "REMOTE_API_BASE_PLACEHOLDER in html" in sv)
