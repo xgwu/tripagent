@@ -954,17 +954,38 @@ grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbud
 
 ### ✅ 宿主侧实测验收入口（2026-10-10 已跑通）
 
-`register.py --exe` + UI 保存（写信任）后，`mcp/check_live.py` 四项全绿：
-注册形态=exe、新指纹已信任、工具表 9 项且 `plan_trip` 描述与源码一致、宿主
-`stdio-connected` 晚于配置改动。真实调用链路（**服务方是 exe 而非源码**）：
-`dist/output/mcp_debug.log` 被创建而仓库 `output/mcp_debug.log` mtime **纹丝不动**。
-9 个工具在 exe 形态下逐个真跑：规划（杭州2天，`m7_proposal`）／回读／城市（31 城 1193 POI）
-／换点（茅家埠→满觉陇，同类目）／挪时段／导出 —— 全部正常。
+`register.py --exe` + UI 保存（写信任）后，`mcp/check_live.py` 五项全绿：
+注册形态=exe、信任状态、工具表 9 项且 `plan_trip` 描述与源码一致、宿主
+`stdio-connected` 晚于配置改动、**面板版本 = 源码 `PANEL_VERSION`**。
+真实调用链路（**服务方是 exe 而非源码**）：`dist/output/mcp_debug.log` 被创建而仓库
+`output/mcp_debug.log` mtime **纹丝不动**。9 个工具在 exe 形态下逐个真跑：
+规划（杭州2天/南京2天，`m7_proposal`）／回读／城市（31 城 1193 POI）／换点
+（茅家埠→满觉陇，同类目）／挪时段／导出 —— 全部正常。
+
+#### 🔴 判「宿主用的是哪一版面板」的**唯一**可靠判据
+
+改面板后**别**再用下面这两个（都踩过）：
+
+| 判据 | 为什么不能用 |
+|---|---|
+| server 侧 `dist/output/mcp_debug.log` 里的 `resources/read` | `log()` 只写 **stderr**（宿主吞掉），**从不落盘** ⇒ 「没有该记录＝命中缓存」是**假证据** |
+| 同一份文件的任何记录当「宿主拉起过」的证据 | `smoke_exe.py` / 手工探针**也写那里** |
+
+**真判据**：宿主自己的日志 `~/.workbuddy/logs/mcp-apps-diag.log`：
+
+```
+openHostApp.created … resourceUri=ui://tripplanner/plan-m13
+```
+
+`check_live.py` 的 `[5]` 就是读它并与源码 `PANEL_VERSION` 比对。
+实测轨迹：`15:58:03` 还是 `plan-m12` → `16:04` UI 保存后 **`16:05:35` 已请求 `plan-m13`**
+⇒ **UI 保存/重新连接会重新描述工具，uri 随之更新（不必重启）**；只有「改了 `mcp.json`
+但没让宿主重载」才会沿用旧 uri。
 
 ### ⚠️ 仍未做
 
 - **分享包尚未在别人的 WorkBuddy 里实测**（本机已以 exe 形态跑通全链路）。
-- exe 分发形态下**面板的肉眼渲染**待 Kenny 确认（HTML 已被宿主拉到，`uri` 升到 `plan-m13`）。
+- exe 分发形态下面板的**肉眼渲染**待 Kenny 确认（宿主日志已证请求的是 `plan-m13`，即新版 HTML）。
 - 高德 JS API 在宿主**双层 iframe** 内的行为仍未实测（沿用 M3 的遗留项）。
 - ⚠️ **云端 `src/md_export.py` 尚未同步**：`/api/export` 跑在云主机上，本机修好但云上仍是
   旧版 ⇒ 导出仍回「离线兜底（m7_proposal）」（2026-10-10 16:0x 实测）。需跑一次

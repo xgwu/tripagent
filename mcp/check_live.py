@@ -133,6 +133,69 @@ def wb_process_uptime() -> tuple[str, float] | tuple[None, None]:
     return None, None
 
 
+def expected_panel_uri() -> str | None:
+    """从源码 AST 取 `PANEL_VERSION`（不 import，避免副作用）。"""
+    try:
+        tree = ast.parse(open(SERVER_PY, encoding="utf-8").read())
+    except Exception:
+        return None
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(getattr(t, "id", "") == "PANEL_VERSION" for t in node.targets):
+            continue
+        if isinstance(node.value, ast.Constant):
+            return f"ui://tripplanner/plan-{node.value.value}"
+    return None
+
+
+def server_in_tool_list() -> bool:
+    """宿主已加载的工具表里有没有 `tripplanner_*`（[2] 假阳性的兜底判据）。"""
+    try:
+        data = json.load(open(TOOL_LIST, encoding="utf-8"))
+    except Exception:
+        return False
+    for v in (data.get("entries") or {}).values():
+        if any(str(t.get("name", "")).startswith(TOOL_PREFIX) for t in v):
+            return True
+    return False
+
+
+def host_panel_uri() -> tuple[str | None, float | None]:
+    """宿主**实际请求过的**面板 uri（最近一次）+ 该记录的本地时间戳。
+
+    证据来源：`~/.workbuddy/logs/mcp-apps-diag.log`，形如
+        openHostApp.created … resourceUri=ui://tripplanner/plan-m13
+
+    ⚠️ 2026-10-10 纠正：**不要**用 server 侧 `output/mcp_debug.log` 里的
+    `resources/read` 记录当判据 —— `log()` 只写 **stderr**（宿主环境吞掉），
+    **从不落盘**，那个「没有记录＝命中缓存」的推断是错的（我曾据此得出错误结论）。
+    真正的外部硬证据只有宿主这份日志。
+    """
+    path = os.path.join(LOG_DIR, "mcp-apps-diag.log")
+    if not os.path.exists(path):
+        return None, None
+    last, last_ts = None, None
+    pat = re.compile(
+        r"\[(\d{4}-\d{2}-\d{2}T[\d:.]+)Z\].*?"
+        r"resourceUri=(ui://tripplanner/plan-[A-Za-z0-9]+)")
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = pat.search(line)
+                if not m:
+                    continue
+                last = m.group(2)
+                try:
+                    dt = datetime.datetime.strptime(m.group(1)[:19], "%Y-%m-%dT%H:%M:%S")
+                    last_ts = dt.replace(tzinfo=datetime.timezone.utc).timestamp()
+                except Exception:
+                    last_ts = None
+    except Exception:
+        return None, None
+    return last, last_ts
+
+
 def main() -> int:
     verbose = "-v" in sys.argv
     problem = False
@@ -213,11 +276,19 @@ def main() -> int:
                 print(f"    指纹: {k.split('::')[0][:16]}…  "
                       f"信任于 {ts(float(v) / 1000.0)}")
             if approved_ts < mtime_reg - 1:
-                print("    ❌ 信任时间 **早于**注册表 mtime ⇒ 配置改过但没重新信任")
-                print("       表现：工具表里凭空少一项、日志一句报错都没有（静默丢弃）")
-                print("       修：连接器 → 自定义 MCP → 找到 tripplanner → 保存/信任"
-                      "（表单通道立即生效）")
-                problem = True
+                if server_in_tool_list():
+                    # 2026-10-10 实测：UI 重新保存会**无实质变更地重写** mcp.json
+                    # （mtime 前移、指纹不变）⇒ 这条「时间戳」判据会误报。
+                    # 宿主**确实已加载**它，就说明信任没问题，以 [3]/[4] 为准。
+                    print("    ℹ️ 信任时间早于注册表 mtime，但宿主**确实已加载**该 server")
+                    print("       （UI 重新保存会无实质变更地重写 mcp.json ⇒ mtime 前移、")
+                    print("        指纹不变 —— 本判据的**已知假阳性**，以 [3]/[4] 为准）")
+                else:
+                    print("    ❌ 信任时间 **早于**注册表 mtime，且工具表里没有它 ⇒ 静默丢弃")
+                    print("       表现：工具表里凭空少一项、日志一句报错都没有")
+                    print("       修：连接器 → 自定义 MCP → 找到 tripplanner → 保存/信任"
+                          "（表单通道立即生效）")
+                    problem = True
             else:
                 print(f"    ✅ 信任晚于配置改动（{ts(approved_ts)} ≥ {ts(mtime_reg)}）")
 
@@ -290,6 +361,26 @@ def main() -> int:
         print(f"    WorkBuddy 启动: {up}")
     print(f"    判据：WorkBuddy 启动时刻 **晚于** 注册表 mtime（{ts(mtime_reg)}）才算重载过。")
     print("          方案 A 表单重载（立即生效）｜ 方案 B 完全退出再启动")
+
+    # ---- 5) 宿主拿到的是哪一版「面板」 ----
+    # 改面板后**唯一有效**的判据：宿主日志里实际请求过的 resourceUri。
+    # 为什么不用别的手段：server 侧 `resources/read` 只写 stderr、不落盘（见 host_panel_uri 注释）；
+    # 且 `PANEL_VERSION` +1 只在宿主**重新描述工具**（重启）时才被采纳 —— UI 保存/重连不换 uri。
+    print("\n[5] 面板版本（宿主**实际请求过**的 uri）")
+    exp_uri = expected_panel_uri()
+    got_uri, got_ts = host_panel_uri()
+    print(f"    源码 PANEL_VERSION → {exp_uri or '?（源码里没找到）'}")
+    if got_uri is None:
+        print("    ⚠️ 宿主日志里没有记录 —— 可能从未打开过面板（先调一次 plan_trip）")
+    else:
+        print(f"    宿主最近请求       → {got_uri}" + (f"   （{ts(got_ts)}）" if got_ts else ""))
+        if exp_uri and got_uri == exp_uri:
+            print("    ✅ 一致 —— 面板已是最新版（宿主缓存已失效）")
+        elif exp_uri:
+            print("    ❌ 落后 —— 宿主用的还是**旧面板**（改了面板但宿主没重新描述）")
+            print("       修：**完全退出 WorkBuddy 再启动**")
+            print("           （UI 保存/重新连接**不换 uri** ⇒ 按 uri 缓存的旧面板不会失效）")
+            problem = True
 
     print("\n" + "=" * 68)
     print("❌ 宿主侧有问题（见上）" if problem else "🟢 宿主侧 OK：已加载当前源码版本")
