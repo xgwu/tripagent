@@ -248,6 +248,59 @@ def main() -> int:
                 bad.append(f"内容再变高应上报 5000，实际 h={sz[3].get('h')} n={sz[3].get('n')}")
             chk("高度上报行为正确（撑着长内容 / 会收回去）", not bad, "; ".join(bad)[:200])
 
+    # 3.8) hop 段不得重复渲染里程/时长 —— 同样**真跑**（2026-10-10 报障）
+    #      症状：面板出现「→ 车程 15 分钟 · 3.7km　3.7km · 15分钟」（前后各一遍）。
+    #      根因：hop 的 `name` 已经是 `src/sequencer.py::_hop_label()` 产出的
+    #            「车程 15 分钟 · 3.7km」——**自带** km 与分钟；而渲染层又拿结构化
+    #            `s.km`/`s.min` 拼了一遍。同一个坑 `src/md_export.py` 里也有一份
+    #            （已一并修）⇒ 属于「同一口径复制到多处」，必须验**行为**、不能只 grep。
+    # ⚠️ 锚点两个坑都踩过（「锚点比被测对象更危险」）：
+    #    ① 开头必须带 `var poiSeq = 0;` —— 面板里有 **4 处** `dl.forEach(function(d){`
+    #       （675/741/859/870），只写 `dl.forEach` 会命中别的块（探针报 SyntaxError / 假绿）；
+    #    ② 结尾必须用 **4 空格**的 `\n    });`（= `dl.forEach` 自己的闭合，804 行）——
+    #       写成 6 空格的 `\n      });` 会命中**内层** `(d.timeline||[]).forEach(...)` 的闭合
+    #       （792 行）⇒ 抽出的块少一层闭合、node 报 Unexpected end of input。
+    mhop = re.search(r"dl\.forEach\(function\(d\)\{\n      var poiSeq = 0;([\s\S]*?)\n    \}\);",
+                     html)
+    if not mhop:
+        chk("hop 渲染逻辑可定位（供行为验证）", False,
+            "未找到 `dl.forEach(function(d){` 渲染块")
+    else:
+        hp = os.path.join(HERE, "_hop_check.js")
+        hsrc = (
+            "var esc = function(x){ return String(x == null ? '' : x); };\n"
+            "var durText = function(){ return ''; };\n"
+            "var dayPoiIds = {};\n"
+            "function replacePoi(){}\n"      # 只在 on 字符串里出现，仍需存在
+            "var h = '';\n"
+            "var dl = [{ day: 1, theme: '西湖亲子日', travel_km: 7.7, travel_h: 0.5,\n"
+            "  finish: '19:00', timeline: [\n"
+            "    { type: 'poi', name: '断桥残雪', start: '09:00', end: '10:00', id: 'HZ01', photo: '' },\n"
+            "    { type: 'hop', name: '车程 15 分钟 · 3.7km', start: '10:00', end: '10:15',\n"
+            "      km: 3.7, min: 15 },\n"
+            "    { type: 'poi', name: '灵隐寺', start: '10:15', end: '11:15', id: 'HZ02', photo: '' } ] }];\n"
+            # body 从 `var poiSeq = 0;` **之后**开始（锚点把它消费掉了）⇒ 这里补回，
+            # 否则块内 `poiSeq++` 会 ReferenceError。
+            "dl.forEach(function(d){\n      var poiSeq = 0;" + mhop.group(1) + "\n});\n"
+            "console.log(h);\n"
+        )
+        with open(hp, "w", encoding="utf-8") as f:
+            f.write(hsrc)
+        try:
+            hr = subprocess.run([NODE, hp], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace")
+            hout = hr.stdout or ""
+        except Exception as e:                                    # noqa: BLE001
+            hout = ""
+            print(f"  (hop 探针执行失败: {e})")
+        finally:
+            if os.path.exists(hp):
+                os.remove(hp)
+        n_km = hout.count("3.7km")
+        chk("hop 行的里程只渲染一次（name 已含，不得再拼 s.km/s.min）",
+            n_km == 1 and "车程 15 分钟" in hout,
+            f"『3.7km』出现 {n_km} 次（应为 1）｜渲染片段={hout[:200]!r}")
+
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)
     js = m.group(1) if m else ""

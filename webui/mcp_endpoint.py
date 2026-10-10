@@ -1,0 +1,194 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+M5.x 原型：把 TripPlanner MCP server 搬到云端 —— `/mcp`（Streamable HTTP）端点。
+
+## 这是什么 / 为什么
+WorkBuddy 宿主「自定义 MCP」通道**本身支持远端 URL**（裸 `url` 条目＝Streamable HTTP，
+见 `.workbuddy/memory/MCP-GOTCHAS.md` 的取证链）⇒ 同一份 tripplanner server 不必走
+stdio、可由云主机提供 ⇒ 收包人**零安装**（既不装 exe 也不用上架）。
+
+本模块**只做 transport 适配**，不复制任何业务口径：
+  · 工具表 / 面板资源 / 全部处理逻辑 ⇒ 按文件路径加载 `mcp/tripplanner_mcp_server.py`
+    并复用它的 `TOOLS`、`VIEWER_URI`、`read_panel()`、`handle()`（**唯一口径**，
+    避免「工具名/描述/schema 复制两份后漂移」这条历史教训）；
+  · 业务后端 ⇒ 仍是同一个 `webui/server.py` 的 `/api/*`（`handle()` 内部 `remote_request`）。
+
+⚠️ 与既有结论一致：面板 → 宿主的 `tools/call` 在本宿主是**死的** ⇒ 面板仍**直连 `/api/*`**，
+   `/mcp` 只服务「模型侧」（initialize / tools/list / tools/call）。**云端 HTTP 拆不掉。**
+
+## Transport（MCP 2025-06-18 Streamable HTTP）最小实现
+  POST /mcp   body=JSON-RPC（单条或 batch）
+      有 id → 200 `application/json`，回单条 JSON-RPC response
+      无 id → 202 Accepted（notification，无 body）
+  GET  /mcp → **405**（本 server 不提供 SSE 流）
+      🔴 必须是 405 不是 404：@modelcontextprotocol/sdk 的 StreamableHTTPClientTransport
+      靠 405 判定「服务端不支持 standalone SSE」；回 404 会被当成「连错端点」。
+  响应头 `Mcp-Session-Id`：仅当客户端该带而未带（或首次 initialize）时下发。
+  不做 SSE 流式回包 —— 本 server 的响应都是单条、非流式，回 `application/json` 即可
+  （客户端发的 `Accept: application/json, text/event-stream` 两者都接受）。
+
+## 会话隔离（为什么必须做）
+`tripplanner_mcp_server.SESSION` 是**模块级全局**，而 `_Session.should_open_panel()`
+一旦 `opened_any=True` 就**永不再开面板**。云端是单进程多用户（`ThreadingHTTPServer`）
+⇒ 不隔离的话，第二个人**永远看不到面板**（而「面板能否渲染」正是本原型的验证目标）。
+故按 MCP 标准 `Mcp-Session-Id` 隔离：同一会话内保留「已开不再开」语义，跨会话互不影响。
+
+⚠️ 已知取舍（原型阶段）：`handle()` 读的是模块全局 `SESSION`，故「设置 SESSION + 调
+   handle」用一把 `_exec_lock` **串行**执行 —— 正确性优先。生产化应把 SESSION 传参化。
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import os
+import sys
+import threading
+import uuid
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+_SERVER_FILE = os.path.join(_ROOT, "mcp", "tripplanner_mcp_server.py")
+
+# 云端常见部署形态：`python webui/server.py` ⇒ sys.path[0] 是 webui/，不含仓库根，
+# 且 `mcp/` 没有 `__init__.py`（也不是可 import 的包）⇒ 不做 `import mcp.x`，
+# 改按**文件路径**加载，模块名带下划线前缀避免与 pip 的 `mcp` 包（Anthropic 官方包）撞名。
+_MOD_NAME = "_tripplanner_mcp_server"
+
+_server = None
+_load_lock = threading.Lock()
+
+_sessions: dict = {}
+_sess_lock = threading.Lock()
+_exec_lock = threading.Lock()
+
+MAX_SESSIONS = 64  # 简单上限，防长期运行内存单调增长
+
+
+def _load():
+    """懒加载并缓存 `mcp/tripplanner_mcp_server.py` 模块对象。"""
+    global _server
+    if _server is not None:
+        return _server
+    with _load_lock:
+        if _server is None:
+            if not os.path.isfile(_SERVER_FILE):
+                raise RuntimeError(f"找不到 MCP server 源文件：{_SERVER_FILE}")
+            spec = importlib.util.spec_from_file_location(_MOD_NAME, _SERVER_FILE)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules[_MOD_NAME] = mod
+            spec.loader.exec_module(mod)
+            _server = mod
+    return _server
+
+
+def available() -> bool:
+    """给 server.py 探活用：能不能加载 MCP server 源（`/api/health` 会带这个）。"""
+    try:
+        _load()
+        return True
+    except Exception:
+        return False
+
+
+def server_info() -> dict:
+    """面板/诊断用：远端 MCP 端点自报身份（版本闸门与 stdio 侧同一来源）。"""
+    m = _load()
+    return {
+        "name": m.SERVER_NAME,
+        "version": m.SERVER_VERSION,
+        "panel_version": m.PANEL_VERSION,
+        "viewer_uri": m.VIEWER_URI,
+        "tools": len(m.TOOLS),
+    }
+
+
+def _new_session() -> tuple:
+    m = _load()
+    sid = uuid.uuid4().hex
+    with _sess_lock:
+        _sessions[sid] = m._Session()
+        if len(_sessions) > MAX_SESSIONS:
+            for k in list(_sessions.keys())[: len(_sessions) - MAX_SESSIONS // 2]:
+                if k != sid:
+                    _sessions.pop(k, None)
+    return sid, _sessions[sid]
+
+
+def _ensure_session(sid_hint):
+    """返回 `(sid, session_obj)`；`sid_hint` 为空或未知 → 新建。"""
+    with _sess_lock:
+        s = _sessions.get(sid_hint or "")
+    if s is not None:
+        return sid_hint, s
+    return _new_session()
+
+
+def drop_session(sid: str) -> bool:
+    """客户端 `DELETE /mcp`（terminateSession）时清会话。幂等，返回是否真的删掉了一个。"""
+    if not sid:
+        return False
+    with _sess_lock:
+        return _sessions.pop(sid, None) is not None
+
+
+def _error(id_, code: int, message: str, status: int = 200) -> dict:
+    body = json.dumps({"jsonrpc": "2.0", "id": id_,
+                       "error": {"code": code, "message": message}},
+                      ensure_ascii=False).encode("utf-8")
+    return {"status": status, "session_id": None, "body": body}
+
+
+def _handle_one(msg, sid_hint: str | None, out: dict):
+    """处理一条 JSON-RPC 消息，返回 response dict 或 None（notification）。"""
+    if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or "method" not in msg:
+        return {"jsonrpc": "2.0", "id": (msg or {}).get("id") if isinstance(msg, dict) else None,
+                "error": {"code": -32600, "message": "Invalid Request"}}
+
+    m = _load()
+    method = msg.get("method")
+
+    # initialize 一律新建会话（spec：initialize 不该带 session 头）；
+    # 其余方法用客户端带来的 sid，未知则新建（宽松，避免 SDK 重连时卡死）。
+    sid, sess = _new_session() if method == "initialize" else _ensure_session(sid_hint)
+    if method == "initialize" or sid != (sid_hint or ""):
+        out["session_id"] = sid
+
+    with _exec_lock:  # 见模块 docstring 的「已知取舍」
+        m.SESSION = sess
+        return m.handle(msg)
+
+
+def dispatch(body: bytes, sid_hint: str | None = None) -> dict:
+    """处理一次 POST /mcp。
+
+    入参：原始请求体字节、请求头里的 `Mcp-Session-Id`（可空）。
+    返回：`{"status": int, "session_id": str|None, "body": bytes}` ——
+          由 `webui/server.py` 负责写回 HTTP（本模块不碰 socket，便于直接单测）。
+    """
+    try:
+        _load()
+    except Exception as e:  # noqa: BLE001 —— 加载失败要能说清原因，不能静默 500
+        return _error(None, -32603, f"MCP server 源加载失败：{e}", status=500)
+
+    try:
+        msg = json.loads(body.decode("utf-8")) if body else None
+    except Exception:  # noqa: BLE001 —— JSON 解析失败是客户端问题，按 JSON-RPC 规矩回 -32700
+        return _error(None, -32700, "Parse error", status=400)
+
+    if msg is None or (isinstance(msg, list) and not msg):
+        return _error(None, -32600, "Invalid Request", status=400)
+
+    out: dict = {}
+    if isinstance(msg, list):  # batch：逐条处理，notification 不产生响应
+        resps = [r for r in (_handle_one(x, sid_hint, out) for x in msg) if r is not None]
+        if not resps:
+            return {"status": 202, "session_id": out.get("session_id"), "body": b""}
+        return {"status": 200, "session_id": out.get("session_id"),
+                "body": json.dumps(resps, ensure_ascii=False).encode("utf-8")}
+
+    resp = _handle_one(msg, sid_hint, out)
+    if resp is None:  # notification → 202 无 body
+        return {"status": 202, "session_id": out.get("session_id"), "body": b""}
+    return {"status": 200, "session_id": out.get("session_id"),
+            "body": json.dumps(resp, ensure_ascii=False).encode("utf-8")}

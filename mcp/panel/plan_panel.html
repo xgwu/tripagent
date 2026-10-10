@@ -776,11 +776,10 @@
             + 'onload="photoOk()" onerror="photoFail(this)">';
         }
         h += '<span class="body"><span class="nm">' + icon + " " + esc(s.name) + '</span>';
-        if (cls === "hop" && (s.km || s.min)){
-          h += '<span class="hopx" style="color:#666e78;font-size:11.5px">　'
-            + (s.km != null ? s.km + "km" : "") + (s.min != null ? " · " + s.min + "分钟" : "")
-            + '</span>';
-        }
+        // ⚠️ 不要在这里再拼 s.km / s.min —— hop 的 name 已经是
+        //    `sequencer._hop_label()` 产出的「车程 15 分钟 · 3.7km」，再拼一次就是
+        //    「车程 15 分钟 · 3.7km　3.7km · 15分钟」（2026-10-10 报障）。
+        //    数据源唯一：src/sequencer.py::_hop_label()。守卫见 mcp/panel_guard.py。
         h += '</span>';
         if (isPoi){
           h += '<span class="rowact">'

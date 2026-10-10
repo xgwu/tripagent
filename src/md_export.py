@@ -109,13 +109,11 @@ def plan_to_markdown(plan: dict) -> str:
                 span = f"`{s.get('start')}–{s.get('end')}`"
             name = s.get("name") or ""
             if t == "hop":
-                extra = []
-                if s.get("km") is not None:
-                    extra.append(f"{s['km']} km")
-                if s.get("min") is not None:
-                    extra.append(f"{s['min']} 分钟")
-                md.append(f"- {span} {icon} 前往 {name}"
-                          + (f"（{' · '.join(extra)}）" if extra else ""))
+                # ⚠️ hop 的 name 已含「车程 15 分钟 · 3.7km」（src/sequencer.py::_hop_label），
+                #    不要再拼 s.km / s.min —— 否则会导出成
+                #    「→ 前往 车程 15 分钟 · 3.7km（3.7 km · 15 分钟）」重复显示。
+                #    与 MCP 面板是同一个坑（2026-10-10 报障，两处一起修）。
+                md.append(f"- {span} {icon} {name}")
             else:
                 dur = _dur_text(s.get("start"), s.get("end")) if t in ("poi", "meal") else ""
                 md.append(f"- {span} {icon} **{name}**" + (f"（{dur}）" if dur else ""))

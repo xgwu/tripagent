@@ -1037,10 +1037,11 @@ window.parent.postMessage({ jsonrpc: "2.0",
 
 ### 版本
 
-`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m14**、`WEBUI_VERSION` → **m5**、
-`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标与**高度上报**
-的行为验证）、`mcp/selftest.py`（213 项）、`mcp/smoke_exe.py`（17 项，断言共用 `bundle_check.py`）、
-`mcp/build_bundle.py`（跨平台出包 + `--self-check` 铺包自检 + 冒烟）、`mcp/check_orphans.py`、
+`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m15**、`WEBUI_VERSION` → **m6**、
+`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标、**高度上报**与
+**hop 里程不重复**的行为验证）、`mcp/selftest.py`（213 项）、`mcp/smoke_exe.py`（17 项，断言共用
+`bundle_check.py`）、`mcp/build_bundle.py`（跨平台出包 + `--self-check` 铺包自检 + 冒烟）、
+`scripts/release_gate.py`（本地五步门禁，CI 也跑这条）、`mcp/check_orphans.py`、
 `mcp/check_live.py`（宿主侧实况）、`mcp/bundle_redteam.py`（证明自检可被击穿，**手动跑**）。
 
 ### ✅ 宿主侧实测验收入口（2026-10-10 已跑通）
@@ -1076,7 +1077,10 @@ openHostApp.created … resourceUri=ui://tripplanner/plan-m13
 ### ⚠️ 仍未做
 
 - **分享包尚未在别人的 WorkBuddy 里实测**（本机已以 exe 形态跑通全链路）。
-- **面板高度上报（M6）待肉眼确认**：宿主日志只能证「请求了 `plan-m14`」，采纳与否要看
+- **云端 `/mcp`（Streamable HTTP）待宿主侧实测**：端点已上线（`http://101.35.47.213/mcp`，
+  21/21 + 端到端规划实测通过），本机 `mcp.json` 已加 `tripplanner-http` 测试条目（未写信任）
+  ⇒ 待 UI 点信任后确认「宿主能否列出 9 工具」+「`ui://` 面板在远端 transport 下能否渲染」。
+- **面板高度上报（M6）待肉眼确认**：宿主日志只能证「请求了 `plan-m15`」，采纳与否要看
   「协议诊断 → 面板尺寸」那行的**视口 vs 内容**。若视口仍明显小于内容 ⇒ 宿主没采纳，
   得改用别的办法（例如把地图卡折叠）。
 - 高德 JS API 在宿主**双层 iframe** 内的行为仍未实测（沿用 M3 的遗留项）。
@@ -1444,6 +1448,33 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M3** | 面板交互**远端化**：线上后端补齐 `/api/health`、`/api/move`、`/api/export`；面板改「本地优先 → 线上兜底」；`normalize_day` / `apply_day` / `plan_to_markdown` 抽成 `src/` 公共内核（Web UI 与 MCP **共用一份**） | ✅ **已上线（2026-10-09，自检 176/176，门禁四步全绿，`tripagent-planner2-80644…` /api/health=m3）；待 WorkBuddy 实测** |
 | **M4** | 🔴 修 M3 真缺陷（`webui/server.py` **零 CORS** ⇒ 跨域兜底其实没生效）+ 把自建云主机接进 `REMOTE_API_DOMAINS[0]`（`__REMOTE_API_AUTH__` 注入 Basic 头）+ `deploy/cvm` 支持 HTTPS/Basic 认证（`limit_except OPTIONS` 豁免预检） | 🟡 **代码完成并已部署**（自检：无凭据 401 / 带凭据 200 / OPTIONS 204，panel_guard 全绿）；**HTTPS 未通** —— 腾讯云境内节点**拦截未备案域名**，`*.sslip.io` 亦不可备案（见上 M4 节）。后经实测判定**域名/HTTPS 均非必需**（面板是 http 上下文，无混合内容问题）⇒ 改用 `http://101.35.47.213` 直连 |
 | **M5** | **瘦客户端 + 单文件 exe**：删掉本地服务（`local_api.py` 整块下线），server 退化为纯标准库代理（规划/换点/挪时段/导出全走云端）；云端 `shape=mcp` 归一化 + `strict_city=1` + `/api/replace` 补归一化；`build_exe.py` 打出 8 MB 零依赖 exe（`remote.json` 随包分发 Basic 凭据）；`smoke_exe.py` 对产物冒烟；新增 `check_orphans.py` 守门 | ✅ **完成（2026-10-10）** —— 自检 **206/206**、面板守卫全绿、打包冒烟 **17/17**、`release_gate.py` 五步全绿；**待 WorkBuddy 内实测分享包** |
+| **M5.1** | **跨平台出包**：`build_bundle.py --target win\|mac\|linux` + 共用断言 `bundle_check.py` + 铺包自检 `--self-check`（并入 `release_gate --mcp`）+ 红队 `bundle_redteam.py` | ✅ **完成（2026-10-10）** |
+| **M6** | **面板高度上报**：面板主动发 `ui/notifications/size-changed` 让宿主把 iframe 撑到内容高度（内容长不再出滚动条）；`__PANEL_VERSION__` 占位符注入（修「面板里写死 v=m12 后静默过期」） | ✅ **完成（2026-10-10，`PANEL_VERSION` m14）**；待肉眼确认视口≈内容 |
+| **M5.x** | **云端 `/mcp`（Streamable HTTP）**：把 `/api/*` 薄包一层 MCP 协议 ⇒ 「零安装 + 不上架」分享路线 A 的原型。**复用同一份 `mcp/tripplanner_mcp_server.py`**（importlib 按路径加载，不复制口径）；`webui/mcp_endpoint.py` + `webui/server.py` 挂路由 | ✅ **端点已上线并实测**（本地/公网各 **21/21**，云端 `plan_trip` 10.5s 出真实行程）；**待宿主侧实测**（UI 点信任 → 9 工具 + 面板渲染） |
+| **M6.1** | 🐞 **修 hop 段里程/时长重复显示**（报障：「→ 车程 15 分钟 · 3.7km　3.7km · 15分钟」）：hop 的 `name` 已由 `sequencer._hop_label()` 自带 km+分钟，而**面板与导出两处**又各拼了一遍 | ✅ **完成（2026-10-10，`PANEL_VERSION` m15）** —— 面板新增**行为守卫**（node 真跑渲染）+ 新单测 `test_hop_label_no_dup.py`；红队证明守卫可被打红 |
+
+### 🐞 缺陷记录：hop 段里程/时长重复（2026-10-10 报障，`PANEL_VERSION` m15 修）
+
+**症状**：面板时间轴上出现「→ 车程 15 分钟 · 3.7km　3.7km · 15分钟」（前后各一遍）。
+
+**根因**：hop 的 `name` 已经是 `src/sequencer.py::_hop_label()` 产出的
+「车程 15 分钟 · 3.7km」——**自带**出行方式 + 分钟 + 公里；而**两个消费方又各拼了一遍**
+结构化 `s.km` / `s.min`：
+- `mcp/panel/plan_panel.html`（面板，那段 `.hopx`）
+- `src/md_export.py`（导出 Markdown，`前往 {name}（{km} · {min}）`）
+
+**修法**：两处都删掉冗余拼接，**只信 `name`**（`km`/`min` 字段保留供将来用，但不再渲染）。
+
+**守卫（防回归；两条都必须能被打红）**：
+- `mcp/panel_guard.py` **3.8**：node **真跑**渲染，喂一天含 hop 的数据，断言 `3.7km` 只出现 **1** 次。
+- `scripts/test_hop_label_no_dup.py`：钉两条不变式 —— ① `_hop_label()` 输出**必含** km 与分钟
+  （否则「渲染层不再自己拼」会直接丢信息）；② 导出的 hop 行里里程数值只出现一次。
+
+**⚠️ 写守卫本身踩的坑（属「锚点比被测对象更危险」）**：抽 JS 块的锚点第一次写太松 ——
+① 开头只写 `dl.forEach(function(d){`，而面板里有 **4 处**同名（675/741/859/870）⇒ 命中错块、探针跑不出结果；
+② 结尾写 **6 空格**的 `\n      });`，命中的是**内层** `(d.timeline||[]).forEach(...)` 的闭合 ⇒
+抽出的块少一层闭合、node 报 `Unexpected end of input`。
+最终锚点 = `dl.forEach(function(d){\n      var poiSeq = 0;` … `\n    });`（**4 空格**，= `dl.forEach` 自己的闭合）。
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`
 

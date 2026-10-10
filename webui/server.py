@@ -31,6 +31,16 @@ from src import intercity  # 城际转移段：跨城驾车时长（travel_cache
 from src import plan_view  # 行程视图：归一化 / 写回
 from src import md_export  # 行程 → Markdown
 
+# M5.x 原型：云端 MCP 端点（`POST /mcp`，Streamable HTTP）——把本服务的 /api/* 薄包一层
+# MCP 协议，让宿主「自定义 MCP」用**远端 URL** 直连（零安装分享的验证件）。
+# 按**文件路径**加载：`python webui/server.py`（sys.path[0]=webui/）与
+# `from webui import server`（webui/ 不在 path）两种入口都能工作，也不污染 sys.path。
+import importlib.util as _ilu
+_mcp_ep_spec = _ilu.spec_from_file_location(
+    "webui_mcp_endpoint", os.path.join(ROOT, "webui", "mcp_endpoint.py"))
+mcp_endpoint = _ilu.module_from_spec(_mcp_ep_spec)
+_mcp_ep_spec.loader.exec_module(mcp_endpoint)
+
 # ---- 直连 opener：本机代理会拦截外网 API，urllib 需显式绕过 ----
 _NO_PROXY_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
@@ -42,7 +52,10 @@ CFG: dict = {}
 # 本服务的版本标识 —— `GET /api/health` 把它回给面板，用于明确「线上跑的是哪一版」。
 # m4（2026-10-10）：补 CORS（面板跨域 fetch 远端后端的前提）+ OPTIONS 预检；
 #   云主机接入 M3 远端后端（HTTPS + nginx Basic 认证）。
-WEBUI_VERSION = "m5"
+# m6（2026-10-10）：新增 `POST /mcp`（云端 MCP 端点，Streamable HTTP）——
+#   把 /api/* 薄包一层 MCP 协议，供宿主「自定义 MCP」以远端 URL 直连（零安装分享原型）。
+#   ⚠️ `mcp/selftest.py` 会比对「云端 /api/health 的 version」与源码 ⇒ 改这里必须同步部署。
+WEBUI_VERSION = "m6"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -1504,6 +1517,50 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # ---- M5.x：云端 MCP 端点（Streamable HTTP）----
+    # 为什么把 transport 适配放进独立模块：工具表 / 面板资源 / 处理逻辑**复用** stdio 侧
+    # 同一份 `mcp/tripplanner_mcp_server.py`（唯一口径，避免复制后漂移）；这里只做 HTTP 搬运。
+    def _mcp(self):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = 0
+        body = self.rfile.read(n) if 0 < n <= 4_000_000 else b""
+        try:
+            res = mcp_endpoint.dispatch(body, self.headers.get("Mcp-Session-Id") or None)
+        except Exception as e:  # noqa: BLE001 —— 端点异常要如实回 JSON-RPC error，不能断连
+            res = {"status": 500, "session_id": None, "body": json.dumps(
+                {"jsonrpc": "2.0", "id": None,
+                 "error": {"code": -32603,
+                           "message": f"internal error: {type(e).__name__}: {e}"}},
+                ensure_ascii=False).encode("utf-8")}
+        payload = res.get("body") or b""
+        self.send_response(res.get("status") or 200)
+        # MCP 走 JSON（非 SSE）：客户端发的 `Accept: application/json, text/event-stream` 两者都收。
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(payload)))
+        if res.get("session_id"):  # 仅「该带而未带」时下发，见 mcp_endpoint.dispatch 的说明
+            self.send_header("Mcp-Session-Id", res["session_id"])
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE")
+        self.send_header("Access-Control-Allow-Headers",
+                         "Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
+        if payload:
+            self.wfile.write(payload)
+
+    def do_DELETE(self):
+        # MCP 客户端 `terminateSession` 会发 `DELETE /mcp`：清掉该会话对象即可（幂等回 204）。
+        u = urllib.parse.urlparse(self.path)
+        if u.path != "/mcp":
+            return self._json({"error": "not found"}, code=404)
+        mcp_endpoint.drop_session(self.headers.get("Mcp-Session-Id") or "")
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self._cors()
+        self.end_headers()
+
     def _html(self, path: str):
         try:
             with open(path, "rb") as f:
@@ -1520,11 +1577,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
+        # 🔴 MCP Streamable HTTP 的 GET ＝「打开 standalone SSE 流」，本端点**不提供**。
+        #   必须回 **405**（不是 404）：@modelcontextprotocol/sdk 的
+        #   StreamableHTTPClientTransport 靠 405 判定「服务端不开 SSE 流」并继续走 POST；
+        #   回 404 会被当成「端点不存在」而直接报连不上。
+        if u.path == "/mcp":
+            return self._json(
+                {"error": "MCP endpoint is POST-only (no standalone SSE stream)"}, code=405)
         if u.path == "/" or u.path == "/index.html":
             return self._html(os.path.join(WEBUI_DIR, "index.html"))
         if u.path == "/api/health":  # 面板后端探活端点（只回版本/时间，不泄露任何数据）
             return self._json({"ok": True, "server": "tripagent-webui",
                                "version": WEBUI_VERSION, "stage": "M5",
+                               # M5.x：云端 MCP 端点（/mcp）是否可用（只回布尔，不带业务数据）
+                               "mcp_remote": mcp_endpoint.available(),
                                "ts": int(time.time())})
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
@@ -1868,6 +1934,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
+        # M5.x：云端 MCP 端点（Streamable HTTP）——实现全在 webui/mcp_endpoint.py
+        if u.path == "/mcp":
+            return self._mcp()
         if u.path == "/api/log":  # M5：面板动作轨迹（面板改走线上后，落点搬到云端）
             try:
                 n = int(self.headers.get("Content-Length") or 0)
