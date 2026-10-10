@@ -123,13 +123,13 @@
     <div class="row"><span class="k">页面路径</span><span class="v" id="diag3">—</span></div>
     <div class="row"><span class="k">照片加载</span><span class="v" id="diagPhoto">—</span></div>
     <div class="row"><span class="k">地图状态</span><span class="v" id="diagMap">—</span></div>
-    <div class="row"><span class="k">本地 API</span><span class="v" id="diagApi">—</span></div>
+    <div class="row"><span class="k">线上后端</span><span class="v" id="diagApi">—</span></div>
     <div class="btns">
       <button class="primary" id="btnProbe" onclick="probe()">探测桥接</button>
       <button id="btnPing" onclick="callPing()" disabled>调 tripplanner_ping</button>
       <button id="btnReload" onclick="loadPlan()" disabled>重新拉取行程</button>
       <button id="btnMapRetry" onclick="retryMap()" disabled>重试地图</button>
-      <button id="btnApi" onclick="retryApi()">测试本地 API / 重试</button>
+      <button id="btnApi" onclick="retryApi()">测试后端 / 重试</button>
     </div>
     <div class="row" style="margin-top:6px"><span class="k">ping 回显</span><span class="v" id="echo">—</span></div>
   </div>
@@ -160,31 +160,30 @@
   var amapKey = "__AMAP_JS_KEY__";   // server 在 resources/read 时注入；未配置则保持占位符
   var amapObj = null, amapLoading = false, mapDay = 1;
 
-  // ---------------- M2.1：本地 HTTP API ----------------
-  // 为什么不用宿主的 tools/call（2026-10-09 取证的结论，不是猜）：
-  //   宿主 mcp-apps-diag.log 里**有** rpc.callTool / proxyAppToolCall.ok，
-  //   但请求**从未到达 MCP server**（服务端日志无记录、mcp_last_plan.json 未改写、
-  //   12ms 假成功、返回体恒为 textLen=43 且 structuredContentKeys=[]，
-  //   而面板里点 ping 是 10s 超时）。
-  // ⇒ 交互改走 127.0.0.1 的本地 HTTP（宿主 CSP 的 connectDomains 已放行
-  //   http://127.0.0.1:*）。宿主通道保留为兜底，并**如实显示**走的是哪条。
-  // M3：**双后端** —— 本地（127.0.0.1，快、可离线）优先；线上（已部署的 Web UI）兜底。
-  // 为什么必须有线上兜底：本地常驻进程会被宿主 job 连坐回收（M2.3 只做到「可判定 +
-  // 自愈」，根治需外部代理）。回收窗口内用户看到的就是「点了没反应」。有了远端兜底，
-  // 本地一死交互自动落到线上后端（线上无会话状态、入参自包含），用户几乎无感。
-  var API_BASE = "__LOCAL_API_BASE__";
-  var API_TOKEN = "__LOCAL_API_TOKEN__";
-  if (!API_BASE || API_BASE.indexOf("__LOCAL") === 0) API_BASE = "http://127.0.0.1:51900";
-  if (!API_TOKEN || API_TOKEN.indexOf("__LOCAL") === 0) API_TOKEN = "";
+  // ---------------- M5：后端**全走线上** ----------------
+  // 为什么不再用本地服务（历史结论，留档避免走回头路）：
+  //   ① 宿主的 tools/call 通道在本机是**死的**（2026-10-09 取证：有 rpc.callTool /
+  //      proxyAppToolCall.ok，但请求从未到达 MCP server，12ms 假成功，textLen 恒 43）。
+  //   ② 于是 M2 起了 127.0.0.1 的本地 HTTP(local_api) 兜底、M3 又加了线上兜底。
+  //   ③ 但 MCP App 要**打包分享**给他人，而 MCP server 跑在**对方机器**上 —— 若规划
+  //      留本地，对方就得装 Python + ortools + 2.6M 数据 + 自备 API Key。全走线上后
+  //      对方零依赖，所以 M5 起本地服务整个下线，只留线上后端这一条路。
+  // 云端地址 / Basic 凭据由 server 从 remote.json 注入（仓库里只留占位符，凭据不入库）。
   var REMOTE_BASE = "__REMOTE_API_BASE__";           // server 在 resources/read 时注入
   if (!REMOTE_BASE || REMOTE_BASE.indexOf("__REMOTE") === 0) REMOTE_BASE = "";
   REMOTE_BASE = REMOTE_BASE.replace(/\/+$/, "");
-  // M4：线上后端（云主机）的 HTTP Basic 认证头，同样由 server 注入（仓库里只留占位符）。
+  // 云主机 nginx 开了 HTTP Basic 认证 ⇒ 每个请求都要带 Authorization 头。
   var REMOTE_AUTH = "__REMOTE_API_AUTH__";
   if (!REMOTE_AUTH || REMOTE_AUTH.indexOf("__REMOTE") === 0) REMOTE_AUTH = "";
+  // 云端**无状态**（入参自包含，天然支持多用户并发）⇒「我这份行程现在是什么」
+  // 需要一把钥匙：session id 由 server 生成并落盘，plan / move / replace / 拉行程
+  // 全程带着它，云端据此记住「本会话的当前行程」。
+  var SESSION_ID = "__SESSION_ID__";
+  if (!SESSION_ID || SESSION_ID.indexOf("__SESSION") === 0) SESSION_ID = "";
+  // 冷启动兜底：server 渲染时注入的当前行程（云端会话过期 / 首次加载时用）。
+  var PLAN_SEED = __PLAN_JSON__;
 
-  var BACKENDS = [{ name: "本地", base: API_BASE, token: API_TOKEN }];
-  // auth = 远端后端要带的 Authorization 头（本地后端无）；两后端形态统一走 httpJsonOn
+  var BACKENDS = [];
   if (REMOTE_BASE) BACKENDS.push({ name: "线上", base: REMOTE_BASE, token: "", auth: REMOTE_AUTH });
 
   var apiBk = null;              // 当前选中的后端（探活后确定）
@@ -242,7 +241,7 @@
     });
   }
 
-  // ---------------- M2.1/2.2：本地 API 客户端 ----------------
+  // ---------------- M2.1/2.2：后端 HTTP 客户端 ----------------
   function showAlert(msg, ok){
     var el = document.getElementById("alert");
     if (!el) return;
@@ -260,27 +259,17 @@
     var badge = document.getElementById("chan");
     var text;
     if (apiMode === "http"){
-      var via = apiBk ? apiBk.name : "本地";
-      if (via === "线上"){
-        text = "✅ 已切到**线上后端** " + (apiBk ? apiBk.base : "")
-          + "（本地服务不可用 —— 交互照常，走线上）"
-          + (apiInfo && apiInfo.version ? "　v" + apiInfo.version : "");
-        if (badge){ badge.textContent = "线上后端"; badge.className = "badge b-blue"; }
-      } else {
-        text = "✅ 本地 API 可用　" + API_BASE
-          + (apiInfo ? "（pid=" + apiInfo.pid + " / v" + apiInfo.version + "）" : "")
-          + (API_TOKEN ? "" : "　⚠ 未注入 token");
-        if (badge){ badge.textContent = "本地服务就绪"; badge.className = "badge b-ok"; }
-      }
+      text = "✅ 已连上**线上后端** " + (apiBk ? apiBk.base : "")
+        + (apiInfo && apiInfo.version ? "（v" + apiInfo.version + "）" : "")
+        + (SESSION_ID ? "　会话 " + SESSION_ID.slice(0, 6) : "　⚠ 未注入 session");
+      if (badge){ badge.textContent = "线上后端"; badge.className = "badge b-blue"; }
     } else if (apiMode === "down"){
-      text = "⚠ 本地与线上后端均不可达：" + (apiErr || "连接失败")
-        + (REMOTE_BASE ? "　线上：" + REMOTE_BASE : "　（未配置线上兜底）")
-        + "　→ 换点/拖拽/导出暂不可用";
-      if (badge){ badge.textContent = "后端均不可用"; badge.className = "badge b-bad"; }
+      text = "⚠ 线上后端不可达：" + (apiErr || "连接失败")
+        + (REMOTE_BASE ? "　→ 换点 / 拖拽 / 导出暂不可用" : "　（未注入后端地址）");
+      if (badge){ badge.textContent = "后端不可用"; badge.className = "badge b-bad"; }
     } else if (apiMode === "host"){
-      text = "⚠ 本地 API 不可用：" + apiErr
-        + "　→ 已回落宿主 tools/call（该通道在本机已实测不通）";
-      if (badge){ badge.textContent = "回落宿主通道"; badge.className = "badge b-bad"; }
+      text = "⚠ 线上后端不可用：" + apiErr + "　→ 面板交互暂不可用";
+      if (badge){ badge.textContent = "后端不可用"; badge.className = "badge b-bad"; }
     } else {
       text = "未探测";
       if (badge){ badge.textContent = "通道未探测"; badge.className = "badge b-idle"; }
@@ -340,7 +329,7 @@
             function(e){ clearTimeout(timer); throw e; });
   }
 
-  // 便捷封装：对「当前后端」（未选定时用第一个 = 本地）发请求 —— trace / 旁路用
+  // 便捷封装：对「当前后端」发请求 —— trace / 旁路用
   function httpJson(path, body, method){
     return httpJsonOn(apiBk || BACKENDS[0], path, body, method);
   }
@@ -356,21 +345,10 @@
   }
 
   var reviveTried = false;
-  // 自愈尝试（尽力而为，不阻塞报错）：请宿主重新读一次面板资源 / 列一次工具。
-  // server 侧的 `handle()` **总入口**挂着 ensure_local_api() ⇒ 只要宿主把这些请求
-  // 代理到 MCP server，就等于**远程重启本地服务**。
-  // 宿主是否代理未经实测（app→server 的 tools/call 本来就是死的），所以这里只
-  // 「试一下、不等待结果」，失败只写日志 —— 零成本，成了就是全自动自愈。
+  // M5：本地常驻服务已**下线**，「请宿主唤醒本地服务」这套自愈随之作废 ——
+  // 后端在云端，不存在「被宿主回收」这回事。保留空实现仅为兼容既有调用点。
   function reviveViaHostBestEffort(){
-    if (reviveTried) return;
     reviveTried = true;
-    request("resources/read", { uri: "ui://tripplanner/plan" })
-      .then(function(){ log("!", "已请宿主重读面板资源（server 侧会顺带确保本地服务在跑）"); })
-      ["catch"](function(e){ log("!", "重读资源失败（预期内）：" + e.message); });
-    // tools/list 是只读且幂等的，不会打乱宿主状态（比再发一次 initialize 安全）。
-    request("tools/list", {})
-      .then(function(){ log("!", "tools/list 有回包（宿主代理了这条，服务应已被唤醒）"); })
-      ["catch"](function(e){ log("!", "tools/list 无回包（预期内）：" + e.message); });
   }
 
   // 廉价探活：仅当「上次不是健康态」或「距上次探活 >20s」才真的打请求。
@@ -384,18 +362,15 @@
     setDiagApi();
   }
 
-  // 选后端：20s 内探活过且未被排除 → 直接用；否则按顺序探活（**本地优先**）。
-  // 探活不抛异常（返回 null 交给调用方决定怎么报错），单后端失败立即试下一个。
+  // 选后端：20s 内探活过 → 直接用；否则探活。
+  // M5 起只剩**一个**后端（线上），但这里仍按「列表」写 —— 日后加备用后端不必改结构。
   function pickBackend(localOnly, tried){
     tried = tried || {};
     var now = Date.now();
-    if (apiBk && !tried[apiBk.name] && (now - lastProbeAt) < 20000
-        && (!localOnly || apiBk.name === "本地")){
+    if (apiBk && !tried[apiBk.name] && (now - lastProbeAt) < 20000){
       return Promise.resolve(apiBk);
     }
-    var list = BACKENDS.filter(function(b){
-      return !tried[b.name] && (!localOnly || b.name === "本地");
-    });
+    var list = BACKENDS.filter(function(b){ return !tried[b.name]; });
     var i = 0;
     return new Promise(function(resolve){
       (function next(){
@@ -445,10 +420,11 @@
     });
   }
 
-  // 统一入口：**多后端**（本地优先 → 线上兜底）。
+  // 统一入口：对所有后端依次尝试（M5 只剩「线上」一个）。
   // ⚠️ 失败**不再**静默回落到已知不通的宿主通道（那只会换来 10s 静默等待）。
   //    顺序：探活选出可用后端 → 发请求；连接级失败 ⇒ 排除该后端、换下一个再试。
-  //    `opts.localOnly` 用于「只有本地才有语义」的调用（如从本地磁盘状态拉行程）。
+  //    `opts.localOnly` 自 M5 起**已无语义**（没有本地后端了），保留参数仅为兼容调用点：
+  //    它现在只影响「失败时要不要刷红色横幅」（拉行程失败属预期内，温和处理）。
   function apiCall(path, toolName, args, method, opts){
     opts = opts || {};
     var tried = {};
@@ -459,14 +435,14 @@
       return false;
     }
     function attempt(){
-      return pickBackend(!!opts.localOnly, tried).then(function(bk){
+      return pickBackend(false, tried).then(function(bk){
         if (!bk){
-          throw new Error(opts.localOnly ? "本地服务不可用" : "本地与线上后端都不可用");
+          throw new Error("线上后端不可用");
         }
         tried[bk.name] = true;
         apiBk = bk; apiMode = "http"; setDiagApi();
         return httpJsonOn(bk, path, args, method)["catch"](function(e){
-          if (!opts.localOnly && hasUntried() && retriable(e.message)){
+          if (hasUntried() && retriable(e.message)){
             log("!", "调用失败，切下一后端（" + bk.name + " · " + e.message + "）");
             return attempt();
           }
@@ -477,13 +453,12 @@
     return attempt()["catch"](function(e){
       log("!", "apiCall 失败 " + path + "：" + e.message);
       if (opts.localOnly){
-        // 本地不可用是**预期内**的（宿主回收常驻进程）——不刷红色横幅，交调用方温和处理。
+        // 「拉行程」失败是**预期内**的（会话过期 / 后端冷启动）——不刷红色横幅。
         return Promise.reject(e);
       }
       apiMode = "down"; apiErr = e.message; setDiagApi();
       showAlert("⚠ 操作失败：" + e.message + "\n"
-        + "· 本地服务可能被宿主回收了 —— 对助手说一句话（如「刷新行程」）即可唤醒；\n"
-        + "· 线上后端：" + (REMOTE_BASE || "未配置（编译时未注入 __REMOTE_API_BASE__）")
+        + "· 后端：" + (REMOTE_BASE || "未注入（remote.json 缺少 base）")
         + "（若正在冷启动，稍等几秒再点一次）。");
       throw e;
     });
@@ -508,9 +483,8 @@
       if (lastHealthy !== false && !apiWaiting){
         apiBk = null;                     // 下次操作重新选后端（有线上兜底 ⇒ 不会卡死）
         apiMode = "down"; apiErr = e.message; setDiagApi();
-        showAlert("⚠ " + bk.name + "后端已停止（" + e.message + "）—— 下次操作会自动切到另一后端。\n"
-          + "· 本地被回收时：对助手说一句话（例如「刷新行程」）即可唤醒；\n"
-          + "· 线上冷启动通常几秒，稍等即可。");
+        showAlert("⚠ " + bk.name + "后端不可达（" + e.message + "）—— 下次操作会自动重试。\n"
+          + "· 云端冷启动通常几秒，稍等即可；若持续失败，检查 remote.json 的 base 与凭据。");
         trace("api.down", bk.name + ":" + e.message);
       }
       lastHealthy = false;
@@ -531,12 +505,12 @@
         return true;
       }
       apiMode = "down"; apiErr = "无可用后端"; setDiagApi();
-      log("!", "无可用后端（本地与线上都不可达）");
+      log("!", "无可用后端（线上后端不可达）");
       return false;
     });
   };
 
-  // 诊断区「测试 / 重试」：重探**所有**后端，通了就自动重拉行程。
+  // 诊断区「测试 / 重试」：重探后端，通了就自动重拉行程。
   window.retryApi = function(){
     trace("api.retry", "");
     apiWaiting = false;
@@ -547,11 +521,10 @@
         loadPlan();
         return true;
       }
-      reviveViaHostBestEffort();
       apiWaiting = true;
-      showAlert("⚠ 本地与线上后端都不可用。\n"
-        + "· 本地：对助手说一句话（例如「刷新行程」）即可唤醒；\n"
-        + "· 线上：" + (REMOTE_BASE || "未配置") + "（可能正在冷启动，稍等几秒再试）。");
+      showAlert("⚠ 线上后端不可用。\n"
+        + "· 后端：" + (REMOTE_BASE || "未配置（remote.json 缺少 base）") + "\n"
+        + "· 可能正在冷启动，稍等几秒再试。");
       return waitForApi(20000, "（自动重试中…）").then(function(ok){
         apiWaiting = false;
         if (ok) loadPlan();
@@ -879,7 +852,7 @@
   // ---------------- M2：换点 ----------------
   // ---------------- M3：统一收敛后端返回（plan 或 day） ----------------
   // 两个后端返回的形态不同，但语义相同：
-  //   · `plan` —— 完整行程（本地 local_api 经 src/plan_view.apply_day 后返回；服务端有状态）
+  //   · `plan` —— 完整行程（`/api/plan?shape=mcp` 返回，**已归一化**）
   //   · `day`  —— 只有被改的那一天（线上后端无状态；可能归一化形状，也可能是内核形状）
   // ⇒ 统一收敛成「一份新 plan」再渲染；只有 day 时在前端**复现 apply_day**。
   function applyDayToPlan(dayObj){
@@ -949,7 +922,10 @@
     apiCall("/api/replace", "tripplanner_replace_poi", {
       city: LAST.city, day: +day, poi_id: poiId, day_ids: ids, used_ids: used,
       query: LAST.query || "", date0: LAST.date0 || "",
-      hotel_text: (LAST.hotel && LAST.hotel.name) || ""
+      hotel_text: (LAST.hotel && LAST.hotel.name) || "",
+      // M5：带上会话 id 与**整份 plan** —— 云端据此把改动写进会话表，
+      // 否则「重新拉取行程」会拉回改动前的那份。
+      session: SESSION_ID, plan: LAST
     }).then(function(sc){
       if (!sc || !sc.ok){
         var m = (sc && sc.error) || "未知原因";
@@ -995,7 +971,9 @@
     apiCall("/api/move", "tripplanner_move_poi", {
       city: LAST.city, day: +day, ordered_ids: ids, day_ids: origIds,
       query: LAST.query || "", date0: LAST.date0 || "",
-      hotel_text: (LAST.hotel && LAST.hotel.name) || ""
+      hotel_text: (LAST.hotel && LAST.hotel.name) || "",
+      // M5：带上会话 id 与整份 plan（见 replace 处的说明）
+      session: SESSION_ID, plan: LAST
     }).then(function(sc){
       if (!sc || !sc.ok){
         var m = (sc && sc.error) || "未知原因";
@@ -1067,8 +1045,8 @@
       return;
     }
     hint.textContent = "导出中…";
-    // M3：把**当前渲染的行程**一并带上 —— 线上后端无状态，必须自带内容；
-    // 本地 local_api 也以传入的 plan 为准（保证导出的一定是用户眼前这份）。
+    // M3：把**当前渲染的行程**一并带上 —— 线上后端无状态，必须自带内容，
+    // 才能保证导出的一定是用户眼前这份（而非云端会话里的另一份）。
     apiCall("/api/export", "tripplanner_export", { format: "markdown", plan: LAST })
       .then(function(sc){
         if (!sc || !sc.ok){
@@ -1132,41 +1110,53 @@
   }
 
   // ---------------- 数据获取 ----------------
-  // 通道 1（主）：本地 HTTP API 的 /api/plan —— 本机唯一实测可靠的通路。
-  // 通道 2（兜底）：宿主 tools/call 的 get_plan（实测不通，保留作对照）。
-  // 通道 3（补）：宿主把 bootstrap 的 tool-result 推下来时直接用它（这条**带**
-  //   structuredContent，M1 以来面板能显示行程一直靠它）。
+  // 通道 1（主）：云端 `GET /api/plan?shape=mcp&session=<sid>` —— 回**本会话当前行程**。
+  //   云端刻意无状态，靠 session 记住「你这份行程」；plan / move / replace 都会更新它。
+  // 通道 2（兜底）：渲染时注入的 `PLAN_SEED`（server 从磁盘读到的当前行程）——
+  //   云端会话过期 / 后端不可达时，至少还有一份可渲染，不至于空白。
+  // 通道 3（补）：宿主把 bootstrap 的 tool-result 推下来时直接用它（M1 以来一直靠它）。
   window.loadPlan = function(){
     document.getElementById("subLine").textContent = "正在读取行程…";
-    // ⚠️ localOnly：线上后端**无会话状态**（入参自包含的设计），给不出「当前行程」，
-    //    所以「拉行程」只在本地后端有意义；线上兜底负责的是换点 / 挪时段 / 导出。
-    return apiCall("/api/plan", "tripplanner_get_plan", {}, "GET", { localOnly: true })
+    var path = "/api/plan?shape=mcp";
+    if (SESSION_ID) path += "&session=" + encodeURIComponent(SESSION_ID);
+    // 标 localOnly 只为「失败不刷红色横幅」（会话过期属预期内，落 PLAN_SEED 兜底即可）
+    return apiCall(path, "tripplanner_get_plan", {}, "GET", { localOnly: true })
       .then(function(sc){
         sc = sc || {};
-        if (sc.hasPlan && sc.plan){
-          render(sc.plan);
-          document.getElementById("stage").textContent = "M3 · 已加载";
-          log("!", "行程加载成功 city=" + sc.plan.city + " via=" + apiMode);
-          trace("plan.loaded", "city=" + sc.plan.city + " via=" + apiMode);
+        var plan = sc.plan || null;
+        if (plan && plan.dayList){
+          render(plan);
+          document.getElementById("stage").textContent = "M5 · 已加载";
+          log("!", "行程加载成功 city=" + plan.city + " via=" + apiMode);
+          trace("plan.loaded", "city=" + plan.city + " via=" + apiMode);
+          return;
+        }
+        // 云端没给（会话过期 / 首次加载）⇒ 退到渲染时注入的那份
+        if (PLAN_SEED && PLAN_SEED.dayList){
+          render(PLAN_SEED);
+          document.getElementById("stage").textContent = "M5 · 已加载（本地副本）";
+          log("!", "云端无会话 → 用注入的 PLAN_SEED city=" + PLAN_SEED.city);
+          trace("plan.loaded", "city=" + PLAN_SEED.city + " via=seed");
+          return;
+        }
+        // ⚠️ 不要用空结果覆盖已渲染好的内容（否则用户看到一片空白，
+        //    而之前那次渲染其实是好的）。
+        if (renderedOnce){
+          setDiag("plan", "云端暂无行程，已保留上一次渲染结果；可点「重新拉取行程」再试");
+          log("!", "云端无行程，保留已有渲染（不清空）");
         } else {
-          // ⚠️ 不要用空结果覆盖已渲染好的内容。
-          // 宿主对 stdio MCP 是按需 spawn 进程的，面板的 get_plan 有可能落在
-          // 「还没写过行程」的另一个进程上而读到空；此时若清空 DOM，
-          // 用户就会看到一片空白 —— 而之前那次渲染其实是好的。
-          if (renderedOnce){
-            setDiag("get_plan", "读到空（hasPlan=" + sc.hasPlan
-              + "），已保留上一次渲染结果；可点「重新拉取行程」再试");
-            log("!", "get_plan 读到空，保留已有渲染（不清空）");
-          } else {
-            render(null);
-            setDiag("get_plan", "读到空且尚无任何渲染（hasPlan=" + sc.hasPlan + "）");
-            log("!", "server 侧暂无行程（hasPlan=false）");
-          }
+          render(null);
+          setDiag("plan", "云端暂无行程且尚无任何渲染");
+          log("!", "云端暂无行程");
         }
       })
       .catch(function(e){
         document.getElementById("subLine").textContent = "读取失败：" + e.message;
-        log("!", "get_plan 失败：" + e.message);
+        if (!renderedOnce && PLAN_SEED && PLAN_SEED.dayList){
+          render(PLAN_SEED);
+          log("!", "拉取失败 → 用注入的 PLAN_SEED 渲染");
+        }
+        log("!", "拉行程失败：" + e.message);
       });
   };
 
@@ -1174,7 +1164,7 @@
   window.probe = function(){
     setBadge("st", "探测中…", "b-run");
     request("ui/initialize", {
-      appInfo: { name: "tripplanner-plan-panel", version: "0.4.1-m4" },
+      appInfo: { name: "tripplanner-plan-panel", version: "0.5.0-m5" },
       appCapabilities: {},
       protocolVersion: "2025-06-18"
     }).then(function(res){
@@ -1242,7 +1232,7 @@
       })
       .catch(function(e){
         document.getElementById("echo").textContent =
-          "失败：" + e.message + "—— 这正是 M2.1 改走本地 HTTP 的原因";
+          "失败：" + e.message + "—— 宿主的 tools/call 通道在本机一直是死的（这是面板改走 HTTP 的原因）";
       });
   };
 
@@ -1287,7 +1277,7 @@
     }
   });
 
-  // 「重新拉取行程」走本地 API，与宿主握手无关 ⇒ 一开始就可用
+  // 「重新拉取行程」走云端 API，与宿主握手无关 ⇒ 一开始就可用
   document.getElementById("btnReload").disabled = false;
 
   // 🔴 兜底：任何未捕获异常 / 未处理的 Promise 拒绝都必须**看得见**。
@@ -1305,14 +1295,16 @@
     log("!", "unhandledrejection " + m);
   });
 
-  // 启动顺序：先探本地 API（它决定交互走哪条通路），再拉行程；宿主握手并行做，
+  // 启动顺序：先探线上后端（它决定交互走不走得通），再拉行程；宿主握手并行做，
   // 只用于诊断与 A+C 登记（那条通道在本机已实测不通，不阻塞任何功能）。
   // M4 诊断：把**宿主 iframe 的上下文**一并落盘 —— 这是判断「远端兜底能不能用」的
   // 决定性证据：若 protocol=https，浏览器会把 http://<公网IP> 当 active mixed content
   // **直接 block**（`127.0.0.1` 有 potentially-trustworthy 豁免，公网 IP **没有**）。
-  trace("panel.boot", "v=m7 base=" + API_BASE + " token=" + (API_TOKEN ? "yes" : "no")
-        + " proto=" + location.protocol + " origin=" + location.origin
-        + " remote=" + (REMOTE_BASE || "none"));
+  trace("panel.boot", "v=m12 base=" + (REMOTE_BASE || "none")
+        + " auth=" + (REMOTE_AUTH ? "yes" : "no")
+        + " session=" + (SESSION_ID ? SESSION_ID.slice(0, 6) : "none")
+        + " seed=" + ((PLAN_SEED && PLAN_SEED.dayList) ? "yes" : "no")
+        + " proto=" + location.protocol + " origin=" + location.origin);
   probeApi().then(function(okNow){
     trace("panel.apiProbe", okNow ? "ok" : "down");
     lastHealthy = okNow;

@@ -11,7 +11,8 @@
   - 结构性判断**只用 `count()` 计数比对**，不用正则数标签；
   - key 安全用**精确锚点**（`var amapKey = "..."` 的初值），不用「全文不许有 hex」这种宽正则
     —— 面板里 M1 就有的 CSP 验证探针本身带一个高德图片 hash，宽正则必然误报。
-  - M2.1 起同一套办法也套在本地 API 的 `API_BASE` / `API_TOKEN` 上：初值必须是占位符。
+  - M5 起同一套办法也套在**后端**上：`REMOTE_BASE` / `REMOTE_AUTH` / `SESSION_ID`
+    的初值必须是占位符（真实地址与凭据只在服务端注入，仓库里绝不硬编码）。
 """
 from __future__ import annotations
 
@@ -55,19 +56,20 @@ def main() -> int:
                    "tripplanner_export", "tripplanner_get_plan", "tripplanner_panel_ready",
                    "ui/download-file", "draggable", "webapi.amap.com",
                    # M2.1：本地 HTTP API（宿主 tools/call 通道已实测不通）
-                   "__LOCAL_API_BASE__", "__LOCAL_API_TOKEN__",
                    "/api/health", "/api/plan", "/api/replace", "/api/move", "/api/export",
                    "probeApi",
                    # M2.2：可观测性（失败必须看得见，否则又回到「点了没反应」）
                    "showAlert", "unhandledrejection", "/api/log", "ensureApi",
-                   # M2.3：掉线自愈（常驻进程会被宿主回收 ⇒ 面板必须能自己等到它回来）
+                   # M2.3：掉线自愈（后端不可达时面板要能自己重试等待）
                    "waitForApi", "startWatchdog", "watchdogTick", "retryApi",
-                   # M3：双后端（本地优先 → 线上兜底）+ 前端写回（后端可能只回「一天」）
+                   # M3/M5：线上后端 + 前端写回（后端只回「一天」时前端复现 apply_day）
                    "__REMOTE_API_BASE__", "REMOTE_BASE", "BACKENDS", "pickBackend",
                    "applyDayToPlan", "applyActionResult",
-                   # M4：线上后端 = 自建云主机（HTTPS + nginx Basic 认证）
+                   # M5：线上后端 = 自建云主机（http+IP + nginx Basic 认证）
                    "__REMOTE_API_AUTH__", "REMOTE_AUTH", "Authorization",
-                   # M4 诊断：上报宿主上下文 + 主动探远端（判定混合内容是否拦）
+                   # M5：会话（云端无状态 ⇒「我这份行程」靠 session 认领）
+                   "__SESSION_ID__", "SESSION_ID", "__PLAN_JSON__", "PLAN_SEED",
+                   # M4 诊断：上报宿主上下文（判定混合内容是否拦）
                    "panel.remoteProbe", "location.protocol"):
         chk(f"含锚点 {anchor}", anchor in html)
 
@@ -85,18 +87,26 @@ def main() -> int:
     chk("REMOTE_BASE 初值是占位符（真实域名只在服务端注入）",
         bool(mrem) and mrem.group(1) == "__REMOTE_API_BASE__",
         repr(mrem.group(1)) if mrem else "未找到 REMOTE_BASE 定义")
-    # 后端列表必须**本地在前** —— 「本地优先」是 M3 的设计前提
-    mlist = re.search(r'var\s+BACKENDS\s*=\s*\[\{([^}]*)\}', html)
-    chk("BACKENDS 首个后端是本地（本地优先）",
-        bool(mlist) and "本地" in mlist.group(1),
-        (mlist.group(1).strip()[:60] if mlist else "未找到 BACKENDS 定义"))
+    # M5：后端列表**只允许线上** —— 「本地服务下线、后端全走线上」是本版的设计前提
+    #   （MCP App 要打包分享给别人，对方不该被要求装 Python + 数据 + Key）。
+    chk("BACKENDS 只挂线上后端（M5 本地服务已下线）",
+        bool(re.search(r'var\s+BACKENDS\s*=\s*\[\s*\]', html))
+        and bool(re.search(r'if\s*\(\s*REMOTE_BASE\s*\)\s*BACKENDS\.push\(\{\s*name:\s*"线上"',
+                           html))
+        and "本地" not in re.search(r'var\s+BACKENDS[\s\S]{0,220}', html).group(0),
+        "BACKENDS 应为空数组 + 仅 push 线上")
     # 导出必须把当前行程带给后端（线上无状态，不带就没有内容可导）
     chk("导出把当前行程传给后端（plan: LAST）",
         re.search(r'apiCall\(\s*"/api/export"[^)]*plan:\s*LAST', html, re.S) is not None)
-    # 「拉行程」必须限定本地（线上无会话状态，给不出「当前行程」）
-    chk("拉行程限定本地后端（localOnly）",
-        re.search(r'apiCall\(\s*"/api/plan"[^)]*localOnly:\s*true', html, re.S) is not None)
-    # M4：远端凭据的初值必须是占位符（真实 Basic 头只在服务端注入，绝不入库）
+    # 「拉行程」走 shape=mcp + session（云端无状态，靠 session 认领「本会话当前行程」）
+    chk("拉行程带 shape=mcp + session",
+        re.search(r'"/api/plan\?shape=mcp"', html) is not None
+        and re.search(r'path\s*\+=\s*"&session="', html) is not None)
+    # 交互（换点 / 挪时段）必须把 session + 整份 plan 带上 —— 云端据此更新会话表，
+    # 否则「重新拉取行程」会拉回改动前的那份（M5 起这是新的正确性前提）。
+    chk("换点 / 挪时段带 session 与整份 plan",
+        len(re.findall(r'session:\s*SESSION_ID,\s*plan:\s*LAST', html)) == 2)
+    # M4/M5：远端凭据的初值必须是占位符（真实 Basic 头只在服务端注入，绝不入库）
     mauth = re.search(r'var\s+REMOTE_AUTH\s*=\s*"([^"]*)"', html)
     chk("REMOTE_AUTH 初值是占位符（凭据只在服务端注入）",
         bool(mauth) and mauth.group(1) == "__REMOTE_API_AUTH__",
@@ -133,15 +143,19 @@ def main() -> int:
     chk("panel 里没有 amap_js_key 的**值**（字段名出现在提示文案里是允许的）",
         not re.search(r'amap_js_key["\']?\s*[:=]\s*["\'][0-9A-Za-z]{16,}', html))
 
-    # 6) M2.1：本地 API 的 base/token 初值必须是占位符（真实值只在服务端注入）
-    mbase = re.search(r'var\s+API_BASE\s*=\s*"([^"]*)"', html)
-    chk("API_BASE 初值是占位符（真实端口只在服务端注入）",
-        bool(mbase) and mbase.group(1) == "__LOCAL_API_BASE__",
-        repr(mbase.group(1)) if mbase else "未找到 API_BASE 定义")
-    mtok = re.search(r'var\s+API_TOKEN\s*=\s*"([^"]*)"', html)
-    chk("API_TOKEN 初值是占位符（真实 token 只在服务端注入）",
-        bool(mtok) and mtok.group(1) == "__LOCAL_API_TOKEN__",
-        repr(mtok.group(1)) if mtok else "未找到 API_TOKEN 定义")
+    # 6) M5：会话 id 与行程种子都必须是占位符（真实值只在服务端注入）
+    msid = re.search(r'var\s+SESSION_ID\s*=\s*"([^"]*)"', html)
+    chk("SESSION_ID 初值是占位符（真实 id 只在服务端注入）",
+        bool(msid) and msid.group(1) == "__SESSION_ID__",
+        repr(msid.group(1)) if msid else "未找到 SESSION_ID 定义")
+    chk("行程种子 PLAN_SEED 由注入而来（__PLAN_JSON__）",
+        re.search(r'var\s+PLAN_SEED\s*=\s*__PLAN_JSON__\s*;', html) is not None)
+    chk("panel 里没有本地 API 残留（本地服务已下线）",
+        "__LOCAL_API_BASE__" not in html and "__LOCAL_API_TOKEN__" not in html
+        # ⚠️ 用 \b 边界匹配：`__REMOTE_API_BASE__` 里也含子串 "API_BASE"，
+        #    直接 in 会误报（本项目「校验脚本自己的正则比被测对象更危险」的老坑）。
+        and re.search(r"\bAPI_BASE\b", html) is None
+        and re.search(r"\bAPI_TOKEN\b", html) is None)
 
     print()
     if fails:

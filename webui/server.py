@@ -8,7 +8,7 @@
 
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）
 """
-import hashlib, io, json, os, re, sys, threading, time, urllib.parse, uuid
+import collections, hashlib, io, json, os, re, sys, threading, time, urllib.parse, uuid
 from datetime import date as _date, timedelta as _td
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -42,7 +42,7 @@ CFG: dict = {}
 # 本服务的版本标识 —— `GET /api/health` 把它回给面板，用于明确「线上跑的是哪一版」。
 # m4（2026-10-10）：补 CORS（面板跨域 fetch 远端后端的前提）+ OPTIONS 预检；
 #   云主机接入 M3 远端后端（HTTPS + nginx Basic 认证）。
-WEBUI_VERSION = "m4"
+WEBUI_VERSION = "m5"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -359,6 +359,11 @@ def plan_route_decision(query: str, nl: dict | None, days: int,
     返回 {multi, cname, notice, error}：multi 非空（≥2）走城际；cname 有效走单城；
     error 非空时调用方直接 400。
 
+    ⚠️ 额外带 `defaulted`（仅「需求里**完全未提**地名 ⇒ 落默认城市」那一条分支为 True）：
+    供 `?strict_city=1` 用 —— MCP App 是 **agent 面向**的，识别不出城市应当明确报错；
+    而 Web UI 是对话式输入，写「随便玩玩」时落默认城市是既有体验。两种语义都要留，
+    故由调用方显式选择，而不是改掉任何一边。
+
     ⚠️ 为什么必须集中：解析分支（显式 / LLM / 省份降级 / 报错）与「单城校验」耦合在
     HTTP handler 里时，多城路径会把 cname 留成空串，随后被 `cname not in CITIES`
     误判成 400「未能识别」——2026-09-21 实测「苏杭3日游」（别名多城）整条链路被打回，
@@ -392,7 +397,9 @@ def plan_route_decision(query: str, nl: dict | None, days: int,
                 "error": (f"暂不支持目的地「{res['unsupported']}」{_tip}。"
                           f"当前支持：{'、'.join(CITIES)}")}
     # 需求里完全未提地名 → 保持既有默认城市行为（不得扩展到「提了但解析不出」的情形）
-    return {"multi": [], "cname": DEFAULT_CITY, "notice": notice, "error": None}
+    # `defaulted=True` 专门标出这一条：`?strict_city=1` 的调用方（MCP App）据此报错。
+    return {"multi": [], "cname": DEFAULT_CITY, "notice": notice, "error": None,
+            "defaulted": True}
 
 
 # P4 纯自然语言交互：目的地城市/出发日期/住宿锚点均可从需求文字提取
@@ -1283,8 +1290,11 @@ CITY_META = {}  # 懒加载缓存
 PLAN_LOCK = threading.Lock()  # 访客自带 Key 时临时注入环境变量，加锁防并发串包
 
 # ---- 护栏：公开链接防滥用 ----
-RATE_LIMIT_N = 8          # 每 IP 每 RATE_LIMIT_WINDOW_S 秒内最多 /api/plan 次数
-RATE_LIMIT_WINDOW_S = 60.0
+# M5：这套服务现在也是**分享出去的 MCP App** 的后端 ⇒ 同一公司 NAT 后多个使用者
+# 会共用一个出口 IP，8/分钟 会互相误伤。故 N / 窗口都允许运维用环境变量放宽
+# （默认值不变，保持原有的防滥用强度）。真实 IP 由 nginx 的 X-Forwarded-For 透传。
+RATE_LIMIT_N = int(os.environ.get("TRIPAGENT_RATE_LIMIT_N") or 8)
+RATE_LIMIT_WINDOW_S = float(os.environ.get("TRIPAGENT_RATE_LIMIT_WINDOW_S") or 60.0)
 _rate_lock = threading.Lock()
 _rate = {}                # ip -> [timestamp,...]（滑动窗口，启动起累计，进程生命周期内）
 _stats_lock = threading.Lock()
@@ -1386,6 +1396,81 @@ def city_meta(name: str) -> dict:
     return CITY_META[name]
 
 
+# ---------------------------------------------------------------------------
+# M5：会话表（面板 ↔ 云端之间的「当前行程」）
+#
+# 面板后端改「全走线上」后，云端必须能回答「我这份行程现在是什么」 —— 否则
+# 「重新拉取行程」无从取值（`/api/plan` 不带 query 只会新规划一份，不是取回）。
+# 但云端**刻意保持无状态**（入参自包含，天然支持多用户/多面板并发），所以这里
+# 用一张**有上限的内存表**兜住：
+#   - key = session id（由每个 MCP 客户端生成、落盘、跨重启稳定）
+#   - value = 最近一次归一化行程（plan / move / replace 都会更新它）
+#   - 上限 200 条 / TTL 2 小时，超限丢最旧 ⇒ 多人共享也不会吃满内存。
+# 不做持久化：真源头仍是各客户端自己磁盘上的副本，这里只是「面板与云端之间」的
+# 短期真相；云端重启后客户端拉不到会话会自动回落到自己磁盘的那份。
+_SESSIONS = collections.OrderedDict()
+_SESSION_LOCK = threading.Lock()
+_SESSION_TTL = 2 * 3600.0
+_SESSION_MAX = 200
+
+
+def _session_put(sid: str, plan) -> None:
+    if not sid or not isinstance(plan, dict):
+        return
+    with _SESSION_LOCK:
+        _SESSIONS[sid] = (time.time(), plan)
+        _SESSIONS.move_to_end(sid)
+        while len(_SESSIONS) > _SESSION_MAX:
+            _SESSIONS.popitem(last=False)
+
+
+def _session_get(sid: str):
+    if not sid:
+        return None
+    with _SESSION_LOCK:
+        v = _SESSIONS.get(sid)
+        if not v:
+            return None
+        ts, plan = v
+        if time.time() - ts > _SESSION_TTL:
+            _SESSIONS.pop(sid, None)
+            return None
+        _SESSIONS.move_to_end(sid)
+        return plan
+
+
+def _session_apply(sess: str, plan, day) -> None:
+    """把「改动后的一天」写回会话里的整份行程。
+
+    面板在 move / replace 时把**当前整份 plan** 一并带上（它手上就有一份），
+    云端据此复现 `apply_day`，让会话表里的「当前行程」跟着用户操作一起走 ——
+    否则「重新拉取行程」会拉回改动之前的那份。
+    """
+    if not sess or not isinstance(plan, dict) or not isinstance(day, dict):
+        return
+    try:
+        _session_put(sess, plan_view.apply_day(plan, day))
+    except Exception:  # noqa: BLE001 —— 会话同步是旁路，失败不能拖垮交互本身
+        pass
+
+
+def _panel_log(payload: dict) -> None:
+    """面板动作轨迹落盘（面板是黑盒：失败时得留下证词）。
+
+    M5 前这些 trace 打进本地 `local_api` 的 mcp_debug.log；面板改走线上后，
+    落点跟着搬到云端 —— 否则「点了没反应」将无从判断是没发还是没收到。
+    """
+    try:
+        d = os.path.join(ROOT, "output")
+        os.makedirs(d, exist_ok=True)
+        line = time.strftime("%Y-%m-%d %H:%M:%S") + " " + \
+            json.dumps(payload, ensure_ascii=False) + "\n"
+        with open(os.path.join(d, "webui_panel.log"), "a", encoding="utf-8") as f:
+            f.write(line)
+    except Exception:  # noqa: BLE001 —— 观测旁路绝不拖垮主链路
+        pass
+
+
 class Handler(BaseHTTPRequestHandler):
     # ---- CORS（m4）----
     # 🔴 为什么必须加：M3 面板的「本地优先 → 线上兜底」是**跨域 fetch**
@@ -1437,9 +1522,9 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
         if u.path == "/" or u.path == "/index.html":
             return self._html(os.path.join(WEBUI_DIR, "index.html"))
-        if u.path == "/api/health":  # M3：面板远端兜底的探活端点（无需鉴权，只回版本/时间）
+        if u.path == "/api/health":  # 面板后端探活端点（只回版本/时间，不泄露任何数据）
             return self._json({"ok": True, "server": "tripagent-webui",
-                               "version": WEBUI_VERSION, "stage": "M3",
+                               "version": WEBUI_VERSION, "stage": "M5",
                                "ts": int(time.time())})
         if u.path == "/api/cities":
             return self._json({"cities": [city_meta(c) for c in CITIES],
@@ -1548,11 +1633,37 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/plan":
             ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
                  self.client_address[0]
+            # M5：MCP App **瘦客户端**要的归一化形状 + 会话键。
+            #   客户端不带 `data/`（2.6M POI 库 + 照片缓存）也没有求解器，
+            #   所以「补照片 / 坐标」必须在云端做（`?shape=mcp`）。
+            shape_mcp = (q.get("shape") or "").lower() == "mcp"
+            sess_key = (q.get("session") or "").strip()[:64]
+
+            # 「拉行程」：带 session、不带 query ⇒ 回**本会话当前那份**行程，不重新规划。
+            # 只读操作，故放在限流**之前**（用户狂点刷新不该被当成刷规划）。
+            if shape_mcp and sess_key and not (q.get("query") or "").strip():
+                stored = _session_get(sess_key)
+                if stored:
+                    return self._json({"ok": True, "plan": stored})
+                return self._json({"ok": False,
+                                   "error": "会话已过期（云端保留 2 小时），请重新生成行程"})
+
             if not rate_allow(ip):
                 stats_bump("plan_rate_limited")
                 return self._json({"ok": False,
                                    "error": f"请求过于频繁（每 {int(RATE_LIMIT_WINDOW_S)} 秒最多 {RATE_LIMIT_N} 次规划），请稍后再试"}, code=429)
             stats_bump("plan_total")
+
+            def _shape_mcp(payload, city_name, note=""):
+                """?shape=mcp → {"ok":true,"plan":<归一化行程>}；其它情况原样返回。"""
+                if not shape_mcp or not payload.get("ok") or not payload.get("result"):
+                    return payload
+                try:
+                    plan = plan_view.normalize_plan(payload["result"], city_name, note)
+                except Exception as e:  # noqa: BLE001 —— 归一化失败必须如实报，不能静默
+                    return {"ok": False, "error": f"归一化失败：{type(e).__name__}: {e}"}
+                _session_put(sess_key, plan)      # 记住「这份 = 本会话的当前行程」
+                return {"ok": True, "plan": plan}
             # P2 分阶段进度：前端带 sid 发起，规划期间可轮询 /api/progress?sid=
             sid = (q.get("sid") or "")[:40]
             if sid:
@@ -1573,6 +1684,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": False, "error": _dec["error"]}, code=400)
                 multi, cname = _dec["multi"], _dec["cname"]
                 _resolve_notice = _dec["notice"]
+                # M5：`?strict_city=1`（MCP App 专用）—— 需求里完全没提地名时**明确报错**，
+                # 而不是静默给个默认城市。为什么不能两边统一：Web UI 的对话式输入
+                # （「随便玩玩」）落默认城市是既有体验，改掉它是破坏性的；MCP App 由
+                # agent 驱动，静默换城市＝用户拿到一份自己没要的行程。故用开关分开。
+                if q.get("strict_city") == "1" and _dec.get("defaulted"):
+                    return self._json({"ok": False, "error": (
+                        "没能从需求里识别出城市。请在需求里写明城市，或传 city 参数。"
+                        f"当前支持：{'、'.join(CITIES)}")}, code=400)
                 if not query:
                     query = f"{cname}2天经典深度游"
                 # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
@@ -1613,10 +1732,12 @@ class Handler(BaseHTTPRequestHandler):
                         if gap_log.append_gap_record(None, multi, query, days,
                                                      "m7_multi", r.get("grounding")):
                             stats_bump("plan_with_gaps")
-                        return self._json({"ok": True, "city_meta": merged_meta, "result": r,
-                                           "days_source": "query" if extract_days(query) else "default",
-                                           "parsed": {"city": "+".join(multi), "date0": m_date0,
-                                                      "hotel_text": None}})
+                        return self._json(_shape_mcp(
+                            {"ok": True, "city_meta": merged_meta, "result": r,
+                             "days_source": "query" if extract_days(query) else "default",
+                             "parsed": {"city": "+".join(multi), "date0": m_date0,
+                                        "hotel_text": None}},
+                            "+".join(multi), _resolve_notice))
                     except Exception as e:  # noqa
                         stats_bump("plan_error")
                         import traceback
@@ -1684,11 +1805,13 @@ class Handler(BaseHTTPRequestHandler):
                             stats_bump("plan_with_gaps")
                         if _days_notice:  # 缓存命中也要带上天数截断提示
                             cached["notices"] = _days_notice + (cached.get("notices") or [])
-                        return self._json({"ok": True, "city_meta": city_meta(cname), "result": cached,
-                                           "days_source": days_src,
-                                           "parsed": {"city": cname, "date0": date0,
-                                                      "hotel_text": hotel_text,
-                                                      "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}})
+                        return self._json(_shape_mcp(
+                            {"ok": True, "city_meta": city_meta(cname), "result": cached,
+                             "days_source": days_src,
+                             "parsed": {"city": cname, "date0": date0,
+                                        "hotel_text": hotel_text,
+                                        "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}},
+                            cname, _resolve_notice))
                 if llm_key:
                     # 临时注入访客 Key → 规划 → 恢复环境（锁内串行，防并发互相覆盖）
                     with PLAN_LOCK:
@@ -1727,11 +1850,13 @@ class Handler(BaseHTTPRequestHandler):
                     stats_bump("plan_with_gaps")
                 if _days_notice:  # 天数被上限截断须显式告知
                     r["notices"] = _days_notice + _resolve_notice + (r.get("notices") or [])
-                return self._json({"ok": True, "city_meta": city_meta(cname), "result": r,
-                                   "days_source": days_src,
-                                   "parsed": {"city": cname, "date0": date0,
-                                              "hotel_text": hotel_text,
-                                              "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}})
+                return self._json(_shape_mcp(
+                    {"ok": True, "city_meta": city_meta(cname), "result": r,
+                     "days_source": days_src,
+                     "parsed": {"city": cname, "date0": date0,
+                                "hotel_text": hotel_text,
+                                "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}},
+                    cname, _resolve_notice))
             except Exception as e:  # noqa: 单请求异常不挂服务
                 stats_bump("plan_error")
                 import traceback
@@ -1743,6 +1868,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
+        if u.path == "/api/log":  # M5：面板动作轨迹（面板改走线上后，落点搬到云端）
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                payload = (json.loads(self.rfile.read(n).decode("utf-8"))
+                           if 0 < n <= 65536 else None)
+            except Exception:  # noqa: BLE001 —— 观测入口永不因脏输入报错
+                payload = None
+            if isinstance(payload, dict):
+                _panel_log(payload)
+            return self._json({"ok": True})
         if u.path == "/api/share":  # P1-2：保存行程快照，返回短 id
             ip = self.headers.get("X-Forwarded-For", "").split(",")[0].strip() or \
                  self.client_address[0]
@@ -1785,6 +1920,16 @@ class Handler(BaseHTTPRequestHandler):
                 date0=payload.get("date0") or None,
                 query=payload.get("query") or "",
                 hotel_text=payload.get("hotel_text") or None)
+            if data.get("ok"):
+                # M5：归一化 —— 换点回的是内核形状的 day（无 photo / 坐标），
+                # 而瘦客户端没有 `data/photo_cache.json` 与 POI 库可补，**只能在云端补**。
+                # 不补的后果实测：面板「换一个」之后缩略图与地图点一起消失。
+                # 与 /api/move 保持同一处理（两处必须对称）。
+                data["day"] = plan_view.normalize_day(
+                    data["day"], plan_view.poi_coords(cname))
+                # M5：会话表同步（面板带了整份 plan 才能复现 apply_day）
+                _session_apply(payload.get("session") or "", payload.get("plan"),
+                               data["day"])
             return self._json(data, code=code)
 
         # ------------- M3：面板交互的远端兜底端点 -------------
@@ -1820,6 +1965,9 @@ class Handler(BaseHTTPRequestHandler):
                 if data.get("ok"):  # 归一化：补照片 / 坐标，面板无需再自己拼
                     data["day"] = plan_view.normalize_day(
                         data["day"], plan_view.poi_coords(cname))
+                    # M5：会话表同步（面板带了整份 plan 才能复现 apply_day）
+                    _session_apply(payload.get("session") or "", payload.get("plan"),
+                                   data["day"])
                 return self._json(data, code=code)
 
             # /api/export：把面板传来的行程导出为 Markdown

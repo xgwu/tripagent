@@ -2,11 +2,11 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅ → M2 验收 ✅（换点/拖拽均可用了，Kenny 确认）→ M3 面板交互远端化 ✅（自检 176/176）→ 线上已部署 ✅（`tripagent-planner2-80644…` / `/api/health` = m3）→ 待 WorkBuddy 实测**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅ → M2 验收 ✅（换点/拖拽均可用了，Kenny 确认）→ M3 面板交互远端化 ✅（自检 176/176）→ 线上已部署 ✅（`tripagent-planner2-80644…` / `/api/health` = m3）→ M4 云主机 + CORS + Basic ✅ → M5 瘦客户端 + 单文件 exe ✅（自检 206/206、面板守卫全绿、打包冒烟 17/17）→ 待 WorkBuddy 内实测分享包**
 
 **M1 已在 WorkBuddy 内实测通过**：一句话需求 → 真实行程 → 面板渲染完整时间线
 （含每个点的**停留时长**）、每日主题/里程/违规徽标、**POI 缩略图**、被剔除点及原因。
-数据来自本地 31 城 POI 库 + 交通/路线缓存，无需联网。
+数据来自 **31 城 1193 POI 库 + 交通/路线缓存**（M5 起这些都在**云端**，见下）。
 
 **M2 新增（面板内交互）**：🔁 换点、⠿ 拖拽调整当天顺序、⬇ 导出 Markdown、
 🗺 高德 JS API 交互地图（路线 polyline + 序号标记）。
@@ -14,7 +14,14 @@
 
 **🔴 M2.1（2026-10-09）**：实测发现**宿主 → MCP server 的 `tools/call` 通道在本机是死的**
 （面板 ping 10s 超时；宿主日志记了 `rpc.callTool` 却从未到达 server，12ms 假成功）。
-面板交互已改走 `mcp/local_api.py` 开在 **`127.0.0.1`** 的本地 HTTP。详见下文「M2.1」一节。
+那一天改走 `mcp/local_api.py` 开在 **`127.0.0.1`** 的本地 HTTP。
+> ⛔ **该方案已于 M5 下线**（`mcp/local_api.py` 文件已删除）。本节保留是因为它记录了一条
+> **仍然成立**的否定性结论（宿主 `tools/call` 死通道），以及「本地面板后端」那条路的完整死因。
+> 现行通路见下方「M5」一节。
+
+**✅ M5（2026-10-10，本轮）**：**去掉本地服务**，MCP server 退化为**瘦客户端**（薄代理），
+规划/换点/挪时段/导出**全部走云端**；由此可以**打包成单文件 exe**（8 MB、零依赖）
+分发给其他 WorkBuddy 使用者。详见下方「M5」一节。
 
 ---
 
@@ -307,6 +314,12 @@ innerFrame.setAttribute('sandbox', params.sandbox || 'allow-scripts allow-same-o
 ---
 
 ## 🔴 M2.1：面板交互改走本地 HTTP（2026-10-09，Kenny 实测报障后定位）
+
+> ⛔ **本节方案已于 M5 下线**（`mcp/local_api.py` 已删除、面板不再拉起任何本地服务）。
+> 保留原因：① 它记录的「宿主 → server `tools/call` 在本机是死通道」这条**否定性结论仍然成立**，
+> 是理解后续全部设计（面板为何不靠 `tools/call`）的前提；② 它完整记录了本地常驻进程那条路的
+> 死因（端口文件 / token 漂移 / 进程被宿主 job 回收），排查宿主按需 spawn 问题时依然有用。
+> **现行通路见上方「M5」一节。**
 
 ### 报障
 
@@ -682,15 +695,168 @@ Let's Encrypt 收到的是腾讯云的 `dnspod.qcloud.com/.../webblock.html?d=10
 另有一条零成本验证：面板 iframe 上下文若非 https，则**根本没有混合内容问题**，直接用
 `http://101.35.47.213` 即可（尚未实测）。
 
-**现状**：云主机 = **纯 IP + Basic 认证可用**（`http://101.35.47.213/`，用户 `trip`）；
-443 未开、无证书；`REMOTE_API_DOMAINS[0]` 目前指向尚未打通的 `https://101-35-47-213.sslip.io`
-（若最终不走域名，应回落到 `http://101.35.47.213` 或 CloudStudio 域名 —— ⚠️ **面板侧注意混合内容**）。
+**现状（M5 更新）**：云主机 = **纯 IP + Basic 认证**（`http://101.35.47.213/`，用户 `trip`）；
+443 未开、无证书；`REMOTE_API_DOMAINS[0]` 已回落到 **`http://101.35.47.213`**。
+**M5 实测判定：域名 / HTTPS 都非必需** —— 宿主面板 iframe 的上下文是 **`http:`**
+（`panel.boot` 实测 `proto=http:`、`origin=http://127.0.0.1:<随机端口>`），
+**根本不触发混合内容**（浏览器只在 https 页面里拦 `http://` 子请求）。
+原「必须 https」的推断据此作废。
+> 🔑 顺带写死一条容易反复搞错的判据：`http://127.0.0.1` / `localhost` 属于 *potentially trustworthy*，
+> 在 **https 页面**里 fetch 它**不算**混合内容（这就是「本地后端一直能通」的原因）；
+> `http://<公网IP>` 没有这个豁免 ⇒ **只在 https 上下文才被 block** —— 而宿主是 http，故不适用。
 
 ### 版本
 
 `SERVER_VERSION` → **0.4.0-m4**、`PANEL_VERSION` → **m10**、面板 `appInfo.version` → `0.4.0-m4`、
 `WEBUI_VERSION` → **m4**。`panel_guard.py` 新增：`__REMOTE_API_AUTH__` / `REMOTE_AUTH` 占位符守卫 +
 「`httpJsonOn` 给远端后端带 `Authorization`」结构守卫。
+
+---
+
+## 🟢 M5：瘦客户端 + 单文件 exe 分发（2026-10-10，自检 206/206、打包冒烟 17/17）
+
+### 起因（Kenny 原话）
+
+> 「我不想用本地服务，后端都走线上，因为后面我需要把 mcp app 打包分享出去，
+> 让其他用 workbuddy 的人也可以使用」
+
+M1~M4 的形态是「MCP server 直接 import `src/` 内核」+「面板后端本地优先 → 线上兜底」。
+这条路**分享不出去**：对方机器上没有 `src/`、没有 `data/`（31 城 POI 库、交通缓存）、
+没有 `secrets.json`、没有 DeepSeek Key，也没装 `ortools`。三条路摆在一起：
+
+| 方案 | 结论 |
+|---|---|
+| 继续「本地内核优先」 | ❌ 分享包要带上 GB 级数据 + `ortools` + 密钥，等于给对方发一份完整仓库 |
+| **瘦客户端 + 云端后端** | ✅ **选定** —— server 只做代理，内核/数据/密钥全留云端 |
+| 重写成 Web App | ❌ 放弃了「在对话里渲染面板」这个 MCP App 的核心卖点 |
+
+定案三项：**瘦客户端** + **Basic 凭据随包分发** + **打包成单文件 exe**。
+
+### 架构：从「胖客户端 + 双后端」到「瘦客户端 + 单后端」
+
+```
+M1~M4：  WorkBuddy ── stdio ──> MCP server ──import──> src/ 内核（POI 库 / TOPTW / DeepSeek）
+                                    └─ 面板 ──> 本地 local_api.py ──> 兜底：线上后端
+
+M5：     WorkBuddy ── stdio ──> MCP server（薄代理，纯标准库）
+                                    └─ 面板 ──────────────────────> 线上后端（唯一通路）
+                                       （规划 / 换点 / 挪时段 / 导出 全在云端）
+```
+
+server 侧**只剩四件事**：MCP 协议、面板资源（含占位符注入）、行程落盘（跨进程）、会话 id 管理。
+
+### 关键实现要点
+
+1. **零依赖是硬前提，且必须是「实际 import」层面的**
+   瘦客户端真实 import 只有 `__future__/base64/datetime/io/json/os/sys/time/urllib/uuid`。
+   一旦残留 `from src import ...`，PyInstaller 的依赖分析会把 `src/` → `ortools` 一起打进 exe
+   （体积暴涨 / 打包失败）。判定用 **AST**，不能用字符串搜 —— 解释用法的注释里就写着
+   `` `from src import ...` ``，字符串搜必假阳性（这个坑本项目踩过四次）。
+   守卫两处：`build_exe.py` 打包前自查 + `selftest.py` 阶段七 AST 白名单。
+   **再加一层运行时证据**（阶段六）：干净子进程里加载 server 模块后 `sys.modules` 不得含 `src`/`ortools`。
+
+2. **打包路径必须分两类**
+   - `bundle_dir()`：**只读资源**（面板 HTML）。onefile 解包到 `sys._MEIPASS`，与源码模式目录不同。
+   - `project_root()`：**可写根**，优先级 `TRIPPLANNER_HOME` > exe 同目录 > 仓库根。
+   `remote.json`、`output/` 都挂它 —— 分享包的状态必须落在 exe 自己那层，**不能**回头写仓库。
+
+3. **`?shape=mcp`：归一化必须在云端**
+   面板要的是带 `photo` / 坐标的视图形状，而这两样分别来自 `data/photo_cache.json` 与 POI 库 ——
+   瘦客户端都没有。故云端 `/api/plan` 支持 `shape=mcp`，直接回 `{"ok":true,"plan":<已归一化>}`。
+   同理 **`/api/replace` 也必须归一化**（见「本轮踩的坑 ②」）。
+
+4. **`?strict_city=1`：agent 面向 vs 对话面向**
+   Web UI 是对话式的，「没提地名 → 落默认城市上海」是合理兜底；但 MCP App 是 **agent 面向**，
+   静默落默认城市会掩盖「识别失败」。故云端加开关：`strict_city=1` 时若走了「默认城市」分支
+   就直接 400 报错（`plan_route_decision()` 用 `defaulted` 标记该分支）。MCP server 固定带上它，
+   Web UI 行为不变。
+
+5. **mode 降级判定不能用 `== "llm"`**
+   云端 LLM 成功回的是 `"m7_proposal"`，不是 `"llm"`。判定应看是否含
+   `degrad` / `offline` / `fallback` 关键词（自检侧封装为 `_not_degraded()`）。
+
+6. **`_merge_day_into_plan()`：瘦客户端自己合并单日**
+   云端 `/api/replace`、`/api/move` 只回**改动的那一天**。瘦客户端没有内核的 `apply_day()`
+   可复用，故按 day 号替换、按 id 回填 photo/坐标、重算总里程 —— 语义与
+   `src/plan_view.apply_day`、面板 `applyDayToPlan` **三处保持一致**。
+
+7. **地图 key 两级取值**
+   ① 本地 `secrets.json: amap_js_key`（开发机）→ ② 本地没有（分享包）就问云端
+   `GET /api/cities` 回带的 `amap_key`。
+   为什么不担心泄露：高德 JSAPI key **本就设计为前端可见**（它本来就直接写在页面里）。
+   好处是**换 key 不用重新分发已发出的包**。
+   ⚠️ 必须 `try/except` 包住 —— 这段跑在 `resources/read` 里，网络抖动**不能**让面板打不开
+   （地图缺失可接受，面板打不开不可接受）。
+
+8. **云端侧配套**（`webui/server.py`）
+   - `/api/health` 的 `stage` → `"M5"`（自检有断言）；`WEBUI_VERSION` → `m5`。
+   - 限流改**环境变量可配**：`TRIPAGENT_RATE_LIMIT_N` / `TRIPAGENT_RATE_LIMIT_WINDOW_S`
+     （默认仍是 8 次 / 60s）。理由很现实：多租户 NAT 共用出口 IP 时会互相撞限流。
+   - 无状态 + 会话表：`_SESSIONS`（OrderedDict，200 条 / TTL 2h），key = session id；
+     `?shape=mcp&session=` 可回读本会话行程。
+
+### 打包与分发（`mcp/build_exe.py` / `mcp/smoke_exe.py`）
+
+```bash
+PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
+"$PY" mcp/build_exe.py --clean        # 自查→PyInstaller onefile→写 dist/remote.json、dist/mcp.json、说明
+"$PY" mcp/smoke_exe.py                # 把 dist/*.exe 当真 server 拉起，验 17 项（含一次真实云端规划）
+"$PY" mcp/register.py --exe dist/tripplanner-mcp.exe   # 注册打包模式条目（分享给他人时用）
+```
+
+产物 `dist/`（**整个目录**一起发）：
+
+| 文件 | 作用 |
+|---|---|
+| `tripplanner-mcp.exe` | 单文件、8.0 MB、零依赖（对方不需要 Python / 数据 / 密钥） |
+| `remote.json` | `{"base": "...", "auth": "Basic ..."}` —— 线上后端地址 + 凭据 |
+| `mcp.json` | 可直接粘进 `~/.workbuddy/mcp.json` 的条目模板 |
+| `使用说明.txt` | 对方要做的三步（放哪、粘配置、点「信任」） |
+
+⚠️ **`remote.json` 内含明文口令**，且后端走 **http 明文**（公网 IP 直连，原因见 M4 节：
+境内节点拦未备案域名）⇒ 只发给自己信任的人。`dist/` 已入 `.gitignore`，绝不入库。
+⚠️ `/api/plan` 真实消耗 DeepSeek 费用 —— 分享后由使用者的调用触发，费用记在云主机这份 key 上。
+
+### 本轮踩的坑（都已加守卫）
+
+① 🔴 **整段误删 228 行**：清理死码时把 `mcp/tripplanner_mcp_server.py` 里
+`class _Session` / `SESSION` / `TOOLS` / `TOOL_BY_NAME` 一起删了 —— 而它们**仍在被使用**。
+隐蔽点在于 `TOOL_BY_NAME` 只在 `tools/call` 路径被碰 ⇒ `import` 正常、「拉工具表」也正常
+（`TOOLS` 只是被引用，不是被求值），直到**打包产物冒烟**才炸出
+`NameError: name 'TOOL_BY_NAME' is not defined`。
+⇒ 新增守门 **`mcp/check_orphans.py`**：AST 比对 HEAD 与工作区，
+找出「已删除、任何作用域都没再赋值、但代码里仍被引用」的顶层名字。
+（必须剥掉字符串常量再判 —— 注释里写「☠️ 已删除：`kernel()`…」不算引用。）
+已并入 `release_gate.py` 第 5 步。
+
+② 🔴 **`/api/replace` 丢归一化（真回归）**：换点回的 `day` 是内核形状（无 photo / 坐标），
+瘦客户端没有 `data/` 补不了 ⇒ 面板「换一个」之后**缩略图与地图点静默消失**。
+修法：云端 `/api/replace` 补 `plan_view.normalize_day(...)`（与 `/api/move` 对称），自检加守卫。
+
+③ 🟡 **`strict_city` 语义回归**：M5 把城市解析挪到云端后，「识别不出城市应报错」被
+「未提地名 → 落默认城市上海」吃掉（探针实测 `两天随便玩玩` → 上海、`mcp` 侧 mode 变
+`m7_degraded`）。修法即上文第 4 条。
+
+④ 🟡 **自检撞云端限流（8/分钟）**：分享包模拟报「请求过于频繁」。
+修法：自检新增 `_http_retry()` / `call_plan()`（**只对限流**重试、等一个窗口，其它错误原样返回），
+并把限流阈值改成环境变量可配。
+
+⑤ 🟡 **自检自己的「假提示」**：`check(name, cond, detail)` 的 `detail` 是**无条件打印**的，
+于是「move 在候选顺序上成功」通过时也会打出「试了 4 种顺序都被拒」这种失败文案。
+⇒ 三处改为分支文案（`move_poi` / `/api/move` / `amapKey`）。
+**教训：守卫的报错文案也是守卫的一部分** —— 文案误导等于把红看成绿。
+
+### 版本
+
+`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m12**、`WEBUI_VERSION` → **m5**、
+`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿）、`mcp/selftest.py`（206 项）、
+`mcp/smoke_exe.py`（17 项）、`mcp/check_orphans.py`（新）。
+
+### ⚠️ 仍未做
+
+- **分享包尚未在别人的 WorkBuddy 里实测**（仅本机以 exe 形态跑通）。
+- exe 分发形态下**面板能否正常渲染**未实测（本机 MCP 仍注册的是源码模式条目）。
+- 高德 JS API 在宿主**双层 iframe** 内的行为仍未实测（沿用 M3 的遗留项）。
 
 ---
 
@@ -759,39 +925,67 @@ async saveConfiguration(e) { … replaceConfiguration(e.content) } // 先 commit
 ## 为什么用 Python 而不是重写
 
 TripPlanner 的核心资产是 `src/`（TOPTW 求解 + 31 城 1193 POI + 905KB 交通矩阵 + 114KB 照片缓存）。
-MCP server 只是一层 stdio JSON-RPC 壳，直接 import 现有内核即可，重写成 Node/TS 等于把求解器重做一遍。
+MCP server 只是一层 stdio JSON-RPC 壳，**M5 起连 import 都不做了**（内核留云端），
+重写成 Node/TS 等于把求解器重做一遍。
 
 ## 目录
 
 ```
 mcp/
-  tripplanner_mcp_server.py   # stdio MCP server（纯标准库、零依赖）
-  local_api.py              # M2.1：面板交互用的本地 HTTP API（detached 常驻，127.0.0.1:51900 起）
-  panel/plan_panel.html     # 面板（自包含；地图 key / 本地 API base+token 用占位符，由 server 注入）
-  selftest.py               # 不开 WorkBuddy 也能验协议 / 规划 / M2 交互 / M2.1 本地 API / M3 远端化（176 项）
-  panel_guard.py            # 面板前端守卫（U+FFFD / 标签配对 / node --check / key 与 token 安全）
-  register.py               # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖）
-src/poi_swap.py             # 换点 / 挪时段公共内核（Web UI 与 MCP **共用一份**）
-src/plan_view.py            # M3：行程视图公共内核（normalize_day / apply_day；Web UI 与 MCP **共用一份**）
-src/md_export.py            # M3：导出公共内核（plan → Markdown；Web UI 与 MCP **共用一份**）
-output/mcp_local_api.json   # 本地 API 的 port + token + pid（自动生成，不入库）
-output/mcp_local_api_token.txt  # M2.2：**稳定的** token（生成一次，跨重启复用；不入库）
+  tripplanner_mcp_server.py   # stdio MCP server（M5：**纯标准库**瘦客户端，只做代理+注入+落盘）
+  build_exe.py                # M5：AST 依赖自查 → PyInstaller onefile → 写 dist/（exe + remote.json + mcp.json + 说明）
+  smoke_exe.py                # M5：把 dist/*.exe 当真 server 拉起冒烟（17 项，含一次真实云端规划）
+  check_orphans.py            # M5：AST 比对 HEAD，抓「删了但还在用」的顶层名字（已并入 release_gate 第 5 步）
+  panel/plan_panel.html       # 面板（自包含；线上 base / Basic 凭据 / 地图 key / session 用占位符，由 server 注入）
+  selftest.py                 # 不开 WorkBuddy 也能验协议 / 规划 / 交互 / 线上后端 / 分享包模拟（206 项）
+  panel_guard.py              # 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全 / 后端列表）
+  register.py                 # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖；--exe 走打包模式）
+src/poi_swap.py               # 换点 / 挪时段公共内核（Web UI 与云端共用）
+src/plan_view.py              # 行程视图公共内核（normalize_day / apply_day；Web UI 与云端共用）
+src/md_export.py              # 导出公共内核（plan → Markdown；Web UI 与云端共用）
+output/mcp_last_plan.json     # 最近一次行程（自动生成，不入库）
+output/mcp_debug.log          # 落盘诊断（宿主拿不到 stderr，只能落盘；不入库）
+dist/                         # M5 打包产物（含**明文口令**的 remote.json）—— 已入 .gitignore，绝不入库
 ```
 
+> 🗑️ **M5 删除**：`mcp/local_api.py`（本地常驻 HTTP API）。它会让 PyInstaller 顺着
+> `import` 把 `src/` + `ortools` 拖进 exe，是打包地雷；且面板后端全走线上后已无调用方。
+> `output/mcp_local_api.json` / `output/mcp_local_api_token.txt` 也不再生成。
+
 ## 快速开始
+
+### A. 开发机（源码模式，改代码即生效）
 
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
-"$PY" mcp/selftest.py          # 1. 本地自检（176 项，含真实规划 + 贫瘠环境 + 跨进程 + M2 交互 + M2.1 本地 API + M3 远端化）
+"$PY" mcp/selftest.py          # 1. 自检（206 项：协议 / 真实规划 / 交互 / 线上后端 / 分享包模拟）
 "$PY" mcp/panel_guard.py       # 2. 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全）
-"$PY" mcp/register.py          # 3. 注册进 WorkBuddy 配置
-# 4. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
-# 5. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
-# 6. 对话里说：「打开行程面板」
+"$PY" mcp/check_orphans.py     # 3. 「删了还在用」静态守门
+"$PY" mcp/register.py          # 4. 注册进 WorkBuddy 配置（源码模式）
+# 5. ⚠️ 重载（见上文顶部）：在「自定义 MCP」表单里加，或重启 WorkBuddy
+# 6. WorkBuddy → 连接器 → 右上角「自定义 MCP」→ 找到 tripplanner → 点「信任」
+# 7. 对话里说：「打开行程面板」
 ```
 
 回滚：`"$PY" mcp/register.py --remove`
+
+一条命令跑全套（五步 + MCP 阶段）：
+
+```bash
+"$PY" scripts/release_gate.py --mcp
+```
+
+### B. 分享给别人（打包模式）
+
+```bash
+"$PY" mcp/build_exe.py --clean                          # 产出 dist/（exe + remote.json + mcp.json + 说明）
+"$PY" mcp/smoke_exe.py                                  # 冒烟（exe 不在则自动跳过）
+"$PY" mcp/register.py --exe dist/tripplanner-mcp.exe    # 本机想用打包形态时
+```
+
+对方拿到**整个 `dist/` 目录**后：把目录放到任意位置 → 改 `mcp.json` 里的路径 →
+粘进 `~/.workbuddy/mcp.json` → 重载 → 点「信任」。详见包内 `使用说明.txt`。
 
 ### 改完面板/ server 后怎么让它生效
 
@@ -984,11 +1178,12 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M1** | 最小闭环：`plan_trip` + `list_cities` + `get_plan` + 只读时间轴面板 | ✅ **完成（2026-10-09，自检 73/73）** |
 | **M1-fix** | `last_plan` 落盘（跨进程）+ 空结果不清屏 + uri 匹配放宽 | ✅ **完成并肉眼验收通过** |
 | **M2** | 交互：面板内换点 / 挪时段 / 导出（AppBridge 回工具）+ 地图（路线 polyline） | ✅ **代码完成（2026-10-09，自检 108/108）** |
-| **M2.1** | 🔴 实测发现宿主 `tools/call` 通道**不通** ⇒ 面板交互改走 `127.0.0.1` 本地 HTTP（`mcp/local_api.py` 常驻 + token 校验） | ✅ **完成（2026-10-09，自检 139/139，门禁四步全绿）** |
+| **M2.1** | 🔴 实测发现宿主 `tools/call` 通道**不通** ⇒ 面板交互改走 `127.0.0.1` 本地 HTTP（`mcp/local_api.py` 常驻 + token 校验） | ✅ 完成（2026-10-09，自检 139/139）—— ⛔ **M5 起该方案下线**（本地服务整体移除，`local_api.py` 已删除） |
 | **M2.2** | 二次报障复修：GET 带 body 的同步异常 + token 跨重启漂移 + 常驻进程被杀；补齐「失败必须看得见」 | ✅ **完成（2026-10-09，自检 143/143）** |
 | **M2.3** | 常驻进程**死因取证**（心跳 / atexit / 信号 / 崩溃 + stderr 落盘）+ 把  挂到请求总入口 + 面板**掉线自愈**（等恢复再发请求 / 看门狗 / 重试按钮） | ✅ **完成（2026-10-09，自检 150/150，门禁四步全绿）；待 WorkBuddy 实测** |
 | **M3** | 面板交互**远端化**：线上后端补齐 `/api/health`、`/api/move`、`/api/export`；面板改「本地优先 → 线上兜底」；`normalize_day` / `apply_day` / `plan_to_markdown` 抽成 `src/` 公共内核（Web UI 与 MCP **共用一份**） | ✅ **已上线（2026-10-09，自检 176/176，门禁四步全绿，`tripagent-planner2-80644…` /api/health=m3）；待 WorkBuddy 实测** |
-| **M4** | 🔴 修 M3 真缺陷（`webui/server.py` **零 CORS** ⇒ 跨域兜底其实没生效）+ 把自建云主机接进 `REMOTE_API_DOMAINS[0]`（`__REMOTE_API_AUTH__` 注入 Basic 头）+ `deploy/cvm` 支持 HTTPS/Basic 认证（`limit_except OPTIONS` 豁免预检） | 🟡 **代码完成并已部署**（自检：无凭据 401 / 带凭据 200 / OPTIONS 204，panel_guard 全绿）；**HTTPS 未通** —— 腾讯云境内节点**拦截未备案域名**，`*.sslip.io` 亦不可备案（见上 M4 节） |
+| **M4** | 🔴 修 M3 真缺陷（`webui/server.py` **零 CORS** ⇒ 跨域兜底其实没生效）+ 把自建云主机接进 `REMOTE_API_DOMAINS[0]`（`__REMOTE_API_AUTH__` 注入 Basic 头）+ `deploy/cvm` 支持 HTTPS/Basic 认证（`limit_except OPTIONS` 豁免预检） | 🟡 **代码完成并已部署**（自检：无凭据 401 / 带凭据 200 / OPTIONS 204，panel_guard 全绿）；**HTTPS 未通** —— 腾讯云境内节点**拦截未备案域名**，`*.sslip.io` 亦不可备案（见上 M4 节）。后经实测判定**域名/HTTPS 均非必需**（面板是 http 上下文，无混合内容问题）⇒ 改用 `http://101.35.47.213` 直连 |
+| **M5** | **瘦客户端 + 单文件 exe**：删掉本地服务（`local_api.py` 整块下线），server 退化为纯标准库代理（规划/换点/挪时段/导出全走云端）；云端 `shape=mcp` 归一化 + `strict_city=1` + `/api/replace` 补归一化；`build_exe.py` 打出 8 MB 零依赖 exe（`remote.json` 随包分发 Basic 凭据）；`smoke_exe.py` 对产物冒烟；新增 `check_orphans.py` 守门 | ✅ **完成（2026-10-10）** —— 自检 **206/206**、面板守卫全绿、打包冒烟 **17/17**、`release_gate.py` 五步全绿；**待 WorkBuddy 内实测分享包** |
 
 M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=None, hotel_text=None)`
 
@@ -1011,7 +1206,15 @@ M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=
 
 ## 环境备注
 
-- 解释器必须是 tripagent venv（M1 起要 `ortools`）：`D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe`
+- **开发机（源码模式）**解释器用 tripagent venv：
+  `D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe`
+  （跑 `selftest.py` / `panel_guard.py` 等守门脚本要用它；系统 Python 会假报失败）
+- **M5 起，MCP server 自身只需要标准库** —— 不再需要 `ortools`（内核在云端）。
+  但**打包 exe 也仍用同一个 venv 里的 PyInstaller**，故 venv 照旧保留。
 - 启动参数加 `-u`（无缓冲），否则 stdio 响应会被 Python 的块缓冲憋住
+  （打包后的 exe 里 `send()` 每次显式 flush，故无需该参数）
 - 配置双写：`~/.workbuddy/mcp.json`（宿主实际读取）+ `~/.workbuddy/.mcp.json`（兼容兜底）
 - **stdout 被 JSON-RPC 独占** —— 任何 `print` 都会让宿主断连，日志一律走 stderr
+- 宿主读的是 `~/.workbuddy/mcp.json`（**不是** `.mcp.json`），且 **只在启动时读一次** ⇒ 改完必须重载
+- 生效判据：`~/.workbuddy/mcp-tool-list.json` 里 `tripplanner_*` 的**个数 = 9**
+- 验真重启：`Get-Process WorkBuddy.exe | Select StartTime`（uptime 大于改文件时间＝**没**重读）

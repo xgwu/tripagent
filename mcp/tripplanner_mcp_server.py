@@ -1,10 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-TripPlanner MCP App —— M1 主体：真实行程闭环
+TripPlanner MCP App —— M5：**瘦客户端**（后端全走线上，可打包分发）
 
-M0（协议 spike）与 M1-pre（CSP + A+C 分流）已验收，本轮把面板里的假数据换成
-真实行程：对话 → 城市识别 → m1_planner 规划内核 → 时间轴面板。
+历史：M0（协议 spike）→ M1（真实行程闭环）→ M2（面板换点/挪时段/导出）→
+M2.1（本地 HTTP 兜底）→ M3（交互远端化）→ M4（自建云主机作远端后端）。
+
+**M5 的定位**：本进程退化为「**薄代理**」—— 只做三件事：
+  ① MCP 协议 + 面板资源（resources/read，含占位符注入）；
+  ② 把规划 / 换点 / 挪时段 / 导出**转发**给云端后端（`remote_request`）；
+  ③ 行程落盘（跨进程兜底）+ 会话 id 管理。
+规划内核（ortools / POI 库 / 交通缓存 / DeepSeek Key）**全部留在云端** ⇒ 本文件
+顶层不 import 它们，HTTP 客户端用标准库 `urllib` ⇒ PyInstaller 打包成单文件 exe、
+发给别人「零依赖」即可跑（对方机器上连 `data/` 都没有）。
 
 工具分层（关键：**只有带 _meta.ui.resourceUri 的才会开面板**）：
   tripplanner_plan_trip   ★带面板：做规划 + 开面板
@@ -17,18 +25,26 @@ M0（协议 spike）与 M1-pre（CSP + A+C 分流）已验收，本轮把面板�
   tripplanner_move_poi      无面板：M2 挪时段
   tripplanner_export        无面板：M2 导出 Markdown
 
-⚠️ M2.1（2026-10-09）：面板 → 宿主 → server 的 `tools/call` 通道在本宿主上是**死的**
-（宿主有 `rpc.callTool`/`proxyAppToolCall.ok`，但请求从未到达任何 server 进程、
-12ms 假成功、structuredContent 被剥）。上面的 replace/move/export 工具保留，
-但**面板实际走 `mcp/local_api.py` 开在 127.0.0.1 的本地 HTTP**。
-本文件负责「确保那个进程在跑」并把 `端口 + token` 注入面板 HTML。
+⚠️ M2.1（2026-10-09，**M5 起已不适用**）：面板 → 宿主 → server 的 `tools/call` 通道
+在本宿主上是**死的**（宿主有 `rpc.callTool`/`proxyAppToolCall.ok`，但请求从未到达任何
+server 进程、12ms 假成功、structuredContent 被剥）。M2.1 曾用 `mcp/local_api.py`（本地
+常驻 HTTP，端口 51900 起）兜底；**M5 起面板后端全走线上**，`local_api.py` **已整体删除**
+（它 `subprocess` 拉起自身 + import 内核 ⇒ PyInstaller 会把 `src/`+`ortools` 打进 exe，
+是打包地雷），本文件里的 local-api helper 也一并删除 —— 主链路与打包链均零调用。
 
 设计要点（照 app.asar 源码挖出的硬约束）：
   - 工具是否「带面板」**完全取决于** tool._meta.ui.resourceUri；不用手写 isApp
   - resources/read 返回的 HTML 有 256KiB 预取阈值 → 面板必须自包含、不引兄弟资源
   - 宿主用 document.write 注入（非 srcdoc）→ 相对路径会 404，故面板不做任何外部引用
   - 图片走高德直链 store.is.autonavi.com → 必须写进 csp.resourceDomains 才不被静默拦掉
-  - stdout 只能输出 JSON-RPC；规划内核若有任何 print 都会让宿主断连 → 规划期整体改道 stderr
+  - **面板要 fetch 的线上 base，其 host 必须写进 csp.connectDomains** —— 漏了不是报错，
+    是**静默拦**（面板只表现为「后端不可达」）
+  - stdout 只能输出 JSON-RPC；任何 print 都会让宿主断连 → 规划期整体改道 stderr
+
+配置（base + Basic 凭据，按优先级）：
+  ① 环境变量 `TRIPPLANNER_REMOTE_BASE` / `TRIPPLANNER_REMOTE_AUTH`
+  ② 与 exe 同目录的 `remote.json`（**随分享包分发**）{"base": "...", "auth": "user:pass"}
+  ③ `secrets.json: remote_basic_auth`（开发机兜底）+ `REMOTE_API_DOMAINS[0]`
 
 用法：由 WorkBuddy 以 stdio 方式拉起，不需要手工运行。
 """
@@ -41,16 +57,36 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.4.1-m4"
+SERVER_VERSION = "0.5.0-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PANEL_PATH = os.path.join(HERE, "panel", "plan_panel.html")
+
+
+def is_frozen() -> bool:
+    """是不是打包后的可执行文件（PyInstaller 会设 `sys.frozen`）。"""
+    return bool(getattr(sys, "frozen", False))
+
+
+def bundle_dir() -> str:
+    """**只读**资源目录（面板 HTML 等随包内容）。
+
+    源码模式 = 本文件所在目录；打包后 = PyInstaller 解包目录 `_MEIPASS`。
+    ⚠️ 刻意**不用 `__file__` 推断**：onefile 下 `__file__` 的位置取决于打包布局
+    （主脚本被塞进归档根），是打包事故的常见来源，改用官方的 `_MEIPASS`。
+    """
+    if is_frozen():
+        return (getattr(sys, "_MEIPASS", "") or
+                os.path.dirname(os.path.abspath(sys.executable)))
+    return HERE
+
+
+PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m11"
+PANEL_VERSION = "m12"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -122,76 +158,47 @@ MIN_DAYS, MAX_DAYS = 1, 7
 # 项目内核：懒加载（initialize 阶段不拖慢；首次规划才 import ortools 等）
 # ---------------------------------------------------------------------------
 def project_root() -> str:
+    """**可写**根：`remote.json`、`output/`（行程落盘 + 诊断日志）都在这下面。
+
+    优先级：`TRIPPLANNER_HOME`（宿主 / 自检会设）> 打包后 exe 所在目录 > 源码仓库根。
+    ⚠️ 打包后**不能**用 `dirname(HERE)` —— 那是临时解包目录的父目录，既非预期也可能只读。
+    """
     env_home = os.environ.get("TRIPPLANNER_HOME") or ""
     if env_home and os.path.isdir(env_home):
         return env_home
+    if is_frozen():
+        return os.path.dirname(os.path.abspath(sys.executable))
     return os.path.dirname(HERE)
 
 
-_KERNEL = None
-
-
-def kernel():
-    """懒加载 TripPlanner 内核（src/）。失败返回 (None, err_msg)。"""
-    global _KERNEL
-    if _KERNEL is not None:
-        return _KERNEL, None
-    root = project_root()
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    try:
-        from src import config as _config
-        # ⚠️ 必须有这一步：load_config() 只返回 dict、不写 os.environ，而 llm_client
-        # 惰性只读 os.environ。宿主（WorkBuddy）拉起本进程时 env 里只有 TRIPPLANNER_HOME，
-        # 不注入就会「静默降级」到离线链路 —— 0.x 秒跑完、结果看着还挺合理，极难发现。
-        injected = _config.apply_env()
-        log("config.apply_env 注入", keys=injected)
-    except Exception as e:
-        log("config.apply_env 失败（将只依赖进程环境）", err=str(e))
-    try:
-        from src import poi_db, m1_planner, llm_client, query_days, poi_swap  # noqa
-        _KERNEL = {"root": root, "poi_db": poi_db, "planner": m1_planner,
-                   "llm": llm_client, "query_days": query_days, "poi_swap": poi_swap}
-        return _KERNEL, None
-    except Exception as e:  # 内核挂了也不能让 server 崩 —— 面板还要能开、能报错
-        return None, f"{type(e).__name__}: {e}"
-
-
 # ---------------------------------------------------------------------------
-# 行程视图层：委托给 src/plan_view.py（Web UI 与 MCP **共用一份**，不复制）
-#   M3（面板交互远端化）后，线上 webui 后端也要做同样的「归一化 / 写回」，
-#   故实现搬到 src/ 由两边 import。这里保留**同名薄封装**：内部调用点零改动，
-#   且 src/ 依然**懒加载**（initialize 阶段不 import，保持启动轻快）。
+# ☠️ M5 已删除：`kernel()` / `_plan_view()` / `photo_of()` / `poi_coords()`
+#
+# **为什么必须删、而不是留着当兼容壳**：PyInstaller 的依赖分析**会**跟进函数体里的
+# `from src import ...`。留着这几个壳，`src/` → `ortools` 就会被一起打进 exe
+# （体积从 ~10MB 涨到几百 MB，且可能直接打包失败）。而它们**一个调用点都没有**：
+#   - 规划/换点/挪时段/导出 → 云端（`remote_request`）
+#   - 归一化（补照片/坐标） → 云端 `src/plan_view.py`
+# 删掉它们还有第二个好处：**「不依赖 src/」变成可静态证明的**（见自检里的
+# 「瘦客户端源码里没有任何 `from src` / `import ortools`」那条守卫）。
 # ---------------------------------------------------------------------------
-_PLAN_VIEW = None
-
-
-def _plan_view():
-    global _PLAN_VIEW
-    if _PLAN_VIEW is None:
-        root = project_root()
-        if root not in sys.path:
-            sys.path.insert(0, root)
-        from src import plan_view as _pv
-        _PLAN_VIEW = _pv
-    return _PLAN_VIEW
-
-
-def photo_of(poi_id: str) -> str:
-    """POI 照片（高德直链）。实现见 src/plan_view.py。"""
-    return _plan_view().photo_of(poi_id)
-
-
-def poi_coords(city: str) -> dict:
-    """{poi_id: (lat, lng)}（GCJ-02）。实现见 src/plan_view.py。"""
-    return _plan_view().poi_coords(city)
 
 
 def amap_js_key() -> str:
-    """从 secrets.json 取**Web 端 JSAPI** key（面板地图用）。
+    """面板地图用的**高德 Web 端 JSAPI** key。
 
-    刻意不放进 panel/*.html 文件（那会随 git 入库）；改由 `read_panel()` 在
-    resources/read 时注入占位符 —— key 只在传输时出现，仓库里始终是占位符。
+    刻意不放进 `panel/*.html`（那会随 git 入库）；改由 `read_panel()` 在
+    resources/read 时替换占位符 —— key 只在传输时出现，仓库里始终是占位符。
+
+    两级取值（M5 新增第二级）：
+      ① 本地 `secrets.json: amap_js_key` —— 开发机 / 自建部署。
+      ② 本地没有（**分享包**里不会有 secrets.json）⇒ 问云端 `GET /api/cities`
+         （它本就回带 `amap_key`）。
+    ⚠️ 为什么经后端下发没问题：高德 JSAPI key 是**设计为前端可见**的公开 key
+       （它本来就直接写在页面里），所以这不是新增的泄露面；反而带来一个好处 ——
+       **换 key 不用重新打包分发**（所有已发出的包自动跟着换）。
+    ⚠️ 必须 try/except 包住：这一句跑在 `resources/read` 里，网络抖动**不能**
+       让面板打不开（地图缺失是可接受的降级，面板打不开不是）。
     """
     global _AMAP_KEY_CACHE
     if _AMAP_KEY_CACHE is not None:
@@ -201,7 +208,16 @@ def amap_js_key() -> str:
         with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
             key = str((json.load(f) or {}).get("amap_js_key") or "").strip()
     except Exception as e:
-        log("amap_js_key 读取失败（地图将不可用）", err=str(e))
+        log("本地 secrets.json 未取到 amap_js_key（改用云端）", err=str(e))
+    if not key:
+        try:
+            res = remote_request("/api/cities", timeout=6.0)
+            key = str((res or {}).get("amap_key") or "").strip()
+            dbg("amap_js_key.from_remote", ok=bool(key))
+        except Exception as e:  # noqa: BLE001 —— 面板开不了比地图缺失严重得多
+            dbg("amap_js_key.remote.fail", err=str(e))
+    if not key:
+        log("⚠️ 未取得 amap_js_key（面板地图将不可用，其余功能不受影响）")
     _AMAP_KEY_CACHE = key
     return key
 
@@ -243,65 +259,174 @@ def remote_basic_auth() -> str:
     return _REMOTE_AUTH_CACHE
 
 
+# ---------------------------------------------------------------------------
+# M5：远端后端（瘦客户端）—— 云端地址 / 凭据 / 会话 id
+#
+# 为什么要有这一层：面板从 M5 起**后端全走线上**，规划、换点、导出都在云端，
+# 本进程退化成「薄代理」（只做 MCP 协议 + 面板资源 + 落盘行程）。
+# 于是：
+#   - 不再需要 ortools / POI 库 / 交通缓存 / DeepSeek Key ⇒ 分享给别人时
+#     对方零 pip 依赖、不必带 2.6M 数据、不用自己的 API Key。
+#   - 云端地址与 Basic 凭据由 **remote.json** 提供（打包后与 exe 同目录，
+#     随分享包一起发），开发机回落 secrets.json。
+#   - 云端是**无状态**的（入参自包含），所以「我这份行程现在是什么」需要一把
+#     钥匙 —— 用落盘的 session_id，plan / move / replace / 拉行程 全程带着它。
+# ---------------------------------------------------------------------------
+REMOTE_JSON_NAME = "remote.json"          # 分享包自带：{"base": "...", "auth": "user:pass"}
+_SESSION_ID_CACHE = None
+_REMOTE_CFG_CACHE = None
+
+
+def remote_config_path() -> str:
+    """remote.json 路径 —— 与 `project_root()` 同一套规则（打包后 = exe 同目录）。
+
+    刻意复用 `project_root()` 而不是重复写一遍 frozen 判断：两处漂移过一次就会
+    出现「配置读得到、状态写别处」这种极难查的错位。
+    """
+    return os.path.join(project_root(), REMOTE_JSON_NAME)
+
+
+def session_id() -> str:
+    """面板 ↔ 云端之间那把「当前行程」的钥匙：生成一次后落盘，跨进程/重启稳定。
+
+    与「宿主**按需 spawn** 本进程（每次 pid 都不同）」这条已知事实同一套理由：
+    若每次随机，面板手里的那份立刻过期；落盘才能让「谁在用这份行程」跨进程一致。
+    （M2.1 的本地 HTTP token 当年也是为此落盘，那套已随 `local_api.py` 一起下线。）
+    """
+    global _SESSION_ID_CACHE
+    if _SESSION_ID_CACHE:
+        return _SESSION_ID_CACHE
+    # 允许环境变量覆盖（自检用它做**会话隔离**：多个用例共用一台云端时不互相串行程）
+    env_sid = (os.environ.get("TRIPPLANNER_SESSION_ID") or "").strip()
+    if env_sid:
+        _SESSION_ID_CACHE = env_sid
+        return env_sid
+    path = os.path.join(state_dir(), "mcp_session_id.txt")
+    try:
+        with open(path, encoding="utf-8") as f:
+            v = f.read().strip()
+        if v:
+            _SESSION_ID_CACHE = v
+            return v
+    except Exception:
+        pass
+    import uuid as _uuid
+    v = _uuid.uuid4().hex[:16]
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(v)
+        os.replace(tmp, path)
+        dbg("session_id.created", sid=v)
+    except Exception as e:
+        dbg("session_id.write.fail", err=str(e))
+    _SESSION_ID_CACHE = v
+    return v
+
+
+def remote_config() -> dict:
+    """远端后端配置 `{"base":…, "auth":"Basic …"}`。
+
+    优先级（分享包友好）：
+      ① 环境变量 TRIPPLANNER_REMOTE_BASE / TRIPPLANNER_REMOTE_AUTH
+      ② `remote.json`（打包后=exe 同目录）—— **随分享包分发**
+      ③ `secrets.json: remote_basic_auth`（开发机兜底）+ `REMOTE_API_DOMAINS[0]`
+    """
+    global _REMOTE_CFG_CACHE
+    if _REMOTE_CFG_CACHE is not None:
+        return _REMOTE_CFG_CACHE
+    base = (os.environ.get("TRIPPLANNER_REMOTE_BASE") or "").strip()
+    auth = (os.environ.get("TRIPPLANNER_REMOTE_AUTH") or "").strip()
+    try:
+        with open(remote_config_path(), encoding="utf-8") as f:
+            d = json.load(f) or {}
+        base = base or str(d.get("base") or d.get("url") or "").strip()
+        auth = auth or str(d.get("auth") or d.get("basic_auth") or "").strip()
+        log("remote.json 已加载", path=remote_config_path())
+    except FileNotFoundError:
+        pass
+    except Exception as e:  # noqa: BLE001 —— 配置坏了要看得见，不能静默退化成默认
+        log("remote.json 读取失败", err=str(e), path=remote_config_path())
+    base = (base or REMOTE_API_DEFAULT_BASE).rstrip("/")
+    if not auth:
+        auth = remote_basic_auth()
+    if auth and not auth[:6].lower().startswith("basic "):
+        import base64 as _b64
+        auth = "Basic " + _b64.b64encode(auth.encode("utf-8")).decode("ascii")
+    _REMOTE_CFG_CACHE = {"base": base, "auth": auth}
+    log("远端后端配置", base=base, has_auth=bool(auth),
+        src="remote.json" if os.path.exists(remote_config_path()) else "secrets/默认")
+    return _REMOTE_CFG_CACHE
+
+
+def remote_request(path: str, params: dict | None = None, payload: dict | None = None,
+                   method: str = "GET", timeout: float = 180.0) -> dict:
+    """调云端后端，返回解析后的 JSON dict。
+
+    网络/协议类失败**抛 RuntimeError**（调用方转成用户可读错误，绝不静默）；
+    HTTP 4xx/5xx 返回后端给的 JSON（可能含 error 字段），同样带 `ok=False`。
+    """
+    import urllib.error
+    import urllib.parse
+    import urllib.request
+
+    cfg = remote_config()
+    url = cfg["base"] + path
+    if params:
+        url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params)
+    data = None
+    headers = {"Accept": "application/json",
+               # CloudStudio 等前置代理有时按 UA 拦截，给一个明确标识便于排查
+               "User-Agent": f"tripplanner-mcp/{SERVER_VERSION}"}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    if cfg["auth"]:
+        headers["Authorization"] = cfg["auth"]
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            body = r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", "replace")
+        try:
+            d = json.loads(body)
+            if not isinstance(d, dict):
+                d = {}
+        except Exception:  # noqa: BLE001
+            d = {}
+        d.setdefault("ok", False)
+        if not d.get("error"):
+            hint = "（后端 Basic 凭据缺失或错误）" if e.code == 401 else ""
+            d["error"] = f"后端返回 HTTP {e.code}{hint}"
+        dbg("remote.request.http_error", path=path, code=e.code)
+        return d
+    except Exception as e:  # noqa: BLE001 —— 连不上必须说清楚连的是谁
+        raise RuntimeError(f"无法连接后端 {cfg['base']}（{type(e).__name__}: {e}）") from e
+    try:
+        return json.loads(body)
+    except Exception as e:  # noqa: BLE001
+        raise RuntimeError(
+            f"后端返回了非 JSON 内容（{len(body)} 字节）：{body[:200]}") from e
+
+
+
 _AMAP_KEY_CACHE = None
 
 
 # ---------------------------------------------------------------------------
-# 城市：data/<城市>_pois.json
+# ☠️ M5 已删除：`city_names()` / `poi_count()` / `resolve_city()`
+#
+# 城市解析已**全部交给云端**：城市清单走 `GET /api/cities`，需求→城市的判定在
+# `/api/plan` 内的 `plan_route_decision`（含 `strict_city=1` 的 agent 面向语义）。
+# 两个删除理由：
+#   ① `city_names()` 扫的是**本地** `data/` —— 分享包里根本没这个目录，它会静默
+#      返回 `[]`，把「没数据」伪装成「配置问题」（极难查）。而且 `poi_count()` 会拉
+#      内核 ⇒ 又把 `src/`+ortools 拖进打包。
+#   ② 城市清单是**有版本的最小真相**，只能有一份（云端）。客户端缓存一份必然漂移
+#      （加城后客户端还是旧清单 ⇒ 「这个城市不支持」的假报错）。
 # ---------------------------------------------------------------------------
-_CITY_CACHE = None
-
-
-def city_names() -> list:
-    """扫描 data/ 得到可规划城市名（按拼音排序无所谓，稳定即可）。"""
-    global _CITY_CACHE
-    if _CITY_CACHE is None:
-        d = os.path.join(project_root(), "data")
-        try:
-            _CITY_CACHE = sorted(
-                f[: -len("_pois.json")] for f in os.listdir(d) if f.endswith("_pois.json")
-            )
-        except OSError as e:
-            log("data 目录不可用", err=str(e), dir=d)
-            _CITY_CACHE = []
-    return _CITY_CACHE
-
-
-def poi_count(city: str) -> int:
-    k, err = kernel()
-    if err:
-        return 0
-    try:
-        return len(k["poi_db"].load_city(city).get("pois", []))
-    except Exception:
-        return 0
-
-
-def resolve_city(city_arg: str | None, query: str) -> tuple:
-    """从显式参数或需求文本里定城市。返回 (city_name, note)。
-
-    判据：显式参数优先；否则取「在 query 中出现且最长」的城市名
-    —— 最长匹配避免「上海」命中「海上」这类子串误判，也让「六盘水」压过「水」。
-    """
-    names = city_names()
-    if not names:
-        return "", "城市库不可用（data 目录为空或内核加载失败）"
-    c = (city_arg or "").strip()
-    if c:
-        if c in names:
-            return c, "explicit"
-        # 容忍「杭州市」这类带后缀的写法
-        for n in names:
-            if n in c or c.rstrip("市区域县") in n:
-                return n, "explicit-fuzzy"
-        return "", f"未知城市：{c}。可用：{'、'.join(names)}"
-    q = query or ""
-    hits = [n for n in names if n in q]
-    if hits:
-        best = max(hits, key=len)
-        return best, "from-query"
-    return "", ("没能从需求里识别出城市。请在需求里写明城市，或传 city 参数。"
-                f"当前支持：{'、'.join(names)}")
 
 
 # ---------------------------------------------------------------------------
@@ -398,237 +523,30 @@ def write_plan_state(value) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M2.1：本地 HTTP API（面板 ↔ 服务端的备用通路）
+# 面板注入占位符（仓库里只放占位符，真值在 `resources/read` 时替换）
 #
-# 为什么另起一个常驻进程，而不是在本进程开个线程：
-#   宿主对 stdio MCP server 是**按需 spawn**、随时回收（见 _Session 注释里
-#   「pidSpawned 每次都不同」）。挂在 server 进程内的 HTTP 会随它一起死，
-#   面板下一次点击就 fetch 不到。故由本地 `mcp/local_api.py` detached 常驻，
-#   本文件只负责「确保它在跑」并把端口 + token 注入面板 HTML。
+# ☠️ M5 已删除本地 HTTP 那一整块（`local_api_*` / `ensure_local_api`）：面板后端全走
+#    线上，本进程不再拉起任何本地服务。删除理由不只是「没有调用点」——
+#    `ensure_local_api` 会 `subprocess` 拉起 `local_api.py`，而那个文件又 import 本模块
+#    取内核 ⇒ PyInstaller 的依赖分析会把 `src/`+ortools 一起打进 exe。留着就是打包地雷。
+#    那套历史设计（本地常驻进程 + 端口文件 + 稳定 token + 死因取证）的判据仍写在
+#    `mcp/README.md` 的 M2.1 一节 —— 排查「宿主按需 spawn / 进程被回收」时依然有用。
 # ---------------------------------------------------------------------------
-LOCAL_API_BASE_PLACEHOLDER = "__LOCAL_API_BASE__"
-LOCAL_API_TOKEN_PLACEHOLDER = "__LOCAL_API_TOKEN__"
-LOCAL_API_DEFAULT_PORT = 51900          # 与 local_api.PREFERRED_PORTS 起点一致
-# M3：线上后端 base（面板交互的远端兜底）。与本地 base/token 同一套「占位符不入库」手法。
+# M3：线上后端 base（面板要 fetch 的就是它）。与 amap key 同一套「占位符不入库」手法。
 REMOTE_API_BASE_PLACEHOLDER = "__REMOTE_API_BASE__"
 REMOTE_API_DEFAULT_BASE = REMOTE_API_DOMAINS[0]
 # M4：远端后端的 **HTTP Basic 认证头**（云主机 nginx auth_basic）。
 #   面板要带凭据才访问得了线上后端 ⇒ 值由 secrets.json 的 `remote_basic_auth`
-#   （形如 "user:pass"）在 **resources/read 时注入**，仓库里永远只是占位符
-#   （与 amap key / 本地 token 同一套「凭据不入库」做法）。
+#   （形如 "user:pass"）在 **resources/read 时注入**，仓库里永远只是占位符。
 REMOTE_API_AUTH_PLACEHOLDER = "__REMOTE_API_AUTH__"
+# M5：`__SESSION_ID__` —— 云端无状态，面板「重新拉取行程 / 换点 / 挪时段」要一把钥匙
+#   说明「我这份行程」，故把落盘的 session_id 注入面板。
+# `__PLAN_JSON__` —— 渲染时注入**当前行程**：冷启动 / 云端会话过期时的兜底渲染源
+#   （首屏仍走宿主 bootstrap 通道，这里只是让「没有云端会话」也不至于空白）。
+SESSION_ID_PLACEHOLDER = "__SESSION_ID__"
+PLAN_JSON_PLACEHOLDER = "__PLAN_JSON__"
 
 
-def local_api_portfile_path() -> str:
-    return os.path.join(state_dir(), "mcp_local_api.json")
-
-
-def local_api_token_path() -> str:
-    return os.path.join(state_dir(), "mcp_local_api_token.txt")
-
-
-def local_api_token() -> str:
-    """本地 API 的**稳定** token：跨进程重启保持不变（首次生成后落盘）。
-
-    ⚠️ 为什么必须稳定（2026-10-09 实测抓到的坑，别改回随机）：
-      宿主会连同 MCP server 进程树回收常驻的 `local_api.py`（日志实证：无 kill
-      记录却消失，端口文件停在旧 pid，几分钟就换一次）。若 token 每次启动随机，
-      面板 HTML 里注入的那份就立刻过期；而 `/api/health` **不校验 token**，
-      于是「诊断区测试本地 API = 可用」与「换点/拖拽 403 全灭」同时成立，
-      用户看到的就是「诊断说没问题，功能就是不动」。
-      token 稳定 + 端口稳定（51900）⇒ 面板即使经历 API 重启也照样能用。
-    """
-    path = local_api_token_path()
-    try:
-        with open(path, encoding="utf-8") as f:
-            t = f.read().strip()
-        if t:
-            return t
-    except Exception:
-        pass
-    import secrets as _secrets
-    t = _secrets.token_hex(16)
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(t)
-        os.replace(tmp, path)
-        dbg("local_api.token.created", chars=len(t))
-    except Exception as e:
-        dbg("local_api.token.write.fail", err=str(e))
-    return t
-
-
-def _local_api_read_portfile():
-    try:
-        with open(local_api_portfile_path(), encoding="utf-8") as f:
-            d = json.load(f)
-        if isinstance(d, dict) and d.get("port"):
-            return d
-    except Exception:
-        pass
-    return None
-
-
-def _local_api_info(base: str, timeout: float = 0.6):
-    """读 /api/health 的 JSON；不通返回 None。health 不校验 token，专供探活。"""
-    try:
-        import urllib.request
-        with urllib.request.urlopen(base + "/api/health", timeout=timeout) as r:
-            if int(getattr(r, "status", 0) or 0) != 200:
-                return None
-            return json.loads(r.read().decode("utf-8"))
-    except Exception:
-        return None
-
-
-def _local_api_alive(base: str, timeout: float = 0.6) -> bool:
-    return _local_api_info(base, timeout) is not None
-
-
-def _local_api_kill(pid: int) -> None:
-    """干掉一个**确认是我们自己的**旧实例（代码升级后用，见 ensure_local_api）。
-
-    Windows 下 os.kill(pid, SIGTERM) 等价于 TerminateProcess，可直接用。
-    """
-    if pid <= 0:
-        return
-    try:
-        import signal as _signal
-        os.kill(pid, _signal.SIGTERM)
-        dbg("local_api.kill", pid=pid, reason="version-mismatch")
-    except Exception as e:
-        dbg("local_api.kill.fail", pid=pid, err=str(e))
-
-
-_LOCAL_API_CACHE = {"base": "", "token": "", "checked": 0.0}
-
-# 拉起本地 API 用的「中转 launcher」：自己立刻退出，把真正的服务进程变成孤儿，
-# 这样宿主按进程树回收 MCP server 时找不到它。见 ensure_local_api 的注释。
-# ⚠️ 第 2 个参数是 stderr 落盘路径：**崩溃现场不能再丢给 DEVNULL**
-#    （踩过：进程无声消失，什么都没有，连是崩了还是被杀了都判不出来）。
-_SPAWN_LAUNCHER_SRC = (
-    "import subprocess,sys\n"
-    "fl=int(sys.argv[1]);errp=sys.argv[2];cmd=sys.argv[3:]\n"
-    "try:\n"
-    "    f=open(errp,'a',encoding='utf-8',errors='replace',buffering=1)\n"
-    "except Exception:\n"
-    "    f=subprocess.DEVNULL\n"
-    "kw=dict(stdin=subprocess.DEVNULL,stdout=f,stderr=f,close_fds=True)\n"
-    "try:\n"
-    "    subprocess.Popen(cmd,creationflags=fl,**kw)\n"
-    "except OSError:\n"
-    "    subprocess.Popen(cmd,creationflags=fl & ~0x01000000,**kw)\n"
-)
-
-# 落盘用的文件句柄要留住，否则 Python 会把它 GC 掉（Popen 只是复制句柄，
-# 父进程这边关掉不影响子进程，但关的时机若不明确就容易查出「stderr 有时有、有时没有」）。
-_KEEP_HANDLES: list = []
-
-
-def local_api_errlog_path() -> str:
-    return os.path.join(state_dir(), "mcp_local_api.err.log")
-
-
-def ensure_local_api(force: bool = False) -> tuple:
-    """确保本地 HTTP API 在跑。返回 `(base, token)`；失败返回 `("", "")`。
-
-    幂等且便宜：缓存命中（默认 30s）或 portfile + 健康检查通过时都不重新拉起。
-
-    ⚠️ **版本闸门**：常驻进程会一直活着，若只改代码不 bump `SERVER_VERSION`，
-    旧进程会继续用旧逻辑服务面板（表现为「改了没生效」，极难排查）。
-    故健康检查里比对 `version`，不一致就杀掉重拉。
-    🔴 **改 `tripplanner_mcp_server.py` 或 `local_api.py` 都必须 +1** ——
-    `local_api.py` 会 import 本模块取内核，所以本文件的改动同样影响常驻进程。
-    """
-    now = time.time()
-    c = _LOCAL_API_CACHE
-    if not force and c["base"] and now - c["checked"] < 30:
-        return c["base"], c["token"]
-
-    pf = _local_api_read_portfile()
-    if pf:
-        base = f"http://127.0.0.1:{int(pf['port'])}"
-        info = _local_api_info(base)
-        if info and str(info.get("server") or "") == SERVER_NAME:
-            if str(info.get("version") or "") == SERVER_VERSION:
-                c.update(base=base, token=str(pf.get("token") or ""), checked=now)
-                dbg("local_api.reuse", base=base, pid=pf.get("pid"))
-                return base, c["token"]
-            log("本地 API 版本不符，杀掉旧实例重拉",
-                old=info.get("version"), want=SERVER_VERSION)
-            _local_api_kill(int(pf.get("pid") or 0))
-            try:
-                os.remove(local_api_portfile_path())
-            except Exception:
-                pass
-            time.sleep(0.3)          # 等端口释放
-
-    try:
-        import subprocess
-        script = os.path.join(HERE, "local_api.py")
-        env = dict(os.environ)
-        env["TRIPPLANNER_HOME"] = project_root()
-        try:
-            errf = open(local_api_errlog_path(), "a", encoding="utf-8",
-                        errors="replace", buffering=1)
-            _KEEP_HANDLES.append(errf)
-        except Exception:
-            errf = subprocess.DEVNULL
-        popen_kw = dict(cwd=HERE, env=env, stdin=subprocess.DEVNULL,
-                        stdout=errf, stderr=errf, close_fds=True)
-        if os.name == "nt":
-            # 两层保险，缺一层都会被宿主顺手回收（2026-10-09 实测）：
-            #  ① CREATE_BREAKAWAY_FROM_JOB：宿主若用 job object 管 MCP 子进程，
-            #     不脱离就会随 job 一起没。job 不允许 breakaway 时 Popen 抛 OSError。
-            #  ② **经 launcher 中转**：真正的 API 进程的父进程是一个「立刻退出」的
-            #     小 launcher ⇒ 变成孤儿，宿主按「进程树」枚举也找不到它。
-            # 失败一律降级并如实落日志（mode），不静默。
-            flags_detach = 0x00000008 | 0x00000200          # DETACHED | NEW_GROUP
-            flags_break = flags_detach | 0x01000000         # + BREAKAWAY_FROM_JOB
-            mode = ""
-            for tag, fl in (("launcher+breakaway", flags_break),
-                            ("launcher", flags_detach)):
-                try:
-                    subprocess.Popen([sys.executable, "-c", _SPAWN_LAUNCHER_SRC,
-                                      str(fl), local_api_errlog_path(),
-                                      sys.executable, script],
-                                     creationflags=fl, **popen_kw)
-                    mode = tag
-                    break
-                except OSError as e:
-                    dbg("local_api.spawn.try.fail", mode=tag, err=str(e))
-            if not mode:
-                subprocess.Popen([sys.executable, script],
-                                 creationflags=flags_detach, **popen_kw)
-                mode = "direct"
-        else:
-            subprocess.Popen([sys.executable, script], start_new_session=True, **popen_kw)
-            mode = "setsid"
-        dbg("local_api.spawn", script=script, python=sys.executable, mode=mode)
-    except Exception as e:
-        log("local_api 拉起失败", err=str(e))
-        dbg("local_api.spawn.fail", err=str(e))
-        return "", ""
-
-    for _ in range(40):                  # 最多等 ~4s
-        time.sleep(0.1)
-        pf = _local_api_read_portfile()
-        if pf:
-            base = f"http://127.0.0.1:{int(pf['port'])}"
-            if _local_api_alive(base, timeout=0.4):
-                c.update(base=base, token=str(pf.get("token") or ""), checked=now)
-                dbg("local_api.ready", base=base, pid=pf.get("pid"))
-                return base, c["token"]
-    dbg("local_api.timeout")
-    log("local_api 启动超时（面板将降级到宿主通道）")
-    return "", ""
-
-
-# ---------------------------------------------------------------------------
-# A + C 面板分流状态 + M1 行程缓存
-# ---------------------------------------------------------------------------
 class _Session:
     """一次「会话」的状态。
 
@@ -702,7 +620,7 @@ TOOLS = [
             "【主入口】按用户的一句话需求生成真实行程，并打开行程面板。\n"
             "例：「杭州2天，带8岁孩子，想看西湖和灵隐寺」。\n"
             "会从需求里自动识别城市与天数（也可显式传 city / days）。\n"
-            "数据来自本地 POI 库 + 交通/路线缓存，无需联网。\n"
+            "规划在云端完成（POI 库 / 交通缓存 / LLM 都在线上），本进程只做代理。\n"
             "⚠️ 面板已打开时再次调用不会新开一扇，只回摘要（A+C 分流）。"
         ),
         "inputSchema": {
@@ -914,171 +832,171 @@ def read_panel() -> str:
         key = amap_js_key()
         html = html.replace(AMAP_KEY_PLACEHOLDER, key)
         log("panel 地图 key 注入", has_key=bool(key))
-    # M2.1：注入本地 HTTP API 的 base + token（面板交互的唯一可靠通路）。
-    # 注入失败就留空串 —— 面板侧会退化为默认端口 / 回落宿主通道并**如实报错**，
-    # 绝不静默。
-    if LOCAL_API_BASE_PLACEHOLDER in html or LOCAL_API_TOKEN_PLACEHOLDER in html:
-        base, _tok = ensure_local_api()
-        # 注入失败也要给出**可用**的默认值：端口固定 51900，token 稳定 ⇒ 面板照样能连上。
-        # （只注入空串的话，面板只能降级到已经实测不通的宿主通道。）
-        # token 一律从「落盘文件」取 —— 常驻进程读的是同一个文件，重启也不换。
-        base = base or f"http://127.0.0.1:{LOCAL_API_DEFAULT_PORT}"
-        token = local_api_token()
-        html = html.replace(LOCAL_API_BASE_PLACEHOLDER, base)
-        html = html.replace(LOCAL_API_TOKEN_PLACEHOLDER, token)
-        log("panel 本地 API 注入", base=base,
-            has_token=bool(token), default_port=LOCAL_API_DEFAULT_PORT)
-    # M3/M4：注入**线上后端** base（远端兜底）+ Basic 认证头。
-    # 它是公开地址、无 token ⇒ 注入失败也能用默认值；但凭据缺失时线上后端会被
-    # nginx 401（面板如实报「不可达」）。
-    if REMOTE_API_BASE_PLACEHOLDER in html:
-        html = html.replace(REMOTE_API_BASE_PLACEHOLDER, REMOTE_API_DEFAULT_BASE)
-        log("panel 线上后端注入", base=REMOTE_API_DEFAULT_BASE)
-    if REMOTE_API_AUTH_PLACEHOLDER in html:
-        auth = remote_basic_auth()
-        html = html.replace(REMOTE_API_AUTH_PLACEHOLDER, auth)
-        log("panel 线上后端凭据注入", has_auth=bool(auth))
+    # M5：面板后端**全走线上** —— 线上 base + Basic 凭据都从 remote_config() 取
+    # （打包后 = exe 同目录的 remote.json，随分享包分发；开发机回落 secrets.json）。
+    # 本地常驻 API（local_api.py）自 M5 起**不再拉起** ⇒ 不再注入本地 base/token。
+    if REMOTE_API_BASE_PLACEHOLDER in html or SESSION_ID_PLACEHOLDER in html:
+        cfg = remote_config()
+        html = html.replace(REMOTE_API_BASE_PLACEHOLDER, cfg["base"])
+        html = html.replace(REMOTE_API_AUTH_PLACEHOLDER, cfg["auth"])
+        html = html.replace(SESSION_ID_PLACEHOLDER, session_id())
+        log("panel 线上后端注入", base=cfg["base"], has_auth=bool(cfg["auth"]),
+            session=session_id())
+    # M5：注入**当前行程** —— 冷启动 / 云端会话过期时的兜底渲染源。
+    #   ⚠️ JSON 里把 `<` 转义掉，防止行程文本里出现 `</script>` 之类把 HTML 提前截断。
+    if PLAN_JSON_PLACEHOLDER in html:
+        cur = read_plan_state()
+        blob = (json.dumps(cur, ensure_ascii=False).replace("<", "\\u003c")
+                if cur else "null")
+        html = html.replace(PLAN_JSON_PLACEHOLDER, blob)
+        log("panel 行程注入", has_plan=cur is not None)
     return html
 
 
 # ---------------------------------------------------------------------------
 # M1 规划：调内核 → 归一化 → 缓存
 # ---------------------------------------------------------------------------
+# 一次规划的云端超时。LLM 提案 + 落地 + TOPTW 求解，慢时 60~120s ⇒ 给足余量；
+# 超时按「连不上」如实报错，不静默降级。
+PLAN_TIMEOUT_S = 240.0
+
+
 def run_plan(query: str, days: int | None, city_arg: str | None,
              date0: str | None, hotel_text: str | None) -> dict:
-    """跑一次真实规划。返回统一结构：{"ok":…, "error":…, "plan":…}。
+    """跑一次真实规划 —— **M5 起整个委托给云端后端**（瘦客户端）。
 
-    stdout 保护：内核里任何 print / 第三方输出都会写脏 stdout 导致宿主断连，
-    所以规划期间把 sys.stdout 临时指向 stderr，结束后必还原。
+    本进程不再加载规划内核（ortools / POI 库 / 交通缓存 / DeepSeek Key）：
+    全部在云端。分享给别人时对方只需要 Python，连 `data/` 都不必带。
+    返回统一结构：{"ok":…, "error":…, "plan":…}（plan 为**已归一化**的行程）。
     """
-    k, err = kernel()
-    if err:
-        return {"ok": False, "error": f"规划内核加载失败：{err}"}
-
-    city, note = resolve_city(city_arg, query)
-    if not city:
-        return {"ok": False, "error": note}
-
-    qd = k["query_days"]
-    try:
-        n = int(days) if days else int(qd.extract_days(query) or 0)
-    except Exception:
-        n = 0
-    if n <= 0:
-        n = int(getattr(qd, "DEFAULT_DAYS", 2) or 2)
-    n = max(MIN_DAYS, min(MAX_DAYS, n))
-
-    llm_on = bool(k["llm"].llm_available())
+    # `strict_city=1`：MCP App 是 **agent 面向**的 —— 需求里没提城市时必须明确报错，
+    #   不能像 Web UI 那样落默认城市（否则 agent 会拿到一份用户没要的行程）。
+    params = {"shape": "mcp", "query": query, "llm": "1", "session": session_id(),
+              "strict_city": "1"}
+    if days:
+        params["days"] = int(days)
+    if city_arg:
+        params["city"] = city_arg
+    if date0:
+        params["date"] = date0
+    if hotel_text:
+        params["hotel"] = hotel_text
     t0 = time.time()
-    real_stdout = sys.stdout
-    sys.stdout = sys.stderr          # ← 内核输出一律改道，绝不污染 JSON-RPC 通道
     try:
-        city_data = k["poi_db"].load_city(city)
-        raw = k["planner"].plan(city_data, query, n,
-                                use_llm=llm_on,
-                                date0=date0 or None, hotel_text=hotel_text or None)
-    except Exception as e:
-        return {"ok": False, "error": f"规划失败：{type(e).__name__}: {e}"}
-    finally:
-        sys.stdout = real_stdout
-
-    plan = normalize_plan(raw, city, note)
-    plan["latency_s"] = round(time.time() - t0, 1)
-    # 显式回传「LLM 到底用上了没」——离线降级是可用的，但不能静默发生
-    plan["llmEnabled"] = llm_on
-    plan["degraded"] = bool(llm_on and raw.get("mode") != "llm")
+        res = remote_request("/api/plan", params=params, timeout=PLAN_TIMEOUT_S)
+    except RuntimeError as e:
+        return {"ok": False, "error": str(e)}
+    if not res.get("ok"):
+        return {"ok": False, "error": res.get("error") or "云端规划失败"}
+    plan = res.get("plan")
+    if not isinstance(plan, dict) or not plan.get("dayList"):
+        return {"ok": False, "error": "云端未返回有效行程（plan.dayList 为空）"}
+    plan["latency_s"] = round(time.time() - t0, 1)   # 端到端耗时（含网络）
+    # 显式回传「LLM 到底用上了没」——离线降级是可用的，但不能静默发生。
+    # ⚠️ 不能用 `mode != "llm"` 判降级：云端成功的 LLM 运行会回 "m7_proposal"，
+    #    那样会被误判成降级（自检实测踩到）。只认明确的降级/兜底标记。
+    mode = str(plan.get("mode") or "")
+    plan["llmEnabled"] = True                     # 我们总是请求 llm=1
+    plan["degraded"] = any(k in mode.lower() for k in ("degrad", "offline", "fallback"))
     if plan["degraded"]:
-        log("⚠️ 降级：请求用 LLM 但结果 mode 不是 llm", mode=raw.get("mode"))
+        log("⚠️ 降级：请求用 LLM 但云端返回 mode 带降级标记", mode=mode)
     return {"ok": True, "plan": plan}
 
 
-def _normalize_day(d: dict, coords: dict | None = None) -> dict:
-    """（M3：实现已移到 src/plan_view.py，Web UI 与 MCP 共用一份）"""
-    return _plan_view().normalize_day(d, coords)
+def _merge_day_into_plan(plan: dict, day_obj: dict) -> dict:
+    """把「改动后的一天」写回整份行程 —— **不依赖内核**（瘦客户端没有 src/data）。
 
-
-def apply_day(plan: dict, day_obj: dict) -> dict:
-    """（M3：实现已移到 src/plan_view.py，Web UI 与 MCP 共用一份）"""
-    return _plan_view().apply_day(plan, day_obj)
-
-
-def normalize_plan(raw: dict, city: str, city_note: str) -> dict:
-    """把 m1_planner 的原始输出压成「面板 + 模型」都好消化的形状。
-
-    只做两件事：① 补齐面板要展示但内核没给的字段（照片、坐标、POI 分类）；
-    ② 裁掉面板用不上的诊断噪音，保证 structuredContent 不臃肿。
+    与内核 `plan_view.apply_day`、面板 `applyDayToPlan` **同一套语义**：
+    按 day 号替换该天、按 id 回填 photo / 坐标（云端 /api/replace 回的是内核形状的
+    day，没有这些字段）、并重算总里程。三处必须一致，故这里刻意逐条对齐。
     """
-    itin = raw.get("itinerary") or {}
-    coords = poi_coords(city)
-    days = [_normalize_day(d, coords) for d in itin.get("days", [])]
+    if not isinstance(plan, dict) or not isinstance(day_obj, dict):
+        return plan
+    by_id = {}
+    for d in plan.get("dayList") or []:
+        for s in (d.get("timeline") or []):
+            if s.get("type") == "poi" and s.get("id") and s["id"] not in by_id:
+                by_id[s["id"]] = s
+    for s in (day_obj.get("timeline") or []):
+        if s.get("type") != "poi":
+            continue
+        o = by_id.get(s.get("id"))
+        if not o:
+            continue
+        if not s.get("photo") and o.get("photo"):
+            s["photo"] = o["photo"]
+        if s.get("lat") is None and o.get("lat") is not None:
+            s["lat"], s["lng"] = o.get("lat"), o.get("lng")
+    d0 = day_obj.get("day")
+    days = [(day_obj if x.get("day") == d0 else x) for x in (plan.get("dayList") or [])]
+    new = dict(plan)
+    new["dayList"] = days
+    new["totalTravelKm"] = round(sum(float(x.get("travel_km") or 0) for x in days), 1)
+    new["updatedAt"] = _now()
+    return new
 
-    dropped = []
-    for p in itin.get("dropped_pois", []) or []:
-        dropped.append({"name": p.get("name"), "reason": p.get("reason")})
 
-    return {
-        "city": city,
-        "cityFrom": city_note,
-        "query": raw.get("query"),
-        "days": raw.get("days"),
-        "date0": raw.get("date0"),
-        "mode": raw.get("mode"),
-        "candidates": raw.get("candidates"),
-        "hotel": raw.get("hotel"),
-        "invalidPoiIds": raw.get("invalid_poi_ids") or [],
-        "llmRawViolations": raw.get("llm_raw_violations"),
-        "substitutes": itin.get("substitutes") or [],
-        "totalViolations": itin.get("total_violations"),
-        "totalTravelKm": round(float(itin.get("total_travel_km") or 0), 1),
-        "droppedPois": dropped,
-        "dayList": days,
-        "generatedAt": _now(),
-    }
+def _sync_plan_from_remote() -> None:
+    """把「本会话的当前行程」从云端拉回来，刷新磁盘副本。
+
+    云端会话是**唯一**反映了面板侧改动（换点 / 挪时段）的真相；拉不到
+    （会话过期 / 后端不可达）就静默保留磁盘副本 —— get_plan 的价值在于
+    「有东西可给」，不能因为一次网络抖动就把已渲染的行程清空。
+    """
+    try:
+        res = remote_request("/api/plan",
+                             params={"shape": "mcp", "session": session_id()},
+                             timeout=20.0)
+    except RuntimeError as e:
+        dbg("get_plan.sync.skip", err=str(e))
+        return
+    plan = res.get("plan") if isinstance(res, dict) else None
+    if isinstance(res, dict) and res.get("ok") and isinstance(plan, dict) \
+            and plan.get("dayList"):
+        write_plan_state(plan)
+        dbg("get_plan.sync.ok", city=plan.get("city"))
+    else:
+        dbg("get_plan.sync.miss", err=(res or {}).get("error"))
+
+
+# ☠️ M5 已删除：`_normalize_day()` / `apply_day()` / `normalize_plan()`
+#    （原先是指向 `src/plan_view.py` 的薄包装）。归一化现在由**云端**做
+#    （`?shape=mcp` ⇒ `plan_view.normalize_plan`），瘦客户端只做 `_merge_day_into_plan`
+#    这一件不依赖内核的事。同前：留着这些壳就会把 `src/` 拖进打包。
 
 
 def plan_summary(plan: dict) -> str:
-    """给模型/用户看的文字摘要（面板里的结构化内容另走 structuredContent）。"""
+    """给模型/用户看的文字摘要（面板里的结构化内容另走 structuredContent）。
+
+    ⚠️ 一律用 `.get`：行程可能来自云端会话 / 磁盘旧副本，字段未必齐全 ——
+    摘要缺一个字段就让整次调用崩掉是不可接受的（探针实测踩过 KeyError('latency_s')）。
+    """
+    plan = plan or {}
+    days_list = plan.get("dayList") or []
+    dropped = plan.get("droppedPois") or []
     lines = [
-        f"已生成【{plan['city']}】{plan['days']} 天行程"
-        f"（模式={plan['mode']}，候选 {plan['candidates']} 个点，耗时 {plan['latency_s']}s）",
-        f"总里程 {plan['totalTravelKm']}km ｜ 硬约束违规 {plan['totalViolations']}"
-        f" ｜ 被剔除 {len(plan['droppedPois'])} 个点",
+        f"已生成【{plan.get('city')}】{plan.get('days')} 天行程"
+        f"（模式={plan.get('mode')}，候选 {plan.get('candidates')} 个点，"
+        f"耗时 {plan.get('latency_s', 0)}s）",
+        f"总里程 {plan.get('totalTravelKm')}km ｜ 硬约束违规 {plan.get('totalViolations')}"
+        f" ｜ 被剔除 {len(dropped)} 个点",
     ]
-    for d in plan["dayList"]:
-        pois = [f"{s['start']} {s['name']}" for s in d["timeline"] if s.get("type") == "poi"]
-        lines.append(f"Day{d['day']}｜{d['theme']}｜{d['travel_km']}km｜收工 {d['finish']}")
+    for d in days_list:
+        pois = [f"{s.get('start')} {s.get('name')}"
+                for s in (d.get("timeline") or []) if s.get("type") == "poi"]
+        lines.append(f"Day{d.get('day')}｜{d.get('theme')}｜{d.get('travel_km')}km"
+                     f"｜收工 {d.get('finish')}")
         lines.append("   " + " → ".join(pois) if pois else "   （该日无点位）")
-    if plan["droppedPois"]:
-        names = "、".join(p["name"] for p in plan["droppedPois"][:3])
-        lines.append(f"剔除：{names}" + ("等" if len(plan["droppedPois"]) > 3 else ""))
+    if dropped:
+        names = "、".join(p.get("name") or "" for p in dropped[:3])
+        lines.append(f"剔除：{names}" + ("等" if len(dropped) > 3 else ""))
     return "\n".join(lines)
 
 
-# ---------------------------------------------------------------------------
-# 导出：委托给 src/md_export.py（Web UI 的 POST /api/export 与 MCP 共用一份）
-# ---------------------------------------------------------------------------
-_MD_EXPORT = None
-
-
-def _md_export():
-    global _MD_EXPORT
-    if _MD_EXPORT is None:
-        root = project_root()
-        if root not in sys.path:
-            sys.path.insert(0, root)
-        from src import md_export as _me
-        _MD_EXPORT = _me
-    return _MD_EXPORT
-
-
-def plan_to_markdown(plan: dict) -> str:
-    """行程 → Markdown。实现见 src/md_export.py（单一实现，两处共用）。"""
-    return _md_export().plan_to_markdown(plan)
-
-
-def export_filename(plan: dict) -> str:
-    """导出文件名。实现见 src/md_export.py（单一实现，两处共用）。"""
-    return _md_export().export_filename(plan)
+# ☠️ M5 已删除：`_md_export()` / `plan_to_markdown()` / `export_filename()`
+#    （原先是指向 `src/md_export.py` 的薄包装）。导出改由**云端**做
+#    （`POST /api/export` ⇒ `md_export.plan_to_markdown`），瘦客户端只负责把
+#    Markdown 文本与文件名原样交给宿主下载。
 
 
 def handle(msg: dict):
@@ -1088,16 +1006,8 @@ def handle(msg: dict):
     is_notification = id_ is None
     log("<-", method=method, id=id_)
 
-    # 每次**请求**都顺手确保本地 API 在跑（内部带 30s 缓存，命中时几乎零成本）。
-    # 为什么挂在总入口而不是 tools/call 分支：宿主对 stdio server 是**按需 spawn**
-    # （`initialize` / `tools/list` / `tools/call` / `resources/read` 任一都会拉起一个
-    # 新进程），而常驻的本地 API 会被宿主回收。挂满所有入口 ⇒ 宿主每碰一次 MCP，
-    # 本地服务就被复活一次，恢复窗口最小。见 `local_api.py` 顶部「死因取证」。
-    if method and not str(method).startswith("notifications/"):
-        try:
-            ensure_local_api()
-        except Exception as e:                                  # noqa: BLE001
-            dbg("ensure_local_api.fail", method=method, err=repr(e))
+    # M5：本地常驻 API（`local_api.py`）已**下线** —— 面板后端全走线上，
+    # 本进程不再拉起任何本地服务（`local_api.py` 仅作开发期对照保留，不在主链路调用）。
 
     if method == "initialize":
         pv = params.get("protocolVersion") or DEFAULT_PROTOCOL
@@ -1163,14 +1073,22 @@ def handle(msg: dict):
 
         # 本地 API 的确保已在 handle() 总入口做过（覆盖全部方法），这里不再重复。
 
-        # ---------------- M1：列城市 ----------------
+        # ---------------- M1：列城市（M5：改问云端，本地不再读 data/） ----------------
         if name == LIST_CITIES_TOOL:
-            names = city_names()
-            items = [{"city": c, "pois": poi_count(c)} for c in names]
+            try:
+                res = remote_request("/api/cities", timeout=20.0)
+            except RuntimeError as e:
+                return ok(id_, {
+                    "content": [{"type": "text", "text": f"取城市列表失败：{e}"}],
+                    "structuredContent": {"ok": False, "error": str(e)},
+                })
+            items = [{"city": c.get("name"), "pois": c.get("n_pois")}
+                     for c in (res.get("cities") or []) if c.get("name")]
             txt = "、".join(f"{i['city']}({i['pois']})" for i in items) or "（无可用城市数据）"
             return ok(id_, {
                 "content": [{"type": "text", "text": f"可规划 {len(items)} 个城市：{txt}"}],
-                "structuredContent": {"count": len(items), "cities": items},
+                "structuredContent": {"count": len(items), "cities": items,
+                                      "llm": res.get("llm")},
             })
 
         # ---------------- M1：真实规划（带面板） ----------------
@@ -1220,6 +1138,8 @@ def handle(msg: dict):
 
         # ---------------- M1：面板拉行程 ----------------
         if name == GET_PLAN_TOOL:
+            # M5：先问云端（面板侧的换点/挪时段都写进云端会话，它才是最鲜的一份）
+            _sync_plan_from_remote()
             if SESSION.last_plan is None:
                 return ok(id_, {
                     "content": [{"type": "text", "text": "还没有生成过行程，请先调 tripplanner_plan_trip"}],
@@ -1306,29 +1226,32 @@ def handle(msg: dict):
             day_ids = args.get("day_ids") or []
             if not (city and day and poi_id and day_ids):
                 return ok(id_, tool_error("参数缺失（需要 city / day / poi_id / day_ids）"))
-            k, kerr = kernel()
-            if kerr:
-                return ok(id_, tool_error(f"规划内核加载失败：{kerr}"))
-            _code, data = k["poi_swap"].replace_poi(
-                city, poi_id, day, day_ids,
-                used_ids=args.get("used_ids") or [],
-                date0=args.get("date0"),
-                query=args.get("query") or "",
-                hotel_text=args.get("hotel_text"))
+            # M5：委托云端 —— 瘦客户端没有规划内核 / POI 库（分享给别人时也不会装）
+            cur = SESSION.last_plan or {}
+            try:
+                data = remote_request("/api/replace", method="POST", payload={
+                    "city": city, "day": day, "poi_id": poi_id, "day_ids": day_ids,
+                    "used_ids": args.get("used_ids") or [],
+                    "date0": args.get("date0"), "query": args.get("query") or "",
+                    "hotel_text": args.get("hotel_text"),
+                    "session": session_id(), "plan": cur,
+                })
+            except RuntimeError as e:
+                return ok(id_, tool_error(str(e)))
             if not data.get("ok"):
                 log("replace_poi 失败", city=city, day=day, err=data.get("error"))
                 return ok(id_, tool_error(data.get("error") or "换点失败"))
-            plan = apply_day(SESSION.last_plan, data["day"])
+            plan = _merge_day_into_plan(cur, data.get("day") or {})
             SESSION.last_plan = plan
-            sw = data["swap"]
-            log("replace_poi 成功", city=city, day=day, frm=sw["from"], to=sw["to"])
+            sw = data.get("swap") or {}
+            log("replace_poi 成功", city=city, day=day, frm=sw.get("from"), to=sw.get("to"))
             return ok(id_, {
                 "content": [{"type": "text",
-                             "text": f"已换点：{sw['from']} → {sw['to']}"
+                             "text": f"已换点：{sw.get('from')} → {sw.get('to')}"
                                      + ("（同类目）" if sw.get("same_category") else "（就近）")}],
                 "structuredContent": {"ok": True, "swap": sw,
-                                      "day": data["day"], "plan": plan,
-                                      "server": SERVER_NAME},
+                                      "day": data.get("day"), "plan": plan,
+                                      "server": SERVER_NAME, "version": SERVER_VERSION},
             })
 
         # ---------------- M2：挪时段（面板拖拽排序） ----------------
@@ -1348,18 +1271,21 @@ def handle(msg: dict):
             if day_ids and set(ordered) != set(day_ids):
                 return ok(id_, tool_error(
                     f"新顺序的点集与当天不一致（原 {len(day_ids)} 个，收到 {len(ordered)} 个）"))
-            k, kerr = kernel()
-            if kerr:
-                return ok(id_, tool_error(f"规划内核加载失败：{kerr}"))
-            _code, data = k["poi_swap"].reorder_day(
-                city, day, ordered,
-                date0=args.get("date0"),
-                query=args.get("query") or "",
-                hotel_text=args.get("hotel_text"))
+            # M5：委托云端（同 replace —— 瘦客户端没有求解器）
+            try:
+                data = remote_request("/api/move", method="POST", payload={
+                    "city": city, "day": day, "ordered_ids": ordered,
+                    "day_ids": day_ids,
+                    "date0": args.get("date0"), "query": args.get("query") or "",
+                    "hotel_text": args.get("hotel_text"),
+                    "session": session_id(), "plan": cur,
+                })
+            except RuntimeError as e:
+                return ok(id_, tool_error(str(e)))
             if not data.get("ok"):
                 log("reorder_day 失败", city=city, day=day, err=data.get("error"))
                 return ok(id_, tool_error(data.get("error") or "调整顺序失败"))
-            plan = apply_day(SESSION.last_plan, data["day"])
+            plan = _merge_day_into_plan(cur, data.get("day") or {})
             SESSION.last_plan = plan
             respected = bool(data.get("order_respected"))
             log("reorder_day 成功", city=city, day=day, respected=respected)
@@ -1368,8 +1294,8 @@ def handle(msg: dict):
                              "text": "顺序已更新。" if respected
                                      else "顺序已更新（部分受开放时间/餐窗约束微调）。"}],
                 "structuredContent": {"ok": True, "order_respected": respected,
-                                      "day": data["day"], "plan": plan,
-                                      "server": SERVER_NAME},
+                                      "day": data.get("day"), "plan": plan,
+                                      "server": SERVER_NAME, "version": SERVER_VERSION},
             })
 
         # ---------------- M2：导出 Markdown ----------------
@@ -1380,8 +1306,17 @@ def handle(msg: dict):
             fmt = str(args.get("format") or "markdown").lower()
             if fmt not in ("markdown", "md"):
                 return ok(id_, tool_error(f"暂不支持的导出格式：{fmt}（目前仅 markdown）"))
-            text = plan_to_markdown(plan)
-            fname = _md_export().export_filename(plan)
+            # M5：委托云端（md_export 属于 src/，瘦客户端不打包它）
+            try:
+                data = remote_request("/api/export", method="POST", payload={
+                    "plan": plan, "format": "markdown", "session": session_id(),
+                })
+            except RuntimeError as e:
+                return ok(id_, tool_error(str(e)))
+            if not data.get("ok"):
+                return ok(id_, tool_error(data.get("error") or "导出失败"))
+            text = data.get("text") or ""
+            fname = data.get("filename") or "TripPlanner.md"
             log("export ok", city=plan.get("city"), chars=len(text))
             return ok(id_, {
                 "content": [{"type": "text", "text": text}],

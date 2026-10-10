@@ -121,3 +121,44 @@ def apply_day(plan: dict, day_obj: dict) -> dict:
     new["totalTravelKm"] = round(sum(float(d.get("travel_km") or 0) for d in days), 1)
     new["updatedAt"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return new
+
+
+def normalize_plan(raw: dict, city: str, city_note: str = "") -> dict:
+    """把规划内核的原始输出压成「面板 + 模型」都好消化的形状（整份行程）。
+
+    只做两件事：① 补齐面板要展示但内核没给的字段（照片、坐标）；
+    ② 裁掉面板用不上的诊断噪音，保证 structuredContent 不臃肿。
+
+    **M5 从 `mcp/tripplanner_mcp_server.py` 移到这里**：面板改为「后端全走线上」后，
+    归一化必须由**云端**做 —— 瘦客户端没有 `data/`（2.6M POI 库 + 照片缓存）可用，
+    而 `photo_of` / `poi_coords` 都要读它。放在这里，Web UI 与 MCP 依旧**共用一份**。
+    """
+    itin = raw.get("itinerary") or {}
+    coords = poi_coords(city)
+    days = [normalize_day(d, coords) for d in itin.get("days", [])]
+
+    dropped = []
+    for p in itin.get("dropped_pois", []) or []:
+        dropped.append({"name": p.get("name"), "reason": p.get("reason")})
+
+    return {
+        "city": city,
+        "cityFrom": city_note,
+        "query": raw.get("query"),
+        "days": raw.get("days"),
+        "date0": raw.get("date0"),
+        "mode": raw.get("mode"),
+        "candidates": raw.get("candidates"),
+        "hotel": raw.get("hotel"),
+        "invalidPoiIds": raw.get("invalid_poi_ids") or [],
+        "llmRawViolations": raw.get("llm_raw_violations"),
+        "substitutes": itin.get("substitutes") or [],
+        "totalViolations": itin.get("total_violations"),
+        "totalTravelKm": round(float(itin.get("total_travel_km") or 0), 1),
+        "droppedPois": dropped,
+        "dayList": days,
+        # 耗时由内核给出（M5：瘦客户端也要显示它 ⇒ 必须随归一化一起下发，
+        # 否则 plan_summary 会在缺字段时崩 —— 探针实测踩过 KeyError('latency_s')）。
+        "latency_s": round(float(raw.get("latency_s") or 0), 1),
+        "generatedAt": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
