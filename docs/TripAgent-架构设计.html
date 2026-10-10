@@ -66,7 +66,7 @@ li{margin:5px 0}
 <header>
   <div>
     <h1>TripAgent 架构设计文档</h1>
-    <div class="sub">AI 智能体驱动的多日行程规划系统 · 版本 M17（2026-09-16）· 对应代码 main@226c802</div>
+    <div class="sub">AI 智能体驱动的多日行程规划系统 · 版本 M17（2026-09-16）· 对应代码 main@226c802<br>※ §2 接入层的<b>端点清单与限流口径</b>已按 M5 现状校准（main@2799a54，2026-10-10）；正文行数等其余数字仍为 M17 快照口径。</div>
   </div>
   <button class="theme-btn" onclick="toggleTheme()">🌗 切换主题</button>
 </header>
@@ -114,11 +114,11 @@ li{margin:5px 0}
 </defs>
 <!-- L1 接入层 -->
 <text x="16" y="30" class="svg-acctext">接入层</text>
-<rect x="16" y="42" width="888" height="66" rx="10" class="svg-box"/>
+<rect x="16" y="42" width="888" height="74" rx="10" class="svg-box"/>
 <text x="34" y="68" class="svg-text">webui/server.py（1,131 行，stdlib HTTP，单端口 QuickBindServer）</text>
-<text x="34" y="92" class="svg-small">/api/cities · /api/clarify · /api/plan · /api/progress · /api/route · /api/photo · /api/share(GET/POST) · /api/replace · /api/stats　｜　限流 8次/300s/IP · llm_cache(7d) · nl_cache</text>
+<text x="34" y="92" class="svg-small">/api/health · /api/cities · /api/clarify · /api/plan · /api/progress · /api/route · /api/photo · /api/share(GET/POST) · /api/replace<tspan x="34" dy="13">/api/move · /api/log · /api/stats　｜　限流 8次/60s/IP（TRIPAGENT_RATE_LIMIT_* 可配） · llm_cache(7d) · nl_cache</tspan></text>
 <text x="700" y="68" class="svg-small">webui/index.html（729 行 SPA）</text>
-<line x1="460" y1="108" x2="460" y2="136" class="svg-flow"/>
+<line x1="460" y1="116" x2="460" y2="136" class="svg-flow"/>
 
 <!-- L2 NLU -->
 <text x="16" y="156" class="svg-acctext">理解层（NLU）</text>
@@ -290,7 +290,7 @@ li{margin:5px 0}
 <h3>4.2 webui/ 服务与前端</h3>
 <table>
 <tr><th>文件</th><th>行数</th><th>职责</th></tr>
-<tr><td><code>webui/server.py</code></td><td>1,131</td><td>stdlib HTTP 单端口服务（QuickBindServer）。9 类 API 端点；NLU（llm_extract+llm_clarify 合并单次调用 / 规则解析）；<b>城市注册表三表</b>（<code>CITIES</code>/<code>_ID_PREFIX_CITY</code>/<code>_CITYCODE</code>，<code>/api/photo</code> 依赖前缀表）；多层缓存（llm_cache 7天、nl_cache、route_cache、photo_cache、proposal_cache）；限流 8 次/300s/IP；多城联游 <code>plan_multi</code>（<b>必须逐字段对账单城 <code>plan()</code> 契约</b>——<code>hotel</code>/<code>notices</code> 都要透出，分段 notice 的 Day 号须按 <code>_lift_seg_notices</code> 偏移重写）；alt_sub 命中率累计</td></tr>
+<tr><td><code>webui/server.py</code></td><td>1,131</td><td>stdlib HTTP 单端口服务（QuickBindServer）。12 类 API 端点（M17 快照时为 9 类；M3/M4/M5 追加 <code>/api/health</code> 探活、<code>/api/move</code> 挪时段、<code>/api/log</code> 面板轨迹）；NLU（llm_extract+llm_clarify 合并单次调用 / 规则解析）；<b>城市注册表三表</b>（<code>CITIES</code>/<code>_ID_PREFIX_CITY</code>/<code>_CITYCODE</code>，<code>/api/photo</code> 依赖前缀表）；多层缓存（llm_cache 7天、nl_cache、route_cache、photo_cache、proposal_cache）；限流 8 次/60s/IP（滑动窗口，<code>TRIPAGENT_RATE_LIMIT_N</code> / <code>_WINDOW_S</code> 可配）；多城联游 <code>plan_multi</code>（<b>必须逐字段对账单城 <code>plan()</code> 契约</b>——<code>hotel</code>/<code>notices</code> 都要透出，分段 notice 的 Day 号须按 <code>_lift_seg_notices</code> 偏移重写）；alt_sub 命中率累计</td></tr>
 <tr><td><code>webui/index.html</code></td><td>729</td><td>零依赖 SPA：纯自然语言输入 → 澄清追问卡片 → 五段式分阶段进度条（600ms 轮询，闭环轮次徽标）→ Day 卡渲染（时间轴/hop 通行段/🏨 住宿出发·返回行/每日 reason/Tips/折叠剔除原因/<b>🍽 用餐图标</b>）→ 换点反馈 → 分享 HTML / PNG 长图 / ICS 导出（0 时长行只显示单时刻、ICS 跳过零长事件）；移动端单列适配</td></tr>
 </table>
 
@@ -543,7 +543,7 @@ li{margin:5px 0}
 <div class="panel">
 <b>服务端与工程防护</b>
 <ul>
-<li>限流：8 次 / 300s / IP（/api/plan）</li>
+<li>限流：8 次 / 60s / IP（滑动窗口，作用于 <code>/api/plan</code>；<code>TRIPAGENT_RATE_LIMIT_N</code> / <code>TRIPAGENT_RATE_LIMIT_WINDOW_S</code> 可配）</li>
 <li>多层缓存：llm_cache(7d) / nl_cache / route_cache / photo_cache / proposal_cache</li>
 <li>幂等 onboarding：脚本全部可重跑；缓存改动做<b>逐键纯度校验</b>（既有键改动 0 / 删除 0，仅新增 N）</li>
 <li>密钥治理：secrets.json gitignore，config.json 进 git；<code>/api/cities</code> 不再回传 Web 服务 key（ea5d12e 安全加固）</li>

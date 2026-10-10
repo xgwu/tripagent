@@ -817,6 +817,55 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 境内节点拦未备案域名）⇒ 只发给自己信任的人。`dist/` 已入 `.gitignore`，绝不入库。
 ⚠️ `/api/plan` 真实消耗 DeepSeek 费用 —— 分享后由使用者的调用触发，费用记在云主机这份 key 上。
 
+#### 自包含性（已用「仓库外的拷贝 + 净化环境」实测）
+
+分享包的意义是「对方机器上没有仓库、没有 venv」。所以不能只在仓库里跑冒烟 ——
+把 `dist/` 整个拷到**仓库外**（如 `D:\Users\xgwu\WorkBuddy\TripPlannerMCP-share\`），
+再**剥掉 `PYTHONPATH`** 跑一次：
+
+```bash
+env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV "$PY" mcp/smoke_exe.py \
+    "D:/Users/xgwu/WorkBuddy/TripPlannerMCP-share/tripplanner-mcp.exe"
+```
+
+2026-10-10 实测结果：**17/17 全绿**（该目录下没有 `src/`、`data/`、`secrets.json`），
+状态落 `TripPlannerMCP-share/output/`、**仓库 `output/` 未被改写** ⇒ 不依赖仓库。
+
+### 🔴 exe 形态实测验收入口（宿主侧，必须在 WorkBuddy 里做）
+
+`selftest.py` / `smoke_exe.py` 都是**自己把 server 拉起来**，完全绕过宿主。
+宿主这一侧只有三条路可验，且**必须重载**（宿主只在 bootstrap 读一次 `mcp.json`）：
+
+```bash
+PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
+"$PY" mcp/register.py --exe dist/tripplanner-mcp.exe   # ① 切到 exe 形态（自动备份 .bak-tripplanner）
+#  ② 重载：连接器 → 自定义 MCP → 表单增删（立即生效）｜或完全退出 WorkBuddy 再启动
+"$PY" mcp/check_live.py                                # ③ 判宿主是否已加载当前版本
+```
+
+`check_live.py` 的**判据**（这是本工具存在的全部理由）：
+
+| 看什么 | 一致 | 不一致的含义 |
+|---|---|---|
+| `mcp.json` 的 `command` | 期望形态（dev / exe） | 注册了别的形态 |
+| `remote.json`（exe 形态必查） | 与 exe 同目录 | 缺失 ⇒ exe 退回默认 base |
+| exe mtime vs **源码** mtime | exe 不落后 | 改完没重新打包（**别跟 mcp.json 比**，注册总晚于打包） |
+| 工具表 `plan_trip` 描述 vs 源码 | 一致 | 宿主拿着**旧版本**（改了没重载）——怎么调都不是新逻辑 |
+| 工具数 | 9 | 少 ⇒ 模块级初始化被打断（参见 `check_orphans.py`） |
+
+重载后**最硬的证据**是 exe 自己写的日志（`dist/output/mcp_debug.log` mtime 晚于注册改动）：
+
+```bash
+ls -la dist/output/mcp_debug.log      # 出现即证明「宿主确实拉起过 exe」
+```
+
+肉眼验收四项（沿用 M0 的 V1–V3，外加 M5 的云端项）：
+
+- [ ] **E1** 工具表描述变成「规划在云端完成（…）本进程只做代理」⇒ 宿主吃到了 M5
+- [ ] **E2** 说一句「杭州2天，喜欢自然风光」→ 面板自动打开且**渲染完整时间线**（非降级页）
+- [ ] **E3** 面板里「换一个 / 拖拽 / 导出」可用、**缩略图与地图点不消失**（验云端 `/api/replace` 归一化）
+- [ ] **E4** `tripplanner_ping` 回 `version=0.5.0-m5`
+
 ### 本轮踩的坑（都已加守卫）
 
 ① 🔴 **整段误删 228 行**：清理死码时把 `mcp/tripplanner_mcp_server.py` 里
@@ -936,6 +985,7 @@ mcp/
   build_exe.py                # M5：AST 依赖自查 → PyInstaller onefile → 写 dist/（exe + remote.json + mcp.json + 说明）
   smoke_exe.py                # M5：把 dist/*.exe 当真 server 拉起冒烟（17 项，含一次真实云端规划）
   check_orphans.py            # M5：AST 比对 HEAD，抓「删了但还在用」的顶层名字（已并入 release_gate 第 5 步）
+  check_live.py               # M5：**宿主侧**实况检查（注册形态 dev/exe、宿主已加载的工具表是否落后于源码）
   panel/plan_panel.html       # 面板（自包含；线上 base / Basic 凭据 / 地图 key / session 用占位符，由 server 注入）
   selftest.py                 # 不开 WorkBuddy 也能验协议 / 规划 / 交互 / 线上后端 / 分享包模拟（206 项）
   panel_guard.py              # 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全 / 后端列表）
