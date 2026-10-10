@@ -10,7 +10,11 @@
   · 宿主只在 **bootstrap 读一次** `~/.workbuddy/mcp.json` ⇒ 改了文件没重载，
     表现是「代码明明改了，面板/工具却还是旧的」，**不报任何错**；
   · 宿主按 uri 缓存**注入后的成品** ⇒ 光改注入值不 +1 版本号也看不到变化；
-  · 「源码模式 ↔ exe 模式」切换后，若没重载，跑的仍是**上一个进程形态**。
+  · 改了配置（command / 环境变量）没重载 ⇒ 跑的仍是**上一个进程**。
+
+⚠️ 2026-10-10：**本地打包（exe / mac 源码包）已退役**（MCP 走远端 Streamable HTTP，
+零安装分享）⇒ 本节删掉了原先「exe 形态」的 remote.json / 「源码比 exe 新＝没重打包」
+两条判据；若注册表里还留着 `.exe`，只提示该形态已退役。
 
 第四件事（2026-10-10 实测挖出，最阴）：**「信任」是按配置指纹记的**。
 `~/.workbuddy/mcp-approvals.json` 的键形如 `<sha256>::<server 名>` —— 只要
@@ -19,7 +23,7 @@ server**：工具表里凭空少一项，日志里一句报错都没有，看起
 
 这四件事都无法从 server 侧观测。本工具转而去读宿主的**三份落地文件**并交叉比对：
 
-  `~/.workbuddy/mcp.json`            宿主真正读取的注册表（command 决定 dev/exe）
+  `~/.workbuddy/mcp.json`            宿主真正读取的注册表（command / url 决定形态）
   `~/.workbuddy/mcp-approvals.json`  信任记录（指纹 + 时间戳，判「改了配置有没有重新信任」）
   `~/.workbuddy/mcp-tool-list.json`  宿主**已加载**的工具表（描述文案会随版本变）
 
@@ -49,7 +53,6 @@ import time
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
 SERVER_PY = os.path.join(HERE, "tripplanner_mcp_server.py")
 USER_MCP_JSON = os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp.json")
 APPROVALS = os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp-approvals.json")
@@ -217,7 +220,12 @@ def main() -> int:
         return 1
     cmd = str(ent.get("command") or "")
     is_exe = cmd.lower().endswith(".exe")
-    print(f"    形态        : {'打包 exe' if is_exe else '源码'}")
+    # 2026-10-10：本地打包已退役 ⇒ 不再判 remote.json / 「源码比 exe 新＝没重打包」，
+    # 只提示该形态已退役（还在跑 exe 的人用的是历史产物，改回源码或远端 /mcp）。
+    if is_exe:
+        print("    形态        : ⛔ 打包 exe（**该形态已退役**：MCP 走远端 /mcp，不再出本地包）")
+    else:
+        print("    形态        : 源码")
     print(f"    command     : {cmd}")
     print(f"    args        : {ent.get('args')}")
     print(f"    TRIPPLANNER_HOME: {(ent.get('env') or {}).get('TRIPPLANNER_HOME')}")
@@ -226,29 +234,6 @@ def main() -> int:
         problem = True
     mtime_reg = os.path.getmtime(USER_MCP_JSON)
     print(f"    注册表 mtime: {ts(mtime_reg)}")
-
-    # exe 形态额外要件：remote.json 必须与 exe 同目录
-    if is_exe:
-        exe_dir = os.path.dirname(cmd)
-        rj = os.path.join(exe_dir, "remote.json")
-        ok = os.path.exists(rj)
-        print(f"    remote.json : {'有' if ok else '✗ 缺失 —— exe 会退回默认 base'}")
-        if not ok:
-            problem = True
-        # ⚠️ 别拿 exe 跟注册表比：注册总在打包之后，那样必然误报。
-        #    真正要判的是「**源码改过之后有没有重新打包**」⇒ 跟源码比。
-        exe_mtime = os.path.getmtime(cmd)
-        newer = [f for f in (SERVER_PY, os.path.join(HERE, "panel", "plan_panel.html"))
-                 if os.path.exists(f) and os.path.getmtime(f) > exe_mtime + 1]
-        print(f"    exe mtime   : {ts(exe_mtime)}")
-        if newer:
-            print("    ⚠️ 源码比 exe 新 ⇒ 改完没重新打包，宿主跑的是旧 exe：")
-            for f in newer:
-                print(f"         {os.path.relpath(f, REPO)}  ({ts(os.path.getmtime(f))})")
-            print(f"       修：先跑 mcp/build_exe.py，再重载（方案 A/B）")
-            problem = True
-        else:
-            print("    ✅ exe 不落后于源码（无需重新打包）")
 
     # ---- 2) 信任状态（决定宿主会不会加载它）----
     # 为什么单列一节：这是 2026-10-10 实测挖出的**静默丢弃**陷阱 ——
@@ -328,7 +313,7 @@ def main() -> int:
             if got.strip() == exp_desc.strip():
                 print("    ✅ 一致 —— 宿主加载的就是当前源码版本")
             else:
-                print("    ❌ 不一致 —— 宿主是**旧版本**：改了但没重载（或没重打包）")
+                print("    ❌ 不一致 —— 宿主是**旧版本**：改了但没重载")
                 problem = True
             if verbose:
                 print("\n    --- 宿主全文 ---\n" + got)
@@ -336,8 +321,8 @@ def main() -> int:
 
     # ---- 4) 有没有重载 ----
     print("\n[4] 重载判定（宿主只在启动时读一次注册表）")
-    # ⚠️ 别拿 exe 侧的 output/mcp_debug.log 当「宿主拉起过」的证据 ——
-    #    `smoke_exe.py` / 手工探针同样会往那里写（我就被这条假绿骗过一次）。
+    # ⚠️ 别拿 server 自己那侧的 output/mcp_debug.log 当「宿主拉起过」的证据 ——
+    #    自检 / 手工探针同样会往那里写（我就被这条假绿骗过一次）。
     #    真正的外部证据只能来自**宿主自己的日志**：daemon.log 里的
     #    `[MCP-AuthDiag] stdio-connected {"id":"custom-mcp:tripplanner"}`。
     host_ts = host_stdio_connected_ts()
@@ -353,10 +338,6 @@ def main() -> int:
             print("    ⏳ 该记录早于本次配置改动 —— 还没有按新配置加载过")
             print("       修：重新信任（方案 A）或重载（方案 B）后再调一次工具")
             problem = True
-    if is_exe and os.path.exists(cmd):
-        dbg = os.path.normpath(os.path.join(os.path.dirname(cmd), "output", "mcp_debug.log"))
-        print(f"    （参考，**不能当宿主证据**）{dbg}"
-              + (f"  mtime {ts(os.path.getmtime(dbg))}" if os.path.exists(dbg) else " 不存在"))
     up, _ = wb_process_uptime()
     if up:
         print(f"    WorkBuddy 启动: {up}")
@@ -372,7 +353,7 @@ def main() -> int:
     got_uri, got_ts = host_panel_uri()
     print(f"    源码 PANEL_VERSION → {exp_uri or '?（源码里没找到）'}")
     if got_uri is None:
-        print("    ⚠️ 宿主日志里没有记录 —— 可能从未打开过面板（先调一次 plan_trip）")
+        print("    ⚠️ 宿主日志里没有记录 —— 可能从未打开过面板（先调一次 open_plan）")
     else:
         print(f"    宿主最近请求       → {got_uri}" + (f"   （{ts(got_ts)}）" if got_ts else ""))
         if exp_uri and got_uri == exp_uri:

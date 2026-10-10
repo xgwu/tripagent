@@ -11,6 +11,7 @@
   - `poi_coords(city)`         → `{poi_id: (lat, lng)}`（GCJ-02，可直接给高德）
   - `normalize_day(d, coords)` → 一天的内核 timeline → 面板形状（补照片 / 坐标）
   - `apply_day(plan, day)`     → 把改动后的一天写回整份行程，刷新总里程
+  - `keep_day_meta(new, old)`  → 换点 / 挪时段只改时间轴，日内文案（theme）不因缺失被清空
 
 ⚠️ `normalize_day` 必须**幂等**：已归一化的一天再走一遍要与原来逐字段一致
 （否则换点 / 重排后的那天会掉字段）。自检专门守这条。
@@ -106,6 +107,33 @@ def normalize_day(d: dict, coords: dict | None = None) -> dict:
     }
 
 
+# 换点 / 挪时段要沿用旧值的日内文案。**只列 theme**：`reason` 与 tips 逐点点名
+# （"沿湖依次游览苏堤春晓…"），换掉其中一个点后就是过期信息，宁可没有。
+_META_KEEP = ("theme",)
+
+
+def keep_day_meta(new_day: dict, old_day: dict | None) -> dict:
+    """换点 / 挪时段只改**时间轴**：新结果没给出的日内文案，沿用旧值。
+
+    为什么必须有这一步（2026-10-10 报障「换点会导致当日主题丢失」）：
+      ① 内核 `sequencer.build_itinerary` 产不出 `theme` —— 主题是 compose 阶段
+         （`m2_planner.compose`）按**最终时间轴**由 LLM 生成的；
+      ② `normalize_day` 为保证形状稳定，把缺失字段一律补成**空串**；
+      ③ 写回端（本函数 / 面板 `applyDayToPlan` / 瘦客户端 `_merge_day_into_plan`）
+         做的是**整日替换** ⇒ 空串成了「明确的空」，当天标题退化成「未命名主题」。
+
+    新结果**明确给了** theme 时以新值为准（将来云端若按新时间轴回填主题，不许被旧值盖掉）。
+    四处写回点必须同一套语义，守测试：`scripts/test_swap_keeps_theme.py` +
+    `mcp/panel_guard.py`（面板侧 node 真跑）。
+    """
+    if not isinstance(new_day, dict) or not isinstance(old_day, dict):
+        return new_day
+    for k in _META_KEEP:
+        if not new_day.get(k) and old_day.get(k):
+            new_day[k] = old_day[k]
+    return new_day
+
+
 def apply_day(plan: dict, day_obj: dict) -> dict:
     """把换点 / 挪时段后的一天写回整个行程，并刷新总里程。
 
@@ -114,6 +142,9 @@ def apply_day(plan: dict, day_obj: dict) -> dict:
     if not isinstance(plan, dict):
         return plan
     nd = normalize_day(day_obj, poi_coords(plan.get("city") or ""))
+    old = next((d for d in (plan.get("dayList") or [])
+                if d.get("day") == nd.get("day")), None)
+    keep_day_meta(nd, old)
     new = dict(plan)
     days = [(nd if d.get("day") == nd.get("day") else d)
             for d in (plan.get("dayList") or [])]

@@ -136,27 +136,34 @@ def phase_protocol():
 
         # 面板 URI 从 server **动态取** —— 按项目惯例「源码守卫锁 wiring，别硬编码版本号」，
         # 以后改 PANEL_VERSION 不必回来改测试。
-        panel_uri = ((((by.get("tripplanner_plan_trip") or {}).get("_meta") or {})
+        panel_uri = ((((by.get("tripplanner_open_plan") or {}).get("_meta") or {})
                       .get("ui") or {}).get("resourceUri")) or ""
-        check("plan_trip 带面板 resourceUri（ui://tripplanner/plan-*）",
+        check("open_plan 带面板 resourceUri（ui://tripplanner/plan-*）",
               panel_uri.startswith("ui://tripplanner/plan"), repr(panel_uri))
 
-        # 带面板：plan_trip / open_plan 必须同一个 resourceUri
-        for tname in ("tripplanner_plan_trip", "tripplanner_open_plan"):
-            meta = ((by.get(tname) or {}).get("_meta") or {}).get("ui") or {}
-            check(f"{tname} 的 resourceUri 与 plan_trip 一致",
-                  meta.get("resourceUri") == panel_uri, repr(meta.get("resourceUri")))
-            check(f"{tname} visibility == [model, app]",
-                  meta.get("visibility") == ["model", "app"], repr(meta.get("visibility")))
+        # 🔴 M6.3：带面板的工具**恰好一个**（open_plan）。
+        #    宿主按 `${sessionId}::${toolCallId}` 去重 ⇒ 每次调用各开一扇、服务端拦不住，
+        #    所以「会开面板的工具」必须收成一个，否则重拍就堆面板。
+        meta = ((by.get("tripplanner_open_plan") or {}).get("_meta") or {}).get("ui") or {}
+        check("open_plan visibility == [model, app]",
+              meta.get("visibility") == ["model", "app"], repr(meta.get("visibility")))
+        _app = [t["name"] for t in tools
+                if (((t.get("_meta") or {}).get("ui") or {}).get("resourceUri"))]
+        check("全 9 个工具里带面板的恰好 1 个（= 面板唯一入口）",
+              _app == ["tripplanner_open_plan"], repr(_app))
 
-        # 不带面板：其余六个（若误配会每次调用都堆一扇面板）
-        for tname in ("tripplanner_get_plan", "tripplanner_list_cities",
-                      "tripplanner_ping", "tripplanner_panel_ready",
-                      "tripplanner_replace_poi", "tripplanner_move_poi",
-                      "tripplanner_export"):
+        # 不带面板：其余八个（含 plan_trip —— 误配会让**每次重拍**都堆一扇面板）
+        for tname in ("tripplanner_plan_trip", "tripplanner_get_plan",
+                      "tripplanner_list_cities", "tripplanner_ping",
+                      "tripplanner_panel_ready", "tripplanner_replace_poi",
+                      "tripplanner_move_poi", "tripplanner_export"):
             check(f"{tname} 不带 _meta（对照组）",
                   not (by.get(tname) or {}).get("_meta"),
                   repr((by.get(tname) or {}).get("_meta")))
+
+        _pd = (by.get("tripplanner_plan_trip") or {}).get("description") or ""
+        check("plan_trip 描述里点名「本工具不打开面板」并指向 open_plan",
+              ("不打开" in _pd) and ("tripplanner_open_plan" in _pd), _pd[:120])
 
         plan_schema = (by.get("tripplanner_plan_trip") or {}).get("inputSchema") or {}
         check("plan_trip 必填 query",
@@ -264,7 +271,7 @@ def phase_protocol():
               bool((r_bad or {}).get("error")),
               str(((r_bad or {}).get("error") or {}).get("code")))
 
-        # ---- A+C 分流 ----
+        # ---- 面板入口唯一 + A/C 判重（M6.3：入口收敛到 open_plan） ----
         r = rpc(proc, {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
                        "params": {"name": "tripplanner_open_plan", "arguments": {}}})
         sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
@@ -275,9 +282,12 @@ def phase_protocol():
         r = rpc(proc, {"jsonrpc": "2.0", "id": 51, "method": "tools/call",
                        "params": {"name": "tripplanner_open_plan", "arguments": {}}})
         sc2 = ((r or {}).get("result") or {}).get("structuredContent") or {}
-        check("C 兜底：二次 open_plan 不再开面板",
+        check("二次 open_plan 不再判为开面板（并给劝阻文案）",
               sc2.get("panelOpened") is False and sc2.get("reason") == "panel-already-open",
               json.dumps(sc2, ensure_ascii=False)[:140])
+        check("劝阻文案讲清「宿主每次调用都会新开一扇」",
+              "新开一扇" in ((((r or {}).get("result") or {}).get("content") or [{}])[0].get("text") or ""),
+              ((((r or {}).get("result") or {}).get("content") or [{}])[0].get("text") or "")[:120])
 
         r = rpc(proc, {"jsonrpc": "2.0", "id": 52, "method": "tools/call",
                        "params": {"name": "tripplanner_panel_ready",
@@ -376,8 +386,13 @@ def phase_planning():
               isinstance(plan.get("latency_s"), (int, float)),
               str(plan.get("latency_s")))
         check("文案摘要非空", bool(((rc.get("content") or [{}])[0].get("text") or "").strip()))
-        check("首次 plan_trip 判定为开面板", sc.get("panelOpened") is True,
-              json.dumps({k: sc.get(k) for k in ("panelOpened", "stage")}))
+        # 🔴 M6.3：plan_trip **不再**开面板（宿主按 toolCallId 去重 ⇒ 每次调用一扇，
+        #    服务端拦不住，所以只能让「会开面板的工具」只被调一次）。
+        check("plan_trip 不开面板（panelOpened=false）", sc.get("panelOpened") is False,
+              json.dumps({k: sc.get(k) for k in ("panelOpened", "panelVia", "stage")}))
+        check("plan_trip 文本引导去调 open_plan（面板唯一入口）",
+              "tripplanner_open_plan" in ((rc.get("content") or [{}])[0].get("text") or ""),
+              "".join(c.get("text", "") for c in (rc.get("content") or []))[-160:])
 
         # POI 照片：有则必须是 http 直链（面板侧据此决定要不要渲染缩略图）
         photos = [s.get("photo") for d in days for s in (d.get("timeline") or [])
@@ -411,11 +426,14 @@ def phase_planning():
         check("显式 days 参数生效（1 天）", len((sc3.get("plan") or {}).get("dayList") or []) == 1,
               str(len((sc3.get("plan") or {}).get("dayList") or [])))
 
-        # A+C：本进程已开过面板 → 再次 plan_trip 不应再开一扇
+        # 🔴 M6.3 核心判据：重拍 N 次也不堆面板 —— 本进程此前已 open_plan 过，
+        #    再调 plan_trip 依然**不**涉及面板（这正是报障「面板叠了好几扇」的修复点）。
         r = call_plan(proc, {"query": "苏州2天园林"}, 15)
         sc4 = ((r or {}).get("result") or {}).get("structuredContent") or {}
-        check("C 兜底：二次 plan_trip 不再开面板", sc4.get("panelOpened") is False,
-              json.dumps({k: sc4.get(k) for k in ("panelOpened", "ok")}))
+        check("重拍：再调 plan_trip 依旧不开面板", sc4.get("panelOpened") is False,
+              json.dumps({k: sc4.get(k) for k in ("panelOpened", "panelVia", "ok")}))
+        check("plan_trip 不把「已开过面板」状态写脏（panelVia 指向 open_plan）",
+              sc4.get("panelVia") == "tripplanner_open_plan", str(sc4.get("panelVia")))
         check("但仍正常返回新行程（苏州）", (sc4.get("plan") or {}).get("city") == "苏州",
               str((sc4.get("plan") or {}).get("city")))
 

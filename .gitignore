@@ -13,10 +13,15 @@ output/
 data/shares/
 nohup.out
 
-# M5：MCP App 打包产物（dist/ 里含 remote.json = **明文口令**，绝不入库）
+# dist/：本地探针与临时产物（含 remote.json = **明文口令**，绝不入库）。
+# 2026-10-10：MCP 已远端化（/mcp），本地打包（exe / mac 源码包）退役 ⇒ 不再产出 exe/zip；
+# build/ 与 *.spec 是 PyInstaller 时代的残留忽略项，保留以防哪天误跑到。
 dist/
 build/
 *.spec
+
+# 红队注入的临时变体（mcp/redteam_panel_single.py 创建/删除；防异常退出残留被误入库）
+mcp/_rt_*.py
 # travel_cache.json / photo_cache.json **刻意入库**（随仓库分发）：clone 后开箱可用，
 # 不必重建 6 万对路网请求。要重建用 build_travel_cache.py / fetch_poi_photos.py。
 

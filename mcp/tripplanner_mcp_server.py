@@ -15,8 +15,8 @@ M2.1（本地 HTTP 兜底）→ M3（交互远端化）→ M4（自建云主机�
 发给别人「零依赖」即可跑（对方机器上连 `data/` 都没有）。
 
 工具分层（关键：**只有带 _meta.ui.resourceUri 的才会开面板**）：
-  tripplanner_plan_trip   ★带面板：做规划 + 开面板
-  tripplanner_open_plan   ★带面板：只开面板（复用上次行程；M0 遗留 + 分流对照）
+  tripplanner_open_plan   ★带面板：**面板的唯一入口**（展示当前最新行程）
+  tripplanner_plan_trip     无面板：做规划（可反复调用，重拍不堆面板；M6.3 起摘掉面板）
   tripplanner_get_plan      无面板：面板握手后主动来拉行程（M1 数据通道）
   tripplanner_list_cities   无面板：列出可规划城市
   tripplanner_panel_ready   无面板：面板自报 appInstanceId（A 方案）
@@ -24,6 +24,12 @@ M2.1（本地 HTTP 兜底）→ M3（交互远端化）→ M4（自建云主机�
   tripplanner_replace_poi   无面板：M2 换点
   tripplanner_move_poi      无面板：M2 挪时段
   tripplanner_export        无面板：M2 导出 Markdown
+
+🔴 M6.3（2026-10-10）：**为什么面板入口只能有一个**。宿主 `McpAppsGateway.handleAgentToolCall()`
+的去重键是 `"${sessionId}::${toolCallId}"`（见 mcp/README.md 的取证）—— 即**每一次工具调用
+都会新开一扇面板**，宿主只看「工具定义里有没有 `_meta.ui.resourceUri`」，**完全不读**工具
+结果里的任何字段。所以早期那套 A+C「返回 panelOpened=false 防堆叠」在宿主层从未生效：
+重拍 N 次就叠 N 扇。唯一有效做法＝**把会开面板的工具收成一个，并只调一次**。
 
 ⚠️ M2.1（2026-10-09，**M5 起已不适用**）：面板 → 宿主 → server 的 `tools/call` 通道
 在本宿主上是**死的**（宿主有 `rpc.callTool`/`proxyAppToolCall.ok`，但请求从未到达任何
@@ -34,6 +40,8 @@ server 进程、12ms 假成功、structuredContent 被剥）。M2.1 曾用 `mcp/
 
 设计要点（照 app.asar 源码挖出的硬约束）：
   - 工具是否「带面板」**完全取决于** tool._meta.ui.resourceUri；不用手写 isApp
+  - **面板开几次由宿主说了算**：去重键 `${sessionId}::${toolCallId}` ⇒ 每次工具调用各一扇，
+    服务端返回什么字段都拦不住（见 M6.3 说明）⇒ 会开面板的工具必须「只调一次」
   - resources/read 返回的 HTML 有 256KiB 预取阈值 → 面板必须自包含、不引兄弟资源
   - 宿主用 document.write 注入（非 srcdoc）→ 相对路径会 404，故面板不做任何外部引用
   - 图片走高德直链 store.is.autonavi.com → 必须写进 csp.resourceDomains 才不被静默拦掉
@@ -64,7 +72,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def is_frozen() -> bool:
-    """是不是打包后的可执行文件（PyInstaller 会设 `sys.frozen`）。"""
+    """是不是打包后的可执行文件（PyInstaller 会设 `sys.frozen`）。
+
+    ⚠️ 2026-10-10：**本地打包已退役**（MCP 走远端 Streamable HTTP，零安装分享），
+    所以本函数与下面的 `_MEIPASS` 分支在生产路径上不会再走到。**刻意保留**：
+    它只有三行、非 frozen 时恒为 False，删掉反而要在 `bundle_dir()` /
+    `project_root()` 里改路径推断逻辑（那才是真正危险的地方）。
+    """
     return bool(getattr(sys, "frozen", False))
 
 
@@ -86,7 +100,7 @@ PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m16"
+PANEL_VERSION = "m19"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -124,7 +138,8 @@ REMOTE_API_DOMAINS = [
     "http://101.35.47.213",                                  # 🖥️ 自建云主机（IP 直连；实测中）
     "https://101-35-47-213.sslip.io",                        # ⛔ 同一台云主机，但域名被腾讯云「未备案」拦截（保留作对照）
     "https://tripagent-planner2-80644.app.workbuddy.host",   # CloudStudio 线上 Web UI（m3；第二远端兜底）
-    "https://tripagent-planner2.app.workbuddy.host",         # 旧域名（遗留应用，旧代码；仅作 connectDomains 放行）
+    # ⛔ 2026-10-10（Kenny 确认）：旧域名 `tripagent-planner2.app.workbuddy.host`
+    #    （早期遗留应用）**已下线且不再维护** ⇒ 条目已删（它此前仅作 connectDomains 放行）。
 ]
 
 UI_RESOURCE_META = {
@@ -149,6 +164,28 @@ GET_PLAN_TOOL = "tripplanner_get_plan"
 REPLACE_TOOL = "tripplanner_replace_poi"
 MOVE_TOOL = "tripplanner_move_poi"
 EXPORT_TOOL = "tripplanner_export"
+
+# ---------------------------------------------------------------------------
+# 「面板只在定稿后开一次」（M6.3，2026-10-10）
+#
+# 🔴 宿主侧的硬事实（从 app.asar 源码取证，见 mcp/README.md）：
+#     `McpAppsGateway.handleAgentToolCall()` 的去重键是 **`${sessionId}::${toolCallId}`**，
+#     即「**每一次**工具调用 = 一扇新面板」。它对**工具定义**里的 `_meta.ui.resourceUri`
+#     判定「这算不算 App」，**完全不读** 工具结果里的任何字段。
+#     ⇒ 服务端**无法**用返回字段阻止宿主再开一扇（历史 A+C「防堆叠」正是错在这）。
+#
+#     唯一有效的办法：**让「会开面板的工具」只被调用一次** ——
+#     所以面板入口收敛到 `tripplanner_open_plan` 一个，`plan_trip` 不再带面板。
+# ---------------------------------------------------------------------------
+PANEL_OPEN_HINT = (
+    "（本次**没有**打开面板 —— 面板由 `tripplanner_open_plan` 打开，"
+    "同一对话只调一次。行程定稿后再调它，重拍过程中不要调，否则会堆面板。）"
+)
+PANEL_ALREADY_HINT = (
+    "⚠️ 本会话已经打开过面板了，**请不要再调用本工具**：宿主对**每一次**调用都会"
+    "新开一扇面板（它按「单次工具调用」去重，服务端拦不住）。"
+    "要刷新到最新行程，请点面板里的「重新拉取行程」按钮。"
+)
 
 # 面板上「天数」的合理区间；query_days 里有同名常量，这里取值保持一致
 MIN_DAYS, MAX_DAYS = 1, 7
@@ -192,11 +229,11 @@ def amap_js_key() -> str:
 
     两级取值（M5 新增第二级）：
       ① 本地 `secrets.json: amap_js_key` —— 开发机 / 自建部署。
-      ② 本地没有（**分享包**里不会有 secrets.json）⇒ 问云端 `GET /api/cities`
+      ② 本地没有（**非开发机**上不会有 secrets.json）⇒ 问云端 `GET /api/cities`
          （它本就回带 `amap_key`）。
     ⚠️ 为什么经后端下发没问题：高德 JSAPI key 是**设计为前端可见**的公开 key
        （它本来就直接写在页面里），所以这不是新增的泄露面；反而带来一个好处 ——
-       **换 key 不用重新打包分发**（所有已发出的包自动跟着换）。
+       **换 key 不必再动客户端**（面板与 MCP server 都不用改）。
     ⚠️ 必须 try/except 包住：这一句跑在 `resources/read` 里，网络抖动**不能**
        让面板打不开（地图缺失是可接受的降级，面板打不开不是）。
     """
@@ -622,11 +659,13 @@ TOOLS = [
     {
         "name": PLAN_TOOL,
         "description": (
-            "【主入口】按用户的一句话需求生成真实行程，并打开行程面板。\n"
+            "【主入口】按用户的一句话需求生成真实行程（**不打开面板**）。\n"
             "例：「杭州2天，带8岁孩子，想看西湖和灵隐寺」。\n"
             "会从需求里自动识别城市与天数（也可显式传 city / days）。\n"
             "规划在云端完成（POI 库 / 交通缓存 / LLM 都在线上），本进程只做代理。\n"
-            "⚠️ 面板已打开时再次调用不会新开一扇，只回摘要（A+C 分流）。"
+            "⚠️ 本工具**不打开行程面板**，所以可以放心反复调用（调整需求、重拍都不会堆面板）。\n"
+            "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**同一对话只调一次**）；"
+            "重拍过程中不要调它。"
         ),
         "inputSchema": {
             "type": "object",
@@ -639,12 +678,13 @@ TOOLS = [
                 "days": {"type": "integer", "description": f"可选。天数 {MIN_DAYS}-{MAX_DAYS}，不传则从需求识别"},
                 "date": {"type": "string", "description": "可选。起始日期 YYYY-MM-DD（启用闭馆日约束）"},
                 "hotel": {"type": "string", "description": "可选。住宿锚点（酒店名或「名称@lng,lat」）"},
-                "app_instance_id": {"type": "string", "description": "可选。面板自报的实例 id，用于精确判重"},
+                "app_instance_id": {"type": "string", "description": "兼容字段，已不使用（保留以免旧调用报错）"},
             },
             "required": ["query"],
             "additionalProperties": False,
         },
-        "_meta": {"ui": {"resourceUri": VIEWER_URI, "visibility": ["model", "app"]}},
+        # 🔴 **刻意不带** `_meta.ui.resourceUri`：带了宿主就会「每次调用开一扇面板」⇒ 重拍时堆面板。
+        #    面板入口见 OPEN_TOOL。由 scripts/test_panel_single_open.py 守卫。
     },
     {
         "name": GET_PLAN_TOOL,
@@ -670,8 +710,12 @@ TOOLS = [
     {
         "name": OPEN_TOOL,
         "description": (
-            "打开 TripPlanner 行程面板（展示最近一次行程；若还没有行程则提示先调 "
-            "tripplanner_plan_trip）。注意：面板已打开时再次调用**不会**再开一扇（A+C 分流）。"
+            "展示 TripPlanner 行程面板（渲染当前最新的行程；还没有行程则提示先调 "
+            "tripplanner_plan_trip）。\n"
+            "⚠️ 这是**面板的唯一入口**，而且**每次调用宿主都会新开一扇面板**"
+            "（宿主的去重键是「单次工具调用」，服务端拦不住）⇒ **同一对话只调用一次**。\n"
+            "用法：让 `tripplanner_plan_trip` 把需求拍定稿，**最后**再调本工具一次。\n"
+            "重拍过程中不要调；下方已有面板时也不要在调 —— 让用户点面板里的「重新拉取行程」刷新。"
         ),
         "inputSchema": {
             "type": "object",
@@ -915,9 +959,14 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
 def _merge_day_into_plan(plan: dict, day_obj: dict) -> dict:
     """把「改动后的一天」写回整份行程 —— **不依赖内核**（瘦客户端没有 src/data）。
 
-    与内核 `plan_view.apply_day`、面板 `applyDayToPlan` **同一套语义**：
+    与内核 `plan_view.apply_day`、面板 `applyDayToPlan`、webui `swapPoi` **同一套语义**：
     按 day 号替换该天、按 id 回填 photo / 坐标（云端 /api/replace 回的是内核形状的
-    day，没有这些字段）、并重算总里程。三处必须一致，故这里刻意逐条对齐。
+    day，没有这些字段）、**保留当日主题**、并重算总里程。四处必须一致，故这里刻意逐条对齐。
+
+    ⚠️ 「保留当日主题」是 2026-10-10 报障（换点导致当日主题丢失）的修法：内核
+    `build_itinerary` 产不出 theme（主题由 compose 阶段按最终时间轴生成），云端归一化
+    把它补成空串 ⇒ 整日替换后标题退化成「未命名主题」。只保 theme，**不保** reason /
+    tips（逐点点名，换点后即过期）。新结果明确给了 theme 时以新值为准。
     """
     if not isinstance(plan, dict) or not isinstance(day_obj, dict):
         return plan
@@ -937,6 +986,9 @@ def _merge_day_into_plan(plan: dict, day_obj: dict) -> dict:
         if s.get("lat") is None and o.get("lat") is not None:
             s["lat"], s["lng"] = o.get("lat"), o.get("lng")
     d0 = day_obj.get("day")
+    old = next((x for x in (plan.get("dayList") or []) if x.get("day") == d0), None)
+    if isinstance(old, dict) and not day_obj.get("theme") and old.get("theme"):
+        day_obj["theme"] = old["theme"]
     days = [(day_obj if x.get("day") == d0 else x) for x in (plan.get("dayList") or [])]
     new = dict(plan)
     new["dayList"] = days
@@ -1108,15 +1160,12 @@ def handle(msg: dict):
                     "content": [{"type": "text", "text": "缺少必填参数 query（用户的行程需求）"}],
                     "structuredContent": {"ok": False, "error": "missing query"},
                 })
-            iid = args.get("app_instance_id")
             res = run_plan(query, args.get("days"), args.get("city"),
                            args.get("date"), args.get("hotel"))
 
             if not res.get("ok"):
-                # 规划失败也要能开面板把错误讲清楚 —— 面板比一行 JSON 友好
-                SESSION.opened_any = True
-                if iid:
-                    SESSION.instances.add(str(iid).strip())
+                # 失败只回文字：本工具**不再是面板入口**（M6.3）⇒ 不碰 opened_any，
+                # 免得把「面板已开过」写脏、污染后面 open_plan 的判重文案。
                 log("plan_trip 失败", err=res.get("error"))
                 return ok(id_, {
                     "content": [{"type": "text", "text": f"行程生成失败：{res['error']}"}],
@@ -1125,22 +1174,21 @@ def handle(msg: dict):
                 })
 
             plan = res["plan"]
-            # 判重要在「登记本实例」之前算，否则自己刚登记完必然命中「已存在」
-            should_open = SESSION.should_open_panel(iid)
-            SESSION.last_plan = plan
-            SESSION.opened_any = True
-            if iid:
-                SESSION.instances.add(str(iid).strip())
+            SESSION.last_plan = plan          # 面板（open_plan）之后靠它/云端会话取数
             log("plan_trip 完成", city=plan["city"], days=plan["days"],
-                mode=plan["mode"], km=plan["totalTravelKm"], opened=should_open)
+                mode=plan["mode"], km=plan["totalTravelKm"])
             return ok(id_, {
-                "content": [{"type": "text", "text": plan_summary(plan)}],
+                "content": [{"type": "text", "text": plan_summary(plan) + "\n\n" + PANEL_OPEN_HINT}],
                 "structuredContent": {
                     "server": SERVER_NAME,
                     "version": SERVER_VERSION,
                     "stage": "M1",
                     "ok": True,
-                    "panelOpened": should_open,
+                    # 本工具**永远不会**开面板（见 TOOLS 里 PLAN_TOOL 的注释）；
+                    # 面板入口是 OPEN_TOOL。这两个字段是给模型/诊断看的引导。
+                    "panelOpened": False,
+                    "panelVia": OPEN_TOOL,
+                    "panelOpenHint": PANEL_OPEN_HINT,
                     "plan": plan,
                 },
             })
@@ -1166,9 +1214,9 @@ def handle(msg: dict):
                 SESSION.opened_any = True
                 if iid:
                     SESSION.instances.add(str(iid).strip())
-                log("open_plan: 首次开面板", instance=iid, opened_any=True)
+                log("open_plan: 开面板", instance=iid, opened_any=True)
                 return ok(id_, {
-                    "content": [{"type": "text", "text": "行程面板已打开。"}],
+                    "content": [{"type": "text", "text": "行程面板已打开（本对话请勿再调用本工具）。"}],
                     "structuredContent": {
                         "server": SERVER_NAME, "version": SERVER_VERSION, "stage": "M1",
                         "panelOpened": True, "appInstanceId": iid or "",
@@ -1176,16 +1224,14 @@ def handle(msg: dict):
                         "plan": SESSION.last_plan,
                     },
                 })
-            log("open_plan: 面板已存在，回摘要", instance=iid,
+            log("open_plan: 本会话已开过，回劝阻文案", instance=iid,
                 known=len(SESSION.instances), opened_any=SESSION.opened_any)
             return ok(id_, {
-                "content": [{
-                    "type": "text",
-                    "text": ("行程面板**已经打开了**，没有重复开启。"
-                             "如需重算行程，调 tripplanner_plan_trip 并说明新需求。"),
-                }],
+                "content": [{"type": "text", "text": PANEL_ALREADY_HINT}],
                 "structuredContent": {
                     "server": SERVER_NAME, "version": SERVER_VERSION, "stage": "M1",
+                    # ⚠️ 别把这当「宿主不会开面板」的保证：宿主只按 toolCallId 去重，
+                    #    每次调用它都会新开一扇。这里只用于诊断与劝阻。
                     "panelOpened": False, "reason": "panel-already-open",
                     "knownInstances": sorted(SESSION.instances),
                     "hasPlan": SESSION.last_plan is not None,

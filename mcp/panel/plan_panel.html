@@ -999,6 +999,67 @@
     })["catch"](function(){ return false; });       // 该段路网不可得 ⇒ 不连线
   }
 
+  // ---------------- 标点（marker）----------------
+  // 🔴 必须用 `content`（纯 HTML/CSS 水滴 pin）而**不能用 AMap 默认图标**：
+  //    默认图标是外部图片资源（webapi.amap.com/theme/...），在宿主 iframe 里加载不出来
+  //    ⇒ 只剩 label 浮在空中、marker 本体不可见（2026-10-10 报障）。
+  //    webapp 亦然（webui/index.html:412 用 content 画旋转 45° 的水滴）。
+  function pinContent(color, seq){
+    return '<div style="position:relative;filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))">'
+         + '<div style="width:24px;height:24px;border-radius:50% 50% 50% 0;'
+         + 'transform:rotate(-45deg);background:' + color + ';border:2px solid #fff"></div>'
+         + '<span style="position:absolute;left:0;top:0;width:24px;height:24px;display:flex;'
+         + 'align-items:center;justify-content:center;color:#fff;font-size:11px;'
+         + 'font-weight:700">' + seq + '</span></div>';
+  }
+  function hoverLabel(day, seq, name){
+    return '<div style="background:#fff;border:1px solid #d0d5db;color:#1f2328;'
+         + 'border-radius:6px;padding:2px 8px;font-size:12px;line-height:17px;'
+         + 'white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.15)">'
+         + '📍 Day ' + day + '·' + seq + '｜' + esc(name) + '</div>';
+  }
+  // 按天画 POI 标点 + 酒店锚点（🏨，始终可见、不随 Day 开关隐藏 —— 与 webapp 同口径）。
+  // 返回 **POI 标点数**（不含酒店 —— 地图提示文案「N 个景点」要用它）。
+  function drawMarkers(plan){
+    var dl = (plan && plan.dayList) || [];
+    var n = 0;
+    dl.forEach(function(d){
+      var day = +d.day;
+      var color = DAY_COLORS[(day - 1) % DAY_COLORS.length];
+      var seq = 0;
+      (d.timeline || []).forEach(function(s){
+        if (!(s.type === "poi" && s.lat != null && s.lng != null)) return;
+        seq++; n++;
+        var mk = new AMap.Marker({
+          position: [+s.lng, +s.lat], map: amapObj, anchor: "bottom-center",
+          content: pinContent(color, seq)
+        });
+        mk.on("mouseover", function(){
+          mk.setLabel({ direction: "top", offset: new AMap.Pixel(0, -4),
+                        content: hoverLabel(day, seq, s.name) });
+        });
+        mk.on("mouseout", function(){ mk.setLabel(null); });
+        (DAY_MARKERS[day] = DAY_MARKERS[day] || []).push(mk);
+      });
+    });
+    if (plan && plan.hotel && plan.hotel.lat != null && plan.hotel.lng != null){
+      var hm = new AMap.Marker({
+        position: [+plan.hotel.lng, +plan.hotel.lat], map: amapObj, anchor: "bottom-center",
+        content: '<div style="font-size:22px;'
+               + 'filter:drop-shadow(0 2px 3px rgba(0,0,0,.35))">🏨</div>'
+      });
+      // 不入 DAY_MARKERS ⇒ 不随 Day 开关隐藏（webapp 同口径）
+      hm.on("mouseover", function(){
+        hm.setLabel({ direction: "top", offset: new AMap.Pixel(0, -4),
+                      content: '<div style="background:#fff;border:1px solid #d0d5db;'
+                             + 'color:#1f2328;border-radius:6px;padding:2px 8px;font-size:12px;'
+                             + 'white-space:nowrap">🏨 ' + esc(plan.hotel.name || "住宿") + '</div>' });
+      });
+      hm.on("mouseout", function(){ hm.setLabel(null); });
+    }
+    return n;
+  }
+
   function drawMap(){
     var plan = LAST;
     if (!plan) return;
@@ -1020,32 +1081,7 @@
     }
 
     DAY_LINES = {}; DAY_MARKERS = {};
-    var nPoi = 0;
-    dl.forEach(function(d){
-      var day = +d.day;
-      var color = DAY_COLORS[(day - 1) % DAY_COLORS.length];
-      var seq = 0;
-      (d.timeline || []).forEach(function(s){
-        if (!(s.type === "poi" && s.lat != null && s.lng != null)) return;
-        seq++; nPoi++;
-        var badge = '<span style="background:' + color + ';color:#fff;border-radius:9px;'
-                  + 'padding:1px 6px;font-size:11px;line-height:16px;display:inline-block">'
-                  + seq + '</span>';
-        var mk = new AMap.Marker({
-          position: [+s.lng, +s.lat], map: amapObj,
-          label: { direction: "top", content: badge }
-        });
-        mk.on("mouseover", function(){
-          mk.setLabel({ direction: "top",
-            content: '<span style="background:#fff;border:1px solid #d0d5db;color:#1f2328;'
-                   + 'border-radius:6px;padding:2px 7px;font-size:11.5px;line-height:16px;'
-                   + 'white-space:nowrap;display:inline-block">Day ' + day + '·' + seq
-                   + '｜' + esc(s.name) + '</span>' });
-        });
-        mk.on("mouseout", function(){ mk.setLabel({ direction: "top", content: badge }); });
-        (DAY_MARKERS[day] = DAY_MARKERS[day] || []).push(mk);
-      });
-    });
+    var nPoi = drawMarkers(plan);   // 纯 HTML 水滴 pin（见 drawMarkers；不用高德默认图标）
 
     var legs = buildLegs(plan);
     var jobs = [];
@@ -1096,6 +1132,15 @@
       if (s.lat == null && o.lat != null){ s.lat = o.lat; s.lng = o.lng; }
     });
     var d0 = +dayObj.day;
+    // 换点 / 挪时段**只改时间轴**：新结果没给的日内文案（theme）沿用旧值。
+    //   ⚠️ 2026-10-10 报障「换点导致当日主题丢失」：内核 build_itinerary 产不出 theme
+    //   （主题由 compose 阶段按最终时间轴生成），云端归一化把它补成**空串** ⇒
+    //   「整日替换」时空串成了明确的空，当天标题退化成「未命名主题」。
+    //   只保 theme，不保 reason（逐点点名，换点后即过期）；新值优先于旧值。
+    //   与内核 `plan_view.keep_day_meta` / 瘦客户端 `_merge_day_into_plan` 同一套语义。
+    var oldDay = null;
+    (LAST.dayList || []).forEach(function(x){ if (+x.day === d0) oldDay = x; });
+    if (oldDay && !dayObj.theme && oldDay.theme) dayObj.theme = oldDay.theme;
     var days = (LAST.dayList || []).map(function(x){ return (+x.day === d0) ? dayObj : x; });
     var plan = {};
     for (var k in LAST){

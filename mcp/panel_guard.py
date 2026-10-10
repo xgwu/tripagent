@@ -26,7 +26,12 @@ import sys
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-PANEL = os.path.join(HERE, "panel", "plan_panel.html")
+# 允许红队把被测文件换成**临时变体**（`mcp/redteam_theme_keep.py`）：不改真文件即可
+# 证明这几条断言真的会红 —— 否则「守卫全绿」可能只是它没在看。
+PANEL = (os.environ.get("PANEL_GUARD_PANEL")
+         or os.path.join(HERE, "panel", "plan_panel.html"))
+WEBUI_INDEX = (os.environ.get("PANEL_GUARD_WEBUI")
+               or os.path.join(os.path.dirname(HERE), "webui", "index.html"))
 NODE = shutil.which("node") or r"D:\Users\xgwu\.workbuddy\binaries\node\versions\22.22.2-6\node.exe"
 
 fails = []
@@ -312,6 +317,9 @@ def main() -> int:
         ("DAY_VIS", "面板缺按天显隐"),
         ("buildLegs", "面板缺「腿」收集（酒店锚点 / 城际转移）"),
         ("toggleDayLine", "面板缺 Day 开关行为"),
+        ("rotate(-45deg)", "标点必须用纯 HTML 水滴 pin（content），"
+                           "不能用高德默认图标 —— 默认图标是外部图片资源，"
+                           "在宿主 iframe 里加载不出来 ⇒ marker 本体不可见（报障）"),
     ):
         chk("地图对齐 webapp：面板含 " + _need, _need in html, _why)
 
@@ -322,9 +330,13 @@ def main() -> int:
     _fr = _fnbody(r"function routeMode\(q\)\{([\s\S]*?)\n  \}")
     _fb = _fnbody(r"function buildLegs\(plan\)\{([\s\S]*?)\n  \}")
     _fd = _fnbody(r"function drawLeg\(leg, a, b, token\)\{([\s\S]*?)\n  \}")
-    if _fr is None or _fb is None or _fd is None:
+    _fp = _fnbody(r"function pinContent\(color, seq\)\{([\s\S]*?)\n  \}")
+    _fh = _fnbody(r"function hoverLabel\(day, seq, name\)\{([\s\S]*?)\n  \}")
+    _fm = _fnbody(r"function drawMarkers\(plan\)\{([\s\S]*?)\n  \}")
+    if None in (_fr, _fb, _fd, _fp, _fh, _fm):
         chk("地图渲染逻辑可定位（供行为验证）", False,
-            "未找到 routeMode / buildLegs / drawLeg 之一（函数签名被改？）")
+            "未找到 routeMode/buildLegs/drawLeg/pinContent/hoverLabel/drawMarkers 之一"
+            "（函数签名被改？）")
     else:
         _mp = os.path.join(HERE, "_map_check.js")
         _msrc = (
@@ -338,12 +350,22 @@ def main() -> int:
             "  return Promise.resolve({ ok: true, points: [[1,1],[2,2]] });\n"
             "}\n"
             "var amapObj = { add: function(l){ added++; } };\n"
+            "var markers = [];\n"
             "var AMap = { Polyline: function(o){ polys.push({ o: o, hidden: false,\n"
             "  show: function(){ this.hidden = false; },\n"
-            "  hide: function(){ this.hidden = true; } }); } };\n"
+            "  hide: function(){ this.hidden = true; } }); },\n"
+            "  Pixel: function(x, y){ this.x = x; this.y = y; },\n"
+            "  Marker: function(o){ markers.push(o); this._o = o;\n"
+            "    this.on = function(){ return this; };\n"
+            "    this.setLabel = function(l){ this._label = l; return this; };\n"
+            "    this.show = function(){ return this; };\n"
+            "    this.hide = function(){ return this; }; } };\n"
             "function routeMode(q){" + _fr + "\n}\n"
             "function buildLegs(plan){" + _fb + "\n}\n"
             "function drawLeg(leg, a, b, token){" + _fd + "\n}\n"
+            "function pinContent(color, seq){" + _fp + "\n}\n"
+            "function hoverLabel(day, seq, name){" + _fh + "\n}\n"
+            "function drawMarkers(plan){" + _fm + "\n}\n"
             "var plan = { query: '杭州亲子2天', hotel: { name: 'H', lat: 30.25, lng: 120.15 },\n"
             "  dayList: [\n"
             "    { day: 1, timeline: [ { type: 'hotel', name: 'H' },\n"
@@ -356,6 +378,7 @@ def main() -> int:
             "    { day: 1, timeline: [ { type: 'poi', name: 'A', lat: 30.2, lng: 120.1 } ] },\n"
             "    { day: 2, timeline: [ { type: 'transfer', name: 't' },\n"
             "      { type: 'poi', name: 'B', lat: 30.3, lng: 120.2 } ] } ] };\n"
+            "var nMk = drawMarkers(plan);\n"
             "var legs = buildLegs(plan);\n"
             "var legs2 = buildLegs(plan2);\n"
             "var jobs = [];\n"
@@ -374,7 +397,19 @@ def main() -> int:
             "    nOk: oks.filter(function(o){ return o === true; }).length,\n"
             "    legs2: legs2.length, city2: legs2[0] ? legs2[0].intercity : null,\n"
             "    mode2: legs2[0] ? legs2[0].mode : null, color2: legs2[0] ? legs2[0].color : null,\n"
-            "    pts2: legs2[0] ? legs2[0].pts.length : null }));\n"
+            "    pts2: legs2[0] ? legs2[0].pts.length : null,\n"
+            "    nMk: nMk,\n"
+            "    mkContent: markers.every(function(o){ return typeof o.content === 'string'\n"
+            "      && o.content.length > 40; }),\n"
+            "    mkNoLabelOpt: markers.every(function(o){ return o.label === undefined; }),\n"
+            "    mkAnchor: markers.every(function(o){ return o.anchor === 'bottom-center'; }),\n"
+            "    mkPin: markers.filter(function(o){\n"
+            "      return String(o.content || '').indexOf('rotate(-45deg)') >= 0; }).length,\n"
+            "    mkHotel: markers.filter(function(o){\n"
+            "      return String(o.content || '').indexOf('font-size:22px') >= 0; }).length,\n"
+            "    mkDays: Object.keys(DAY_MARKERS),\n"
+            "    mkCounts: Object.keys(DAY_MARKERS).sort().map(function(k){\n"
+            "      return DAY_MARKERS[k].length; }) }));\n"
             "});\n"
         )
         with open(_mp, "w", encoding="utf-8") as f:
@@ -416,6 +451,145 @@ def main() -> int:
             )
             chk("地图逐段真实路网 + 酒店腿 + 城际腿 + 按天归组（node 真跑）", _ok,
                 f"实测={_j}｜期望 nLegs=2 legPts=[4,2] nCalls=4 nPolys=4 城际=1(driving)")
+
+            # 3.9b) 标点必须用 `content`（纯 HTML pin）—— 不能用 AMap 默认图标。
+            #       报障：真实路网出来了，但 marker 本体不可见（只剩数字 label 浮着）。
+            #       根因：默认图标＝外部图片资源，宿主 iframe 里加载不出来。
+            _ok_mk = (
+                _j.get("nMk") == 4            # POI 标点数（不含酒店，供「N 个景点」文案）
+                and _j.get("mkContent") is True
+                and _j.get("mkNoLabelOpt") is True
+                and _j.get("mkAnchor") is True
+                and _j.get("mkPin") == 4 and _j.get("mkHotel") == 1
+                and sorted(_j.get("mkDays") or []) == ["1", "2"]
+                and _j.get("mkCounts") == [2, 2]   # 酒店不入 DAY_MARKERS ⇒ 不随 Day 隐藏
+            )
+            chk("标点走纯 HTML pin（content，不用默认图标）+ 酒店锚点（node 真跑）", _ok_mk,
+                f"实测 nMk={_j.get('nMk')} pin={_j.get('mkPin')} hotel={_j.get('mkHotel')} "
+                f"anchor={_j.get('mkAnchor')} 无label选项={_j.get('mkNoLabelOpt')} "
+                f"按天={_j.get('mkCounts')}｜期望 nMk=4(POI) / pin=4 / hotel=1 / anchor=true")
+
+    # 3.10) 换点 / 挪时段不得丢掉「当日主题」—— 2026-10-10 报障
+    #   根因（数据在写回时被清空，不是渲染问题）：
+    #     ① 内核 `build_itinerary` 产不出 theme（主题由 compose 阶段按最终时间轴生成）；
+    #     ② 云端归一化把缺失字段补成**空串**；③ 写回端做的是**整日替换**
+    #     ⇒ 空串成了「明确的空」，当天标题退化成「未命名主题」。
+    #   修法：新结果没给的 theme 沿用旧值；明确给了就以新值为准。四处写回点同一套语义
+    #   （`plan_view.keep_day_meta` / `_merge_day_into_plan` / 面板 applyDayToPlan / webui swapPoi）。
+    #   ⚠️ 这里必须**真跑**：`theme1 !== ''` 这种断言 grep 字符串验不出来。
+    _ta = _fnbody(r"function applyDayToPlan\(dayObj\)\{([\s\S]*?)\n  \}")
+    _swap_src = (open(WEBUI_INDEX, encoding="utf-8").read()
+                 if os.path.exists(WEBUI_INDEX) else "")
+    _sw = re.search(r"async function swapPoi\(day,poiId\)\{([\s\S]*?)\n\}", _swap_src)
+    _sw = _sw.group(1) if _sw else None
+    if _ta is None or _sw is None:
+        chk("主题保留逻辑可定位（供行为验证）", False,
+            "未找到 applyDayToPlan / webui swapPoi（函数签名被改？）")
+    else:
+        _tp = os.path.join(HERE, "_theme_check.js")
+        _tsrc = (
+            "function applyDayToPlan(dayObj){" + _ta + "\n}\n"
+            "var LAST = { city: '苏州', dayList: [\n"
+            "  { day: 1, theme: '姑苏园林漫步', reason: '旧理由', travel_km: 3.0,\n"
+            "    timeline: [ { type: 'poi', id: 'SZ001', name: '拙政园',\n"
+            "      photo: 'http://p/1', lat: 31.3, lng: 120.6 } ] },\n"
+            "  { day: 2, theme: '金鸡湖夜色', travel_km: 2.0,\n"
+            "    timeline: [ { type: 'poi', id: 'SZ007', name: '留园',\n"
+            "      photo: 'http://p/7', lat: 30.5, lng: 120.2 } ] } ] };\n"
+            "// 换点回包：theme/reason 被归一化补成空串（这正是缺陷现场）\n"
+            "var p1 = applyDayToPlan({ day: 1, theme: '', reason: '', travel_km: 4.0,\n"
+            "  timeline: [ { type: 'poi', id: 'SZ007', name: '留园' } ] });\n"
+            "// 云端若明确回填了新主题，不许被旧值盖掉\n"
+            "var p2 = applyDayToPlan({ day: 2, theme: '新主题', travel_km: 1.0, timeline: [] });\n"
+            "console.log(JSON.stringify({\n"
+            "  theme1: p1.dayList[0].theme, reason1: p1.dayList[0].reason,\n"
+            "  km1: p1.dayList[0].travel_km, photo: p1.dayList[0].timeline[0].photo,\n"
+            "  lat: p1.dayList[0].timeline[0].lat, theme2: p2.dayList[1].theme,\n"
+            "  total: p1.totalTravelKm, srcTheme: LAST.dayList[0].theme }));\n"
+        )
+        with open(_tp, "w", encoding="utf-8") as f:
+            f.write(_tsrc)
+        try:
+            _tr = subprocess.run([NODE, _tp], capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=60)
+            _tout = (_tr.stdout or "").strip()
+        except Exception as e:                                    # noqa: BLE001
+            _tout = ""
+            print(f"  (主题探针执行失败: {e})")
+        finally:
+            if os.path.exists(_tp):
+                os.remove(_tp)
+        _tj = None
+        for _line in reversed(_tout.splitlines()):
+            try:
+                _tj = json.loads(_line)
+                break
+            except Exception:                                     # noqa: BLE001
+                continue
+        if not _tj:
+            chk("换点保留当日主题（面板，node 真跑）", False, f"探针无 JSON：{_tout[:200]!r}")
+        else:
+            chk("换点保留当日主题（面板 applyDayToPlan，node 真跑）",
+                _tj.get("theme1") == "姑苏园林漫步" and _tj.get("theme2") == "新主题"
+                and _tj.get("reason1") == ""
+                and _tj.get("km1") == 4.0 and _tj.get("total") == 6.0
+                and _tj.get("photo") == "http://p/7" and _tj.get("lat") == 30.5
+                and _tj.get("srcTheme") == "姑苏园林漫步",
+                f"实测={_tj}｜期望 theme1=姑苏园林漫步 theme2=新主题 reason1='' "
+                f"km1=4.0 total=6.0(4.0+2.0) photo/lat 仍回填")
+
+        _wp = os.path.join(HERE, "_webui_theme_check.js")
+        _wsrc = (
+            "var LAST = { parsed: { city: '苏州' }, city_meta: { name: '苏州' },\n"
+            "  result: { query: '', date0: null, cities: [], hotel: null,\n"
+            "    itinerary: { days: [\n"
+            "      { day: 1, theme: '姑苏园林漫步', reason: '旧理由', travel_km: 3.0,\n"
+            "        timeline: [ { type: 'poi', id: 'SZ001', name: '拙政园' } ] },\n"
+            "      { day: 2, theme: '金鸡湖夜色', travel_km: 2.0, timeline: [] } ] } } };\n"
+            "function $(id){ return { innerHTML: '', disabled: false, textContent: '' }; }\n"
+            "function render(x){}\n"
+            "var fetch = function(){ return Promise.resolve({ json: function(){\n"
+            "  return Promise.resolve({ ok: true,\n"
+            "    swap: { from: 'SZ001', to: 'SZ007', same_category: true },\n"
+            "    day: { day: 1, theme: '', reason: '', travel_km: 4.0, finish: '17:00',\n"
+            "      violations: [], dropped: [], weekday: '周五',\n"
+            "      timeline: [ { type: 'poi', id: 'SZ007', name: '留园' } ] } }); } }); };\n"
+            "async function swapPoi(day,poiId){" + _sw + "\n}\n"
+            "swapPoi(1,'SZ001').then(function(){\n"
+            "  var d1 = LAST.result.itinerary.days[0];\n"
+            "  console.log(JSON.stringify({ theme: d1.theme, reason: d1.reason,\n"
+            "    km: d1.travel_km, id: d1.timeline[0].id, tipsLen: (d1.tips || []).length,\n"
+            "    day2: LAST.result.itinerary.days[1].theme }));\n"
+            "}).catch(function(e){ console.log(JSON.stringify({ err: String(e) })); });\n"
+        )
+        with open(_wp, "w", encoding="utf-8") as f:
+            f.write(_wsrc)
+        try:
+            _wr = subprocess.run([NODE, _wp], capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=60)
+            _wout = (_wr.stdout or "").strip()
+        except Exception as e:                                    # noqa: BLE001
+            _wout = ""
+            print(f"  (webui 主题探针执行失败: {e})")
+        finally:
+            if os.path.exists(_wp):
+                os.remove(_wp)
+        _wj = None
+        for _line in reversed(_wout.splitlines()):
+            try:
+                _wj = json.loads(_line)
+                break
+            except Exception:                                     # noqa: BLE001
+                continue
+        if not _wj:
+            chk("换点保留当日主题（webui，node 真跑）", False, f"探针无 JSON：{_wout[:200]!r}")
+        else:
+            chk("换点保留当日主题（webui swapPoi，node 真跑）",
+                _wj.get("theme") == "姑苏园林漫步" and _wj.get("reason") == ""
+                and _wj.get("km") == 4.0 and _wj.get("id") == "SZ007"
+                and _wj.get("tipsLen") == 0 and _wj.get("day2") == "金鸡湖夜色",
+                f"实测={_wj}｜期望 theme=姑苏园林漫步 reason='' km=4.0 id=SZ007 "
+                f"tips 清空 day2 不受影响")
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)

@@ -14,8 +14,13 @@ shell 版只留一个薄兼容入口。
 M5 清理死码时，`mcp/tripplanner_mcp_server.py` 被**整段误删** 228 行，其中
 `class _Session` / `SESSION` / `TOOLS` / `TOOL_BY_NAME` 四个定义**仍在被使用**。
 但 `TOOL_BY_NAME` 只在 `tools/call` 路径上被碰 ⇒ `import` 与「拉工具表」都正常，
-直到打包产物冒烟才炸出 `NameError`。这种「删了还在用」靠肉眼与 import 都发现不了，
-必须用 AST 静态比对 HEAD 兜住。
+直到消费方路径（当时的 exe 冒烟）真调一次才炸出 `NameError`。这种「删了还在用」
+靠肉眼与 import 都发现不了，必须用 AST 静态比对 HEAD 兜住。
+
+⚠️ 2026-10-10：**本地打包（exe / mac 源码包）已退役** —— MCP 走**远端 Streamable
+HTTP**（`http://101.35.47.213/mcp`，零安装分享），不再产出本地产物。故 `--mcp`
+阶段原有的「铺包自检」「exe 冒烟」两步连同 `mcp/build_bundle.py` / `build_exe.py` /
+`smoke_exe.py` / `bundle_check.py` / `bundle_redteam.py` 一并删除（要找回看 git 历史）。
 
 用法
 ----
@@ -23,8 +28,7 @@ M5 清理死码时，`mcp/tripplanner_mcp_server.py` 被**整段误删** 228 行
     python scripts/release_gate.py --fast     # 跳过回归评测（本地快速自检）
     python scripts/release_gate.py --step 2   # 只跑第 2 步（单测）
     python scripts/release_gate.py --mcp      # 五步之后追加 MCP 专属门禁
-                                              # （面板守卫 → 铺包自检 → 自检 → exe 冒烟；
-                                              #   冒烟需先出包，否则自己跳过）
+                                              # （面板守卫 → MCP 自检）
 
 退出码：0 全绿 / 1 某一步失败
 """
@@ -41,14 +45,10 @@ ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 STEPS = 5
 # MCP 专属门禁（`--mcp`）：与主链路解耦，故不占编号。
-#   smoke_exe 在 `dist/` 不存在时**自己 exit 0**（未打包就不该红）。
+# 2026-10-10：本地产物打包已退役（远端 /mcp，零安装分享）⇒ 删掉「铺包自检」「exe 冒烟」。
 MCP_PHASE = [
     ("面板守卫", [ROOT / "mcp" / "panel_guard.py"]),
-    # 铺包自检：只跑纯 Python 的铺包 + 临时打 zip，验「zip 丢可执行位 / .sh 成 CRLF /
-    # mcp.json 占位符少一处」这三类**静默不可用**。不跑 PyInstaller、不碰云端。
-    ("铺包自检", [ROOT / "mcp" / "build_bundle.py", "--self-check"]),
     ("MCP 自检", [ROOT / "mcp" / "selftest.py"]),
-    ("exe 冒烟", [ROOT / "mcp" / "smoke_exe.py"]),
 ]
 
 
@@ -134,7 +134,7 @@ def main() -> int:
     ap.add_argument("--fast", action="store_true", help="跳过第 3 步（离线回归）")
     ap.add_argument("--step", type=int, choices=range(1, STEPS + 1), help="只跑指定步骤")
     ap.add_argument("--mcp", action="store_true",
-                    help="五步之后追加 MCP 专属门禁（面板守卫 → 铺包自检 → 自检 → exe 冒烟）")
+                    help="五步之后追加 MCP 专属门禁（面板守卫 → MCP 自检）")
     args = ap.parse_args()
 
     print(f"发布门禁（cwd={ROOT}）")

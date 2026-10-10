@@ -55,7 +55,10 @@ CFG: dict = {}
 # m6（2026-10-10）：新增 `POST /mcp`（云端 MCP 端点，Streamable HTTP）——
 #   把 /api/* 薄包一层 MCP 协议，供宿主「自定义 MCP」以远端 URL 直连（零安装分享原型）。
 #   ⚠️ `mcp/selftest.py` 会比对「云端 /api/health 的 version」与源码 ⇒ 改这里必须同步部署。
-WEBUI_VERSION = "m6"
+# m7（2026-10-10）：修「换点导致当日主题丢失」（webui/index.html 的写回 + `/api/replace`
+#   会话同步走 `plan_view.apply_day`）—— 静态资源也在本服务的 synced 范围内，
+#   故这里一并 +1，免得「index.html 改了没部署」查不出来。
+WEBUI_VERSION = "m7"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")

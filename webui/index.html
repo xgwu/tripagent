@@ -715,8 +715,10 @@ async function swapPoi(day,poiId){
         hotel_text:LAST.result.hotel?LAST.result.hotel.name:""})});
     const r=await res.json();
     if(r.ok){
+      const keepTheme=d.theme; // 换点回包不含 theme（归一化补成空串）⇒ 先留旧值
       Object.assign(d,r.day); // timeline/travel_km/finish/violations/dropped/weekday 全量更新
-      d.tips=[]; // 换点后时间轴已变，旧 tips 不再对齐，清空（reason 同理为既有行为）
+      if(!d.theme)d.theme=keepTheme; // 换点只换时间轴，当日主题不该掉（2026-10-10 报障）
+      d.tips=[]; // 换点后时间轴已变，旧 tips 不再对齐，清空（reason 同理：逐点点名，已过期）
       $("status").innerHTML=`<span class="badge b-green">🔁 ${r.swap.from} → ${r.swap.to}${r.swap.same_category?"（同类目）":"（就近）"}</span>`;
       render(LAST);
     }else{

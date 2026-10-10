@@ -7,13 +7,15 @@
     python mcp/register.py                 # 源码模式：python -u <server.py>
     python mcp/register.py --check         # 只看现状，不写
     python mcp/register.py --remove        # 移除
-    python mcp/register.py --exe <exe路径>  # 打包模式：直接指向 tripplanner-mcp.exe
 
-  两种模式对宿主来说都是 stdio server，差别只是 command/args：
-    - 源码模式：command=python, args=[-u, .../tripplanner_mcp_server.py],
-                env=TRIPPLANNER_HOME=<仓库根>（remote.json / output 都在这）
-    - 打包模式：command=<exe>, args=[], env=TRIPPLANNER_HOME=<exe 所在目录>
-                （要让 exe 自己按 sys.executable 推断也行，显式写上更不容易踩坑）
+  注册出来的是一个 **stdio** server：
+    - command=python, args=[-u, .../tripplanner_mcp_server.py],
+      env=TRIPPLANNER_HOME=<仓库根>（remote.json / output 都在这）
+
+⚠️ 2026-10-10：**本地产物打包（exe / mac 源码包）已退役** —— 分享给他人一律走
+   **远端 Streamable HTTP**（`{"url": "http://101.35.47.213/mcp", "headers": {...}}`，
+   零安装、不必发文件）。故本脚本的 `--exe` 打包模式已删除；`entry_exe()` 一并不再存在。
+   本脚本保留**源码模式**，只用于「本机想把 stdio 形态注册回来」这一种场景。
 
 行为：**合并**进 mcpServers，绝不动用户已有的其它 server（playwright 等）。
 写前自动备份为 <file>.bak-tripplanner。
@@ -26,8 +28,8 @@
     否则面板里不会出现 —— 这是第一次「看不到 tripplanner」的根因。
   - 存储字段白名单：type / command / args / env / cwd / url / headers / timeout。
     多余的 description 会被忽略，这里索性不写。
-  - **源码模式**的 stdio 必须加 `-u`：Python 在管道下默认块缓冲，会把 JSON-RPC
-    响应憋在缓冲区。（打包后的 exe 里 `send()` 每次都显式 flush，故无需该参数。）
+  - **stdio 必须加 `-u`**：Python 在管道下默认块缓冲，会把 JSON-RPC 响应憋在
+    缓冲区里。
 
 ⚠️ M5：server 已是**瘦客户端**（规划/换点/导出全走云端），**不再需要 ortools /
    data/ 目录** —— 所以源码模式的 env 只需要 TRIPPLANNER_HOME 用来定位 remote.json
@@ -72,19 +74,6 @@ def entry_dev() -> dict:
     }
 
 
-def entry_exe(exe: str) -> dict:
-    """打包模式条目（分享包）。TRIPPLANNER_HOME 显式指到 exe 所在目录。"""
-    exe_abs = os.path.abspath(exe)
-    d = os.path.dirname(exe_abs)
-    return {
-        "type": "stdio",
-        "command": exe_abs.replace("\\", "/"),
-        "args": [],
-        "cwd": d.replace("\\", "/"),
-        "env": {"TRIPPLANNER_HOME": d.replace("\\", "/")},
-    }
-
-
 def load(path: str) -> dict:
     if not os.path.exists(path):
         return {"mcpServers": {}}
@@ -101,26 +90,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="只查看，不写入")
     ap.add_argument("--remove", action="store_true", help="移除 tripplanner 条目")
-    ap.add_argument("--exe", metavar="PATH",
-                    help="注册打包好的 exe（分享包模式），而不是源码模式")
     args = ap.parse_args()
 
-    if args.exe:
-        if not os.path.exists(args.exe):
-            print(f"✗ 找不到 exe：{args.exe}")
-            return 1
-        ENTRY = entry_exe(args.exe)
-        print(f"模式        : 打包 exe")
-        print(f"exe         : {ENTRY['command']}  (存在)")
-        print(f"TRIPPLANNER_HOME: {ENTRY['env']['TRIPPLANNER_HOME']}")
-        rj = os.path.join(os.path.dirname(os.path.abspath(args.exe)), "remote.json")
-        print(f"remote.json : {rj}  ({'存在' if os.path.exists(rj) else '缺失 —— exe 会退回默认 base'})")
-    else:
-        ENTRY = entry_dev()
-        print(f"模式        : 源码")
-        print(f"server 脚本 : {SERVER_PY}  ({'存在' if os.path.exists(SERVER_PY) else '缺失!'})")
-        print(f"解释器      : {PYTHON}  ({'存在' if os.path.exists(PYTHON) else '缺失!'})")
-        print(f"仓库根      : {REPO}")
+    ENTRY = entry_dev()
+    print(f"模式        : 源码")
+    print(f"server 脚本 : {SERVER_PY}  ({'存在' if os.path.exists(SERVER_PY) else '缺失!'})")
+    print(f"解释器      : {PYTHON}  ({'存在' if os.path.exists(PYTHON) else '缺失!'})")
+    print(f"仓库根      : {REPO}")
     print()
 
     for path in CONFIG_FILES:
