@@ -12,13 +12,23 @@
   · 宿主按 uri 缓存**注入后的成品** ⇒ 光改注入值不 +1 版本号也看不到变化；
   · 「源码模式 ↔ exe 模式」切换后，若没重载，跑的仍是**上一个进程形态**。
 
-这三件事都无法从 server 侧观测。本工具转而去读宿主的**两份落地文件**并交叉比对：
+第四件事（2026-10-10 实测挖出，最阴）：**「信任」是按配置指纹记的**。
+`~/.workbuddy/mcp-approvals.json` 的键形如 `<sha256>::<server 名>` —— 只要
+command/args/env 变了，指纹就变，**旧信任对新配置无效**，宿主会**静默丢弃整个
+server**：工具表里凭空少一项，日志里一句报错都没有，看起来像「没注册」。
 
-  `~/.workbuddy/mcp.json`          宿主真正读取的注册表（command 决定 dev/exe）
-  `~/.workbuddy/mcp-tool-list.json` 宿主**已加载**的工具表（描述文案会随版本变）
+这四件事都无法从 server 侧观测。本工具转而去读宿主的**三份落地文件**并交叉比对：
+
+  `~/.workbuddy/mcp.json`            宿主真正读取的注册表（command 决定 dev/exe）
+  `~/.workbuddy/mcp-approvals.json`  信任记录（指纹 + 时间戳，判「改了配置有没有重新信任」）
+  `~/.workbuddy/mcp-tool-list.json`  宿主**已加载**的工具表（描述文案会随版本变）
 
 再把工具表里的 `plan_trip` 描述与**当前源码**里的期望值比对 —— 不一致即
 「宿主拿着旧版本」，此时无论怎么调工具都不会是新逻辑。
+
+⚠️ 指纹的确切输入字段未能逆出（10 万+ 组合试过：单纯对配置 JSON 做 sha256
+都不对，显然掺了 uid / 项目路径等不可复现的输入）⇒ **别试图自己写 approvals**，
+改配置后一律走 UI 重新信任。
 
 用法：
     <venv python> mcp/check_live.py          # 检查并给结论
@@ -28,8 +38,10 @@
 from __future__ import annotations
 
 import ast
+import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -40,6 +52,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
 SERVER_PY = os.path.join(HERE, "tripplanner_mcp_server.py")
 USER_MCP_JSON = os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp.json")
+APPROVALS = os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp-approvals.json")
 TOOL_LIST = os.path.join(os.path.expanduser("~"), ".workbuddy", "mcp-tool-list.json")
 SERVER_KEY = "tripplanner"
 TOOL_PREFIX = "tripplanner_"
@@ -65,6 +78,43 @@ def expected_plan_trip_desc() -> str:
                 if isinstance(k, ast.Constant) and k.value == "description":
                     return v.value if isinstance(v, ast.Constant) else ""
     return ""
+
+
+LOG_DIR = os.path.join(os.path.expanduser("~"), ".workbuddy", "logs")
+
+
+def host_stdio_connected_ts() -> float | None:
+    """从**宿主自己的日志**里找 tripplanner 的 stdio-connected 时刻（最硬的外部证据）。
+
+    宿主日志格式：daemon.log 每行一条 JSON，timestamp 是 UTC ISO（`…Z`）；
+    命中行形如（⚠️ message 是**转义过的字符串**，正文里是 `\\"pid\\":` 而非 `"pid":`，
+    所以只能用不含引号的子串判定，别拿未转义的 JSON 片段去匹配）：
+        [MCP-AuthDiag] stdio-connected {"pid":28100,"id":"custom-mcp:tripplanner",…}
+    返回本地时间戳（epoch 秒），没有记录则 None。
+    """
+    newest = None
+    for name in ("daemon.log", "daemon.old.log"):
+        path = os.path.join(LOG_DIR, name)
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if "stdio-connected" not in line or "custom-mcp:" + SERVER_KEY not in line:
+                        continue
+                    m = re.search(r'"timestamp":"([0-9T:.\-]+Z)"', line)
+                    if not m:
+                        continue
+                    try:
+                        t = datetime.datetime.strptime(
+                            m.group(1), "%Y-%m-%dT%H:%M:%S.%fZ").replace(
+                            tzinfo=datetime.timezone.utc).timestamp()
+                    except ValueError:
+                        continue
+                    newest = t if newest is None else max(newest, t)
+        except OSError:
+            continue
+    return newest
 
 
 def wb_process_uptime() -> tuple[str, float] | tuple[None, None]:
@@ -136,8 +186,43 @@ def main() -> int:
         else:
             print("    ✅ exe 不落后于源码（无需重新打包）")
 
-    # ---- 2) 宿主已加载的工具表 ----
-    print(f"\n[2] 宿主已加载的工具表 {TOOL_LIST}")
+    # ---- 2) 信任状态（决定宿主会不会加载它）----
+    # 为什么单列一节：这是 2026-10-10 实测挖出的**静默丢弃**陷阱 ——
+    # 把 command 从 python 改成 exe 后，宿主启动时 tripplanner 直接消失，
+    # 工具表里没有、日志里没报错，看起来像「没注册」。
+    # 真因：approvals 的键 = <配置指纹>::<server 名>，配置一变指纹就变，
+    # 旧信任对新配置无效 ⇒ 未信任的 server 被静默丢弃。
+    print(f"\n[2] 信任状态 {APPROVALS}")
+    approved_ts = None
+    if not os.path.exists(APPROVALS):
+        print("    ✗ 文件不存在 —— 该 server 从未被信任过，宿主会**静默丢弃**它")
+        problem = True
+    else:
+        try:
+            appr = json.load(open(APPROVALS, encoding="utf-8"))
+        except Exception as e:
+            appr = {}
+            print(f"    ✗ 读不出来：{e}")
+        hits = {k: v for k, v in appr.items() if k.endswith("::" + SERVER_KEY)}
+        if not hits:
+            print(f"    ✗ 没有 ::{SERVER_KEY} 的信任记录 ⇒ 宿主会**静默丢弃**它")
+            problem = True
+        else:
+            for k, v in hits.items():
+                approved_ts = max(approved_ts or 0, float(v) / 1000.0)
+                print(f"    指纹: {k.split('::')[0][:16]}…  "
+                      f"信任于 {ts(float(v) / 1000.0)}")
+            if approved_ts < mtime_reg - 1:
+                print("    ❌ 信任时间 **早于**注册表 mtime ⇒ 配置改过但没重新信任")
+                print("       表现：工具表里凭空少一项、日志一句报错都没有（静默丢弃）")
+                print("       修：连接器 → 自定义 MCP → 找到 tripplanner → 保存/信任"
+                      "（表单通道立即生效）")
+                problem = True
+            else:
+                print(f"    ✅ 信任晚于配置改动（{ts(approved_ts)} ≥ {ts(mtime_reg)}）")
+
+    # ---- 3) 宿主已加载的工具表 ----
+    print(f"\n[3] 宿主已加载的工具表 {TOOL_LIST}")
     exp_desc = expected_plan_trip_desc()
     if not os.path.exists(TOOL_LIST):
         print("    ✗ 文件不存在 —— 宿主还没加载过 MCP，先重启 WorkBuddy")
@@ -177,19 +262,29 @@ def main() -> int:
                 print("\n    --- 宿主全文 ---\n" + got)
                 print("\n    --- 源码全文 ---\n" + exp_desc)
 
-    # ---- 3) 有没有重载 ----
-    print("\n[3] 重载判定（宿主只在启动时读一次注册表）")
+    # ---- 4) 有没有重载 ----
+    print("\n[4] 重载判定（宿主只在启动时读一次注册表）")
+    # ⚠️ 别拿 exe 侧的 output/mcp_debug.log 当「宿主拉起过」的证据 ——
+    #    `smoke_exe.py` / 手工探针同样会往那里写（我就被这条假绿骗过一次）。
+    #    真正的外部证据只能来自**宿主自己的日志**：daemon.log 里的
+    #    `[MCP-AuthDiag] stdio-connected {"id":"custom-mcp:tripplanner"}`。
+    host_ts = host_stdio_connected_ts()
+    if host_ts is None:
+        print("    ✗ 宿主日志里**从来没有** tripplanner 的 stdio-connected 记录")
+        print("       ⇒ 宿主从未成功加载过它（连尝试都没有 ⇒ 多为未信任被静默丢弃）")
+        problem = True
+    else:
+        print(f"    宿主 stdio-connected: {ts(host_ts)}")
+        if host_ts >= mtime_reg - 1:
+            print("    ✅ 宿主在这次配置之后**确实拉起过**它（宿主日志为证）")
+        else:
+            print("    ⏳ 该记录早于本次配置改动 —— 还没有按新配置加载过")
+            print("       修：重新信任（方案 A）或重载（方案 B）后再调一次工具")
+            problem = True
     if is_exe and os.path.exists(cmd):
         dbg = os.path.normpath(os.path.join(os.path.dirname(cmd), "output", "mcp_debug.log"))
-        if os.path.exists(dbg):
-            print(f"    exe 调试日志: {dbg}")
-            print(f"    mtime       : {ts(os.path.getmtime(dbg))}")
-            if os.path.getmtime(dbg) >= mtime_reg - 1:
-                print("    ✅ exe 在注册之后**确实被宿主拉起过**（日志晚于注册表改动）")
-            else:
-                print("    ⏳ 日志早于注册表改动 —— 还没重载过")
-        else:
-            print(f"    （还没有 {dbg} —— 重启后调一次工具就会出现，它是最硬的证据）")
+        print(f"    （参考，**不能当宿主证据**）{dbg}"
+              + (f"  mtime {ts(os.path.getmtime(dbg))}" if os.path.exists(dbg) else " 不存在"))
     up, _ = wb_process_uptime()
     if up:
         print(f"    WorkBuddy 启动: {up}")

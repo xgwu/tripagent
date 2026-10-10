@@ -839,7 +839,8 @@ env -u PYTHONPATH -u PYTHONHOME -u VIRTUAL_ENV "$PY" mcp/smoke_exe.py \
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 "$PY" mcp/register.py --exe dist/tripplanner-mcp.exe   # ① 切到 exe 形态（自动备份 .bak-tripplanner）
-#  ② 重载：连接器 → 自定义 MCP → 表单增删（立即生效）｜或完全退出 WorkBuddy 再启动
+#  ② ★重新信任（换 command ⇒ 指纹变 ⇒ 旧信任失效，见下节）；连接器 → 自定义 MCP
+#      → 找到 tripplanner → 保存/信任（表单通道立即生效）；或完全退出 WorkBuddy 再启动
 "$PY" mcp/check_live.py                                # ③ 判宿主是否已加载当前版本
 ```
 
@@ -850,14 +851,49 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 | `mcp.json` 的 `command` | 期望形态（dev / exe） | 注册了别的形态 |
 | `remote.json`（exe 形态必查） | 与 exe 同目录 | 缺失 ⇒ exe 退回默认 base |
 | exe mtime vs **源码** mtime | exe 不落后 | 改完没重新打包（**别跟 mcp.json 比**，注册总晚于打包） |
+| **`mcp-approvals.json` 信任时刻 vs `mcp.json` mtime** | 信任更新 | **改了配置没重新信任 ⇒ 宿主静默丢弃整个 server**（见下节） |
 | 工具表 `plan_trip` 描述 vs 源码 | 一致 | 宿主拿着**旧版本**（改了没重载）——怎么调都不是新逻辑 |
 | 工具数 | 9 | 少 ⇒ 模块级初始化被打断（参见 `check_orphans.py`） |
 
-重载后**最硬的证据**是 exe 自己写的日志（`dist/output/mcp_debug.log` mtime 晚于注册改动）：
+重载后**最硬的证据只能来自宿主自己的日志**（`daemon.log` 里的 `stdio-connected`）：
 
 ```bash
-ls -la dist/output/mcp_debug.log      # 出现即证明「宿主确实拉起过 exe」
+grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbuddy/logs/daemon.log | tail -1
 ```
+
+⚠️ **别拿 `dist/output/mcp_debug.log` 当「宿主拉起过」的证据** —— `smoke_exe.py` /
+手工探针同样会往那里写。2026-10-10 我正是被这条**假绿**骗过：日志 mtime 晚于注册表，
+看着像宿主已加载，实际那次是**我自己跑冒烟写的**。`check_live.py` 已改成查宿主日志，
+并把 exe 侧日志降级为「参考，不能当证据」。
+
+### 🔴🔴 M5 实测挖出的静默陷阱：换 command ⇒ 旧「信任」失效 ⇒ 宿主丢弃整个 server
+
+**现象**（2026-10-10，Kenny 执行方案 B 完全重启后）：代码/配置/打包全都对、冒烟全绿、
+启动时刻也晚于配置改动，但宿主就是**不加载 tripplanner** —— 工具表里凭空少一项，
+`daemon.log` / `mcp-apps-diag.log` **一句报错都没有**。对比日志：
+
+```
+15:22:54  [MCP][resolveAgentForSession] mcpServers=[…,tripplanner,…] (count=6)   ← 重启前（python 形态）
+15:34:47  [MCP][resolveAgentForSession] mcpServers=[connector-proxy,agent-mail,…] (count=5)  ← 重启后，tripplanner 消失
+```
+
+**根因**：宿主把「已信任」记在 `~/.workbuddy/mcp-approvals.json`，**键 = `<配置指纹>::<server 名>`**：
+
+```json
+{ "4ae34be8f72fe4a81519923dccaf1152000141b0c6d1b7aa900eb84d51ef7208::tripplanner": 1791517646425 }
+```
+
+指纹随 `command/args/cwd/env` 变化 ⇒ `register.py --exe` 把 command 从 python 换成 exe 的那一刻，
+**旧信任对新配置无效**，宿主启动时直接把它过滤掉。这也解释了为什么
+`register.py`（纯文件写入）**只在配置被 UI 信任过一次之后才管用**。
+
+**修**：改完配置必须在 UI 里重新信任一次（连接器 → 自定义 MCP → tripplanner → 保存），
+表单通道会写新指纹并立即生效。
+
+⚠️ **不要试图自己写 `mcp-approvals.json`**：指纹不是对配置 JSON 做 sha256 ——
+2026-10-10 试过 **103,168 种**序列化组合（字段子集 × 键序 × 分隔符 × ensure_ascii ×
+路径斜杠 × 前后缀 × `_workbuddyMcpOrigin`/`defer_loading` 附加字段），**全部不命中**，
+显然掺了 uid / 项目路径这类不可复现的输入。
 
 肉眼验收四项（沿用 M0 的 V1–V3，外加 M5 的云端项）：
 
@@ -969,6 +1005,36 @@ async saveConfiguration(e) { … replaceConfiguration(e.content) } // 先 commit
 → `mcp.json` 在 `%USERPROFILE%\.workbuddy\`。**`.mcp.json` 不是它读的**（反例：里面有 `playwright`，宿主完全不认）。
 另：旧「聚合文件」`connectors/<userId>/mcp.json` 会被 `cleanupStaleUserMcpJson()` **主动删除**，别写那里。
 
+### 🔴🔴 但「重载」只解决一半：**改配置还会让「信任」失效**
+
+上表里那个 `11:47:26` 生效时刻，与 `~/.workbuddy/mcp-approvals.json` 里的时间戳
+（`1791517646425` = `2026-10-09 11:47:26`）**完全对上** —— 说明 UI 的「刷新/保存」
+这一步做的是两件事：**`mcpRefresh` 重读磁盘** + **`mcpApprove` 写入信任**。
+
+`mcp-approvals.json` 的键 = **`<配置指纹>::<server 名>`**：
+
+```json
+{ "4ae34be8f72fe4a81519923dccaf1152000141b0c6d1b7aa900eb84d51ef7208::tripplanner": 1791517646425 }
+```
+
+⇒ **只要 `command` / `args` / `cwd` / `env` 任一变，指纹就变，旧信任对新配置无效**，
+宿主启动时把它**静默过滤掉**：工具表里凭空少一项、日志里一句报错都没有。
+
+这解释了两件事：
+
+1. **为什么纯文件写入（`register.py`）只在「该配置曾被 UI 信任过」之后才管用**；
+2. **为什么 M5 换 exe 后重启也无效**：不是没重载，是**新配置没被信任**。
+
+```bash
+# 判据：信任时刻 ≥ mcp.json mtime 才算「改完重新信任过」
+"$PY" mcp/check_live.py     # [2] 信任状态 一节会自动判并给出修法
+```
+
+⚠️ **别自己写 `mcp-approvals.json`**：指纹不是对配置 JSON 做 sha256。
+2026-10-10 试了 **103,168 种**序列化组合全部不命中（字段子集 × 键序 × 分隔符 ×
+`ensure_ascii` × 路径斜杠 × 前后缀 × 附加 `_workbuddyMcpOrigin`/`defer_loading`）
+⇒ 显然掺了 uid / 项目路径等不可复现输入。**改配置后一律回 UI 重新保存一次。**
+
 ---
 
 ## 为什么用 Python 而不是重写
@@ -985,7 +1051,7 @@ mcp/
   build_exe.py                # M5：AST 依赖自查 → PyInstaller onefile → 写 dist/（exe + remote.json + mcp.json + 说明）
   smoke_exe.py                # M5：把 dist/*.exe 当真 server 拉起冒烟（17 项，含一次真实云端规划）
   check_orphans.py            # M5：AST 比对 HEAD，抓「删了但还在用」的顶层名字（已并入 release_gate 第 5 步）
-  check_live.py               # M5：**宿主侧**实况检查（注册形态 dev/exe、宿主已加载的工具表是否落后于源码）
+  check_live.py               # M5：**宿主侧**实况检查（注册形态 dev/exe、**信任指纹是否过期**、宿主日志里有没有 stdio-connected、宿主已加载的工具表是否落后于源码）
   panel/plan_panel.html       # 面板（自包含；线上 base / Basic 凭据 / 地图 key / session 用占位符，由 server 注入）
   selftest.py                 # 不开 WorkBuddy 也能验协议 / 规划 / 交互 / 线上后端 / 分享包模拟（206 项）
   panel_guard.py              # 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全 / 后端列表）
