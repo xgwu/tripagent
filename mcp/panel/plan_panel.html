@@ -76,10 +76,11 @@
   .rowact{flex:0 0 auto;display:flex;align-items:center;gap:2px;padding-top:1px}
   li.dragging{opacity:.35}
   li.droptarget{outline:2px dashed var(--blue);outline-offset:-2px;background:var(--bluebg)}
-  .amap{height:300px;border:1px solid var(--line);border-radius:10px;background:#f0f2f5;overflow:hidden}
-  .days{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .amap{height:460px;border:1px solid var(--line);border-radius:10px;background:#f0f2f5;overflow:hidden}
+  .days{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
   .days button{padding:3px 12px;font-size:11.5px}
-  .days button.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .days button.on{color:#fff}
+  .days button.off{opacity:.4}
   .maperr{padding:16px;color:var(--muted);font-size:12px}
 
   /* ---- 醒目失败提示：面板此前失败只在 11px 灰字里说一句 ⇒ 用户看到的是「点了没反应」 ---- */
@@ -159,7 +160,14 @@
   var dayPoiIds = {};         // {day: [poiId,...]} —— 拖拽排序用
   var dragFrom = null;
   var amapKey = "__AMAP_JS_KEY__";   // server 在 resources/read 时注入；未配置则保持占位符
-  var amapObj = null, amapLoading = false, mapDay = 1;
+  var amapObj = null, amapLoading = false;
+  // M6.2：地图能力对齐 webapp（webui/index.html）。旧实现只把「当天 POI 按顺序连成
+  //   一条 AMap.Polyline」＝直线折线，而 webapp 是逐段调后端 /api/route 画**真实路网**。
+  //   两份渲染代码天生分叉（面板受宿主 iframe / CSP / 尺寸协议约束），这段从未移植过
+  //   ⇒ 不是 MCP 化的回归，判据见 .workbuddy/memory/MCP-GOTCHAS.md。
+  var DAY_COLORS = ["#1a5fb4", "#1d7a4c", "#b7791f", "#c0392b", "#6b46c1"];
+  var DAY_LINES = {}, DAY_VIS = {}, DAY_MARKERS = {};   // 按天：折线 / 显隐 / 标点
+  var MAP_TOKEN = 0;   // 竞态令牌：快速连续重绘时放弃过期渲染（与 webapp 同口径）
 
   // ---------------- M5：后端**全走线上** ----------------
   // 为什么不再用本地服务（历史结论，留档避免走回头路）：
@@ -864,14 +872,17 @@
     if (!dl.length){ card.style.display = "none"; return; }
     card.style.display = "block";
 
-    // Day 切换按钮
+    // Day 色块开关（按天配色与 webapp 的 DAY_COLORS 同口径）：点一下显隐该天的标点与路线
     var bar = document.getElementById("mapDays");
     bar.innerHTML = "";
     dl.forEach(function(d){
+      var day = +d.day;
+      var color = DAY_COLORS[(day - 1) % DAY_COLORS.length];
       var b = document.createElement("button");
-      b.textContent = "Day " + d.day;
-      if (+d.day === +mapDay) b.className = "on";
-      b.onclick = function(){ mapDay = +d.day; setupMap(plan); };
+      b.setAttribute("data-day", String(day));
+      b.textContent = "Day " + day;
+      paintDayBtn(b, day, DAY_VIS[day] !== false);
+      b.onclick = function(){ toggleDayLine(day); };
       bar.appendChild(b);
     });
 
@@ -883,53 +894,180 @@
     drawMap();
   }
 
+  // 色块按钮的「开 / 关」外观（配色按天，关闭时降不透明度）
+  function paintDayBtn(b, day, on){
+    var color = DAY_COLORS[(day - 1) % DAY_COLORS.length];
+    b.className = on ? "on" : "off";
+    b.style.background = on ? color : "";
+    b.style.borderColor = color;
+    b.style.color = on ? "#fff" : color;
+  }
+
+  // 按天显隐：折线与标点一并切换（与 webapp::toggleDayLine 同口径）
+  function toggleDayLine(day){
+    DAY_VIS[day] = !(DAY_VIS[day] !== false);
+    var on = DAY_VIS[day] !== false;
+    (DAY_LINES[day] || []).forEach(function(l){ on ? l.show() : l.hide(); });
+    (DAY_MARKERS[day] || []).forEach(function(m){ on ? m.show() : m.hide(); });
+    var bar = document.getElementById("mapDays");
+    if (bar){
+      Array.prototype.forEach.call(bar.children, function(b){
+        if (b.getAttribute("data-day") === String(day)) paintDayBtn(b, day, on);
+      });
+    }
+  }
+
+  // 出行方式判定（与 webui/index.html::routeMode 同口径：骑行→riding，其余步行）
+  function routeMode(q){
+    return /骑行|骑车|单车|自行车|cycling|bike/i.test(q || "") ? "riding" : "walking";
+  }
+
+  // 收集要画的「腿」——口径对齐 webui/index.html::drawRealRoutes：
+  //   ① 城际转移腿：某天时间轴里有 type=transfer ⇒ 画「上一天最后一个 POI → 本天第一个 POI」
+  //      的 **driving** 真实路网（跨城 150km+ 用 walking 会得到荒谬折线）。
+  //      ⚠️ 当前内核 `src/intercity.transfer()` **无任何调用点** ⇒ 实际不触发；
+  //      这一段是 webapp 同款的**兼容位**（多城联游一旦产出 transfer 行即自动生效）。
+  //   ② 每天的腿：酒店锚点（仅当该天时间轴有 type=hotel 行）→ 各 POI → 回酒店。
+  function buildLegs(plan){
+    var days = plan.dayList || [];
+    var mode = routeMode(plan.query);
+    var legs = [];
+
+    days.forEach(function(d, k){
+      var tl = d.timeline || [];
+      if (!tl.some(function(x){ return x.type === "transfer"; })) return;
+      var prev = null;
+      for (var j = k - 1; j >= 0 && !prev; j--){
+        var ps = (days[j].timeline || []).filter(function(x){
+          return x.type === "poi" && x.lat != null && x.lng != null; });
+        if (ps.length) prev = ps[ps.length - 1];
+      }
+      var next = null;
+      for (var i2 = 0; i2 < tl.length && !next; i2++){
+        if (tl[i2].type === "poi" && tl[i2].lat != null && tl[i2].lng != null) next = tl[i2];
+      }
+      if (prev && next){
+        legs.push({ day: +d.day, color: "#6b46c1", intercity: true, mode: "driving",
+                    pts: [[+prev.lng, +prev.lat], [+next.lng, +next.lat]] });
+      }
+    });
+
+    days.forEach(function(d){
+      var day = +d.day;
+      var tl = d.timeline || [];
+      // 仅当该天「确实以酒店为出发/返回锚点」时才补酒店腿。判据＝时间轴有 type=hotel 行
+      // （后端**只在酒店锚定日**生成它）——单一事实来源，避免多城联游时画出假长途。
+      var hasHotel = tl.some(function(x){ return x.type === "hotel"; });
+      var hx = null;
+      if (hasHotel && plan.hotel && plan.hotel.lat != null && plan.hotel.lng != null){
+        hx = [+plan.hotel.lng, +plan.hotel.lat];
+      }
+      var pts = [];
+      if (hx) pts.push(hx);
+      tl.forEach(function(x){
+        if (x.type === "poi" && x.lat != null && x.lng != null) pts.push([+x.lng, +x.lat]);
+      });
+      if (hx && pts.length > 1) pts.push(hx);
+      if (pts.length > 1){
+        legs.push({ day: day, color: DAY_COLORS[(day - 1) % DAY_COLORS.length],
+                    mode: mode, pts: pts });
+      }
+    });
+    return legs;
+  }
+
+  // 画「一段」：先向后端要真实路网（`/api/route`，**服务端** amap key ⇒ 面板无需自带），
+  // 拿到才连线。失败时：城际腿退直线（否则用户完全看不到「今天跨了一座城」），
+  // 城内腿**不画假直线**（与 webapp 的 `47c757a` 定稿口径一致）。
+  function drawLeg(leg, a, b, token){
+    var q = "/api/route?mode=" + encodeURIComponent(leg.mode || "walking")
+          + "&o=" + a.join(",") + "&d=" + b.join(",");
+    return httpJson(q, null, "GET").then(function(dd){
+      if (token !== MAP_TOKEN) return true;
+      var poly = (dd && dd.ok && dd.points && dd.points.length > 1) ? dd.points : null;
+      var path = poly || (leg.intercity ? [a, b] : null);
+      if (!path) return false;
+      var line = new AMap.Polyline(leg.intercity
+        ? { path: path, strokeColor: leg.color, strokeWeight: 6, strokeOpacity: 0.85,
+            strokeStyle: "solid", bubble: true }
+        : { path: path, strokeColor: leg.color, strokeWeight: 4.5, strokeOpacity: 0.9,
+            strokeStyle: "dashed", strokeDasharray: [10, 6], bubble: true });
+      if (amapObj) amapObj.add(line);
+      (DAY_LINES[leg.day] = DAY_LINES[leg.day] || []).push(line);
+      if (DAY_VIS[leg.day] === false) line.hide();   // 绘制途中用户已关掉该天
+      return true;
+    })["catch"](function(){ return false; });       // 该段路网不可得 ⇒ 不连线
+  }
+
   function drawMap(){
     var plan = LAST;
     if (!plan) return;
-    var d = null;
-    (plan.dayList || []).forEach(function(x){ if (+x.day === +mapDay) d = x; });
-    if (!d) return;
-    var pts = [];
-    (d.timeline || []).forEach(function(s){
-      if (s.type === "poi" && s.lat != null && s.lng != null){
-        pts.push({ name: s.name, lat: +s.lat, lng: +s.lng });
-      }
-    });
-    if (!pts.length){ setMapHint("Day " + mapDay + " 没有可定位的景点"); return; }
-
+    var dl = plan.dayList || [];
+    if (!dl.length) return;
     if (!window.AMap){ loadAmap(function(){ drawMap(); }); return; }
 
+    var token = ++MAP_TOKEN;
     try {
       if (amapObj && amapObj.destroy) { try { amapObj.destroy(); } catch(e){} }
       amapObj = new AMap.Map("amap", {
-        zoom: 12, center: [pts[0].lng, pts[0].lat], viewMode: "2D",
-        mapStyle: "amap://styles/normal"
+        zoom: 11, viewMode: "2D", mapStyle: "amap://styles/whitesmoke",
+        resizeEnable: true
       });
-      var path = pts.map(function(p){ return [p.lng, p.lat]; });
-      if (path.length > 1){
-        new AMap.Polyline({
-          path: path, map: amapObj, strokeColor: "#185fa5", strokeWeight: 4,
-          strokeOpacity: 0.85, lineJoin: "round", showDir: true
-        });
-      }
-      pts.forEach(function(p, i){
-        new AMap.Marker({
-          position: [p.lng, p.lat], map: amapObj,
-          label: {
-            direction: "top",
-            content: '<span style="background:#185fa5;color:#fff;border-radius:9px;'
-                   + 'padding:1px 6px;font-size:11px;line-height:16px;display:inline-block">'
-                   + (i + 1) + '</span>'
-          }
-        });
-      });
-      amapObj.setFitView(null, false, [40, 40, 40, 40]);
-      setMapHint("Day " + mapDay + "：已定位 " + pts.length + " 个景点（序号对应下方时间线顺序）");
-      scheduleHeight("地图就绪");
     } catch(e){
       setMapHint("地图渲染失败：" + e.message + " —— 行程与交互功能不受影响");
       log("!", "地图渲染异常 " + e.message);
+      return;
     }
+
+    DAY_LINES = {}; DAY_MARKERS = {};
+    var nPoi = 0;
+    dl.forEach(function(d){
+      var day = +d.day;
+      var color = DAY_COLORS[(day - 1) % DAY_COLORS.length];
+      var seq = 0;
+      (d.timeline || []).forEach(function(s){
+        if (!(s.type === "poi" && s.lat != null && s.lng != null)) return;
+        seq++; nPoi++;
+        var badge = '<span style="background:' + color + ';color:#fff;border-radius:9px;'
+                  + 'padding:1px 6px;font-size:11px;line-height:16px;display:inline-block">'
+                  + seq + '</span>';
+        var mk = new AMap.Marker({
+          position: [+s.lng, +s.lat], map: amapObj,
+          label: { direction: "top", content: badge }
+        });
+        mk.on("mouseover", function(){
+          mk.setLabel({ direction: "top",
+            content: '<span style="background:#fff;border:1px solid #d0d5db;color:#1f2328;'
+                   + 'border-radius:6px;padding:2px 7px;font-size:11.5px;line-height:16px;'
+                   + 'white-space:nowrap;display:inline-block">Day ' + day + '·' + seq
+                   + '｜' + esc(s.name) + '</span>' });
+        });
+        mk.on("mouseout", function(){ mk.setLabel({ direction: "top", content: badge }); });
+        (DAY_MARKERS[day] = DAY_MARKERS[day] || []).push(mk);
+      });
+    });
+
+    var legs = buildLegs(plan);
+    var jobs = [];
+    legs.forEach(function(leg){
+      for (var i = 0; i < leg.pts.length - 1; i++){
+        jobs.push(drawLeg(leg, leg.pts[i], leg.pts[i + 1], token));
+      }
+    });
+
+    setMapHint("Day 全览：" + dl.length + " 天 / " + nPoi + " 个景点，正在获取实际路网…");
+    if (!jobs.length){ amapObj.setFitView(null, false, [40, 40, 40, 40]); scheduleHeight("地图就绪"); return; }
+
+    Promise.all(jobs).then(function(oks){
+      if (token !== MAP_TOKEN || !amapObj) return;
+      var fail = oks.filter(function(o){ return o === false; }).length;
+      amapObj.setFitView(null, false, [40, 40, 40, 40]);
+      setMapHint("Day 全览：" + dl.length + " 天 / " + nPoi + " 个景点 · 实际路网 "
+                 + (oks.length - fail) + " 段"
+                 + (fail ? "（" + fail + " 段获取失败，该段未连线）" : "")
+                 + " —— 点上方 Day 色块可显隐各天");
+      scheduleHeight("路网绘制完成");
+    });
   }
 
   window.retryMap = function(){ setMapHint("重试中…"); drawMap(); };

@@ -1037,12 +1037,13 @@ window.parent.postMessage({ jsonrpc: "2.0",
 
 ### 版本
 
-`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m15**、`WEBUI_VERSION` → **m6**、
-`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标、**高度上报**与
-**hop 里程不重复**的行为验证）、`mcp/selftest.py`（213 项）、`mcp/smoke_exe.py`（17 项，断言共用
-`bundle_check.py`）、`mcp/build_bundle.py`（跨平台出包 + `--self-check` 铺包自检 + 冒烟）、
-`scripts/release_gate.py`（本地五步门禁，CI 也跑这条）、`mcp/check_orphans.py`、
-`mcp/check_live.py`（宿主侧实况）、`mcp/bundle_redteam.py`（证明自检可被击穿，**手动跑**）。
+`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m16**、`WEBUI_VERSION` → **m6**、
+`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标、**高度上报**、
+**hop 里程不重复**与**地图逐段真实路网**的行为验证）、`mcp/selftest.py`（213 项）、
+`mcp/smoke_exe.py`（17 项，断言共用 `bundle_check.py`）、`mcp/build_bundle.py`（跨平台出包 +
+`--self-check` 铺包自检 + 冒烟）、`scripts/release_gate.py`（本地五步门禁，CI 也跑这条）、
+`mcp/check_orphans.py`、`mcp/check_live.py`（宿主侧实况）、`mcp/bundle_redteam.py`
+（证明自检可被击穿，**手动跑**）。
 
 ### ✅ 宿主侧实测验收入口（2026-10-10 已跑通）
 
@@ -1074,15 +1075,49 @@ openHostApp.created … resourceUri=ui://tripplanner/plan-m13
 ⇒ **UI 保存/重新连接会重新描述工具，uri 随之更新（不必重启）**；只有「改了 `mcp.json`
 但没让宿主重载」才会沿用旧 uri。
 
+### 地图：逐段真实路网（M6.2，2026-10-10，`PANEL_VERSION` m16）
+
+**背景**：面板地图**从未**移植 webapp 的能力 —— `drawMap()` 只把当天 POI 按顺序连成**一条**
+`AMap.Polyline`（直线折线），而 `webui/index.html::drawRealRoutes()` 是**逐段**调后端
+`/api/route` 画**真实路网**。这**不是** MCP 化的回归（`git log -S "drawRealRoutes"|"api/route"`
+限定面板文件 = **全历史零命中**），而是「同一功能两份渲染代码、面板那份没跟上」——面板受
+宿主 iframe / CSP / 尺寸协议约束，搬不动 webapp 的 DOM 结构。
+
+**本次对齐**（口径与 webapp 一致）：
+
+| 能力 | 实现 |
+|---|---|
+| 逐段真实路网 | `drawLeg()` 每段 `GET /api/route?mode=&o=&d=`（**服务端** amap key ⇒ 面板无需自带 key） |
+| 出行方式 | `routeMode(q)`：`骑行\|骑车\|单车\|自行车\|cycling\|bike` → `riding`，否则 `walking` |
+| 酒店锚点腿 | 仅当该天时间轴有 `type=hotel` 行 ⇒ 用 `plan.hotel` 坐标补「酒店→…→酒店」 |
+| 城际 driving 腿 | `type=transfer` 的天画「上一天末点 → 本天首点」，`driving` 紫色实线。生成点是 `webui/server.py::plan_multi`（多城联游，≥240min 城际段预扣 1 天）→ `_transfer_day()`（:923）。⚠️ 触发条件与 webapp **逐字一致**：该天自身要有 POI —— 短城际段会把 transfer 行**并进某天**（那时生效），**纯转移日**（只有 transfer 行、无 POI）两边都不画 |
+| 按天配色 / 显隐 | `DAY_COLORS`（webapp 同 5 色）+ 色块开关 `toggleDayLine()`（折线与标点一并显隐） |
+| 失败口径 | 城内腿失败 ⇒ **不画假直线**（与 `47c757a` 定稿口径一致）；城际腿失败 ⇒ 退直线 |
+| 竞态保护 | `MAP_TOKEN` 令牌：快速连续重绘时放弃过期渲染 |
+
+**为什么能直接复用后端**：`/api/route`（`webui/server.py:1602`）一直健在（云端实测
+`ok=true / 304 点 / 6267m`），且**限流 `rate_allow()` 只在 `/api/plan` 分支被调用** ⇒
+逐段拉路网不会被 8次/60s 挡住。
+
+**守门**：`panel_guard.py` 3.9 —— 锚点断言 + **node 真跑**（stub `httpJson`/`AMap`，喂 2 天数据，
+断言 `nCalls=4 / nPolys=4 / 按天归组 / 城际腿 driving`）。红队（`dist/_redteam_map.py`，手动跑）
+注入旧「单条直线」实现 ⇒ 行为断言变红（`nCalls=0`）。
+⚠️ 红队暴露的教训：**字面量断言没红、只有行为验证红了**（`/api/route` 在注释里也出现）
+⇒ 「grep 源码不算」再次被证实。
+
+**未实测**：面板在宿主双层 iframe 内的实际渲染（含逐段路网请求的 CORS / 并发）。
+
 ### ⚠️ 仍未做
 
 - **分享包尚未在别人的 WorkBuddy 里实测**（本机已以 exe 形态跑通全链路）。
 - **云端 `/mcp`（Streamable HTTP）待宿主侧实测**：端点已上线（`http://101.35.47.213/mcp`，
   21/21 + 端到端规划实测通过），本机 `mcp.json` 已加 `tripplanner-http` 测试条目（未写信任）
   ⇒ 待 UI 点信任后确认「宿主能否列出 9 工具」+「`ui://` 面板在远端 transport 下能否渲染」。
-- **面板高度上报（M6）待肉眼确认**：宿主日志只能证「请求了 `plan-m15`」，采纳与否要看
+- **面板高度上报（M6）待肉眼确认**：宿主日志只能证「请求了 `plan-m16`」，采纳与否要看
   「协议诊断 → 面板尺寸」那行的**视口 vs 内容**。若视口仍明显小于内容 ⇒ 宿主没采纳，
   得改用别的办法（例如把地图卡折叠）。
+- **面板地图（M6.2）待肉眼确认**：逐段路网要在宿主 iframe 内实测 —— 看是否出现按天配色的
+  实际路网折线（除瓦片外，还多了一层 `/api/route` 的跨域 GET，需确认 CORS/预检在宿主内通畅）。
 - 高德 JS API 在宿主**双层 iframe** 内的行为仍未实测（沿用 M3 的遗留项）。
 - ✅ 云端 `src/md_export.py` **已同步**（2026-10-10 跑过 `deploy/cvm/sync_from_local.sh`，
   导出模式行已由「离线兜底（m7_proposal）」变为「**M7 经验提案**」）。
@@ -1452,6 +1487,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M6** | **面板高度上报**：面板主动发 `ui/notifications/size-changed` 让宿主把 iframe 撑到内容高度（内容长不再出滚动条）；`__PANEL_VERSION__` 占位符注入（修「面板里写死 v=m12 后静默过期」） | ✅ **完成（2026-10-10，`PANEL_VERSION` m14）**；待肉眼确认视口≈内容 |
 | **M5.x** | **云端 `/mcp`（Streamable HTTP）**：把 `/api/*` 薄包一层 MCP 协议 ⇒ 「零安装 + 不上架」分享路线 A 的原型。**复用同一份 `mcp/tripplanner_mcp_server.py`**（importlib 按路径加载，不复制口径）；`webui/mcp_endpoint.py` + `webui/server.py` 挂路由 | ✅ **端点已上线并实测**（本地/公网各 **21/21**，云端 `plan_trip` 10.5s 出真实行程）；**待宿主侧实测**（UI 点信任 → 9 工具 + 面板渲染） |
 | **M6.1** | 🐞 **修 hop 段里程/时长重复显示**（报障：「→ 车程 15 分钟 · 3.7km　3.7km · 15分钟」）：hop 的 `name` 已由 `sequencer._hop_label()` 自带 km+分钟，而**面板与导出两处**又各拼了一遍 | ✅ **完成（2026-10-10，`PANEL_VERSION` m15）** —— 面板新增**行为守卫**（node 真跑渲染）+ 新单测 `test_hop_label_no_dup.py`；红队证明守卫可被打红 |
+| **M6.2** | 🗺️ **地图对齐 webapp**（报障：「地图上景点之间是直线，webapp 是实际导航线路」）：面板 `drawMap()` **从未**移植 webapp 的 `drawRealRoutes()` ⇒ 改**逐段调 `/api/route`** 画真实路网 + 按天配色/显隐（`toggleDayLine`）+ 酒店锚点腿 + 城际 driving 腿（多城联游短城际段生效，生成点 `webui/server.py::plan_multi`）；`PANEL_VERSION` m15→**m16** | ✅ **完成（2026-10-10）** —— `panel_guard` 3.9 **node 真跑**行为验证（`nCalls=4 / nPolys=4 / 按天归组 / 城际 driving`），红队注入旧「单条直线」实现即变红；⚠️ 宿主 iframe 内**未肉眼实测** |
 
 ### 🐞 缺陷记录：hop 段里程/时长重复（2026-10-10 报障，`PANEL_VERSION` m15 修）
 

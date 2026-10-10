@@ -301,6 +301,122 @@ def main() -> int:
             n_km == 1 and "车程 15 分钟" in hout,
             f"『3.7km』出现 {n_km} 次（应为 1）｜渲染片段={hout[:200]!r}")
 
+    # 3.9) 地图：逐段真实路网（对齐 webapp）—— 2026-10-10（M6.2）
+    #      旧实现只有「当天 POI 按顺序连成**一条** AMap.Polyline」＝直线折线；webapp
+    #      (webui/index.html::drawRealRoutes) 是逐段调 `/api/route` 画**真实路网**。
+    #      这属于「同一功能两份渲染代码、其中一份没跟上」⇒ 必须验**行为**，
+    #      光 grep 到 `/api/route` 字符串不算（曾踩：锚点/字面量比被测对象更危险）。
+    for _need, _why in (
+        ("/api/route", "面板没调用 /api/route ⇒ 地图只可能是直线"),
+        ("DAY_COLORS", "面板缺按天配色"),
+        ("DAY_VIS", "面板缺按天显隐"),
+        ("buildLegs", "面板缺「腿」收集（酒店锚点 / 城际转移）"),
+        ("toggleDayLine", "面板缺 Day 开关行为"),
+    ):
+        chk("地图对齐 webapp：面板含 " + _need, _need in html, _why)
+
+    def _fnbody(_re):
+        _m = re.search(_re, html)
+        return _m.group(1) if _m else None
+
+    _fr = _fnbody(r"function routeMode\(q\)\{([\s\S]*?)\n  \}")
+    _fb = _fnbody(r"function buildLegs\(plan\)\{([\s\S]*?)\n  \}")
+    _fd = _fnbody(r"function drawLeg\(leg, a, b, token\)\{([\s\S]*?)\n  \}")
+    if _fr is None or _fb is None or _fd is None:
+        chk("地图渲染逻辑可定位（供行为验证）", False,
+            "未找到 routeMode / buildLegs / drawLeg 之一（函数签名被改？）")
+    else:
+        _mp = os.path.join(HERE, "_map_check.js")
+        _msrc = (
+            "var DAY_COLORS = ['#a', '#b'];\n"
+            "var DAY_LINES = {}, DAY_VIS = {}, DAY_MARKERS = {};\n"
+            "var MAP_TOKEN = 7;\n"
+            "var calls = [], polys = [], added = 0;\n"
+            "var esc = function(x){ return String(x == null ? '' : x); };\n"
+            "function httpJson(path, body, method){\n"
+            "  calls.push({ path: path, method: method });\n"
+            "  return Promise.resolve({ ok: true, points: [[1,1],[2,2]] });\n"
+            "}\n"
+            "var amapObj = { add: function(l){ added++; } };\n"
+            "var AMap = { Polyline: function(o){ polys.push({ o: o, hidden: false,\n"
+            "  show: function(){ this.hidden = false; },\n"
+            "  hide: function(){ this.hidden = true; } }); } };\n"
+            "function routeMode(q){" + _fr + "\n}\n"
+            "function buildLegs(plan){" + _fb + "\n}\n"
+            "function drawLeg(leg, a, b, token){" + _fd + "\n}\n"
+            "var plan = { query: '杭州亲子2天', hotel: { name: 'H', lat: 30.25, lng: 120.15 },\n"
+            "  dayList: [\n"
+            "    { day: 1, timeline: [ { type: 'hotel', name: 'H' },\n"
+            "      { type: 'poi', name: 'A', lat: 30.20, lng: 120.10 },\n"
+            "      { type: 'hop', name: 'h', km: 1, min: 5 },\n"
+            "      { type: 'poi', name: 'B', lat: 30.21, lng: 120.11 } ] },\n"
+            "    { day: 2, timeline: [ { type: 'poi', name: 'C', lat: 30.22, lng: 120.12 },\n"
+            "      { type: 'poi', name: 'D', lat: 30.23, lng: 120.13 } ] } ] };\n"
+            "var plan2 = { query: '骑行环湖', hotel: null, dayList: [\n"
+            "    { day: 1, timeline: [ { type: 'poi', name: 'A', lat: 30.2, lng: 120.1 } ] },\n"
+            "    { day: 2, timeline: [ { type: 'transfer', name: 't' },\n"
+            "      { type: 'poi', name: 'B', lat: 30.3, lng: 120.2 } ] } ] };\n"
+            "var legs = buildLegs(plan);\n"
+            "var legs2 = buildLegs(plan2);\n"
+            "var jobs = [];\n"
+            "legs.forEach(function(leg){\n"
+            "  for (var i = 0; i < leg.pts.length - 1; i++){\n"
+            "    jobs.push(drawLeg(leg, leg.pts[i], leg.pts[i+1], MAP_TOKEN)); } });\n"
+            "Promise.all(jobs).then(function(oks){\n"
+            "  console.log(JSON.stringify({\n"
+            "    nLegs: legs.length, legPts: legs.map(function(l){ return l.pts.length; }),\n"
+            "    modes: legs.map(function(l){ return l.mode; }),\n"
+            "    nCalls: calls.length,\n"
+            "    allGet: calls.every(function(c){ return c.method === 'GET'; }),\n"
+            "    routePath: calls.every(function(c){ return c.path.indexOf('/api/route?mode=') === 0; }),\n"
+            "    nPolys: polys.length, nAdded: added, days: Object.keys(DAY_LINES),\n"
+            "    dash: polys.map(function(p){ return p.o.strokeStyle; }),\n"
+            "    nOk: oks.filter(function(o){ return o === true; }).length,\n"
+            "    legs2: legs2.length, city2: legs2[0] ? legs2[0].intercity : null,\n"
+            "    mode2: legs2[0] ? legs2[0].mode : null, color2: legs2[0] ? legs2[0].color : null,\n"
+            "    pts2: legs2[0] ? legs2[0].pts.length : null }));\n"
+            "});\n"
+        )
+        with open(_mp, "w", encoding="utf-8") as f:
+            f.write(_msrc)
+        try:
+            _mr = subprocess.run([NODE, _mp], capture_output=True, text=True,
+                                 encoding="utf-8", errors="replace", timeout=60)
+            _mout = (_mr.stdout or "").strip()
+        except Exception as e:                                    # noqa: BLE001
+            _mout = ""
+            print(f"  (地图探针执行失败: {e})")
+        finally:
+            if os.path.exists(_mp):
+                os.remove(_mp)
+        import json as _json
+        _j = None
+        for _line in reversed(_mout.splitlines()):
+            try:
+                _j = _json.loads(_line)
+                break
+            except Exception:                                     # noqa: BLE001
+                continue
+        if not _j:
+            chk("地图渲染行为验证（node 真跑）", False,
+                f"探针无 JSON 输出：{_mout[:200]!r}")
+        else:
+            _ok = (
+                _j.get("nLegs") == 2 and _j.get("legPts") == [4, 2]
+                and _j.get("modes") == ["walking", "walking"]
+                and _j.get("nCalls") == 4 and _j.get("allGet") is True
+                and _j.get("routePath") is True
+                and _j.get("nPolys") == 4 and _j.get("nAdded") == 4
+                and sorted(_j.get("days") or []) == ["1", "2"]
+                and all(_d == "dashed" for _d in (_j.get("dash") or []))
+                and _j.get("nOk") == 4
+                and _j.get("legs2") == 1 and _j.get("city2") is True
+                and _j.get("mode2") == "driving" and _j.get("color2") == "#6b46c1"
+                and _j.get("pts2") == 2
+            )
+            chk("地图逐段真实路网 + 酒店腿 + 城际腿 + 按天归组（node 真跑）", _ok,
+                f"实测={_j}｜期望 nLegs=2 legPts=[4,2] nCalls=4 nPolys=4 城际=1(driving)")
+
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)
     js = m.group(1) if m else ""
