@@ -472,8 +472,11 @@ def self_check() -> int:
             zip_pkg(target, stage_root, pkg, out_path=tmp)
             modes = _zip_modes(tmp)
             names = set(modes)
-            c.ok(f"{target}: zip 含全部文件", names == {"tripplanner-mcp/" + g for g in want},
-                 f"多={names ^ {'tripplanner-mcp/' + g for g in want}}")
+            arc_want = {"tripplanner-mcp/" + g for g in want}
+            # 报错详情用「差集」而不是对称差：对称差会把「本来就有、只是不在包内」的
+            # 文件也列进「多」，读的人会以为包里有它（踩过，观测缺陷也是缺陷）。
+            c.ok(f"{target}: zip 含全部文件", names == arc_want,
+                 f"多={sorted(names - arc_want)} 少={sorted(arc_want - names)}")
             c.ok(f"{target}: zip 内启动器带可执行位",
                  modes.get(f"tripplanner-mcp/{build_sh}", 0) & 0o111 != 0
                  and modes.get("tripplanner-mcp/tripplanner-mcp", 0) & 0o111 != 0)

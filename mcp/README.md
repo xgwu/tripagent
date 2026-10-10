@@ -820,6 +820,15 @@ PyInstaller、mac 要有人在 mac 上试）。而「铺包 + 打 zip」是纯 P
 （win 只在 `dist/` 已有 exe 时验四件套，没有就跳过）。**已并入 `release_gate.py --mcp`。**
 无 `secrets.json` 的机器也能跑（用哨兵 base 只验结构，会打印提示）。
 
+🔴 **自检本身也要有守测试**（`mcp/bundle_redteam.py`，**手动跑**）—— 断言写错（锚点漂移 /
+条件恒真）会永远打绿，比没有守卫更危险。红队把 `build_bundle.py` 复制成**同目录**临时变体
+`mcp/_bundle_mutant.py`（**绝不改真文件**：上一版「改真文件再还原」被中途杀掉就会留下坏文件），
+注入 4 种坏包 —— 丢可执行位 / `.sh` 成 CRLF / `mcp.json` 占位符少一处 / 包内不写 `remote.json`
+—— 断言**每条都变红、且红在对应那条**；锚点找不到也算失败（说明红队已静默失效）。
+基线先跑一次真文件（须绿），否则「注入才变红」的因果不成立。
+⚠️ 注入 CRLF 的锚点别写错：`open(..., newline="")` **仍写 LF**（只是不翻译），真正的回归是
+**漏掉 `newline` 参数**（默认 `newline=None` 在 Windows 上把 `\n` 翻成 `\r\n`）。
+
 🔴 **为什么 mac/linux 没有 exe**：PyInstaller **不能跨系统编译**（Windows 上产不出 Mach-O）。
 但 M5 的 server 是**纯标准库**，所以 mac/linux 用「`tripplanner-mcp` bash 启动器 +
 `mcp/tripplanner_mcp_server.py` + `mcp/panel/`」的**源码包**即可 —— **不需要 pip 装任何东西**
@@ -991,8 +1000,8 @@ grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbud
 `SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m13**、`WEBUI_VERSION` → **m5**、
 `/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标行为验证）、
 `mcp/selftest.py`（211 项）、`mcp/smoke_exe.py`（17 项，断言共用 `bundle_check.py`）、
-`mcp/build_bundle.py`（跨平台出包 + 冒烟）、`mcp/check_orphans.py`、
-`mcp/check_live.py`（宿主侧实况）。
+`mcp/build_bundle.py`（跨平台出包 + `--self-check` 铺包自检 + 冒烟）、`mcp/check_orphans.py`、
+`mcp/check_live.py`（宿主侧实况）、`mcp/bundle_redteam.py`（证明自检可被击穿，**手动跑**）。
 
 ### ✅ 宿主侧实测验收入口（2026-10-10 已跑通）
 
@@ -1140,6 +1149,7 @@ mcp/
   tripplanner_mcp_server.py   # stdio MCP server（M5：**纯标准库**瘦客户端，只做代理+注入+落盘）
   bundle_check.py             # M5：**「怎么算跑通」的唯一实现**（initialize/工具表/面板/真实云端规划/panel_ready）
   build_bundle.py             # M5：跨平台出包（--target win|mac|linux）+ 冒烟 + zip；mac/linux 出「启动器+源码」包
+  bundle_redteam.py           # M5：红队——注入坏包（丢可执行位/CRLF/占位符/缺 remote.json）证明 --self-check 可被击穿
   build_exe.py                # M5：Windows/原生 exe（AST 依赖自查 → PyInstaller onefile → 写 dist/）；被 build_bundle 调用
   smoke_exe.py                # M5：exe 形态冒烟（17 项；断言共用 bundle_check，另查 remote.json 同目录 / 注入 / 落盘位置）
   check_orphans.py            # M5：AST 比对 HEAD，抓「删了但还在用」的顶层名字（已并入 release_gate 第 5 步）
