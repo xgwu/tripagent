@@ -86,7 +86,7 @@ PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m13"
+PANEL_VERSION = "m14"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -545,6 +545,11 @@ REMOTE_API_AUTH_PLACEHOLDER = "__REMOTE_API_AUTH__"
 #   （首屏仍走宿主 bootstrap 通道，这里只是让「没有云端会话」也不至于空白）。
 SESSION_ID_PLACEHOLDER = "__SESSION_ID__"
 PLAN_JSON_PLACEHOLDER = "__PLAN_JSON__"
+# `__PANEL_VERSION__` —— 面板自报版本（`panel.boot` 轨迹里那行 `v=…`）。
+#   为什么走注入而不是让面板自己写死：那个字符串曾经写死成 `v=m12`，`PANEL_VERSION`
+#   涨到 m13 后它就悄悄过期了 —— 正是本项目「同一口径多处各写必漂移」的老坑。
+#   ⇒ 面板里只留占位符，真实版本号唯一来源就是上面的 `PANEL_VERSION`。
+PANEL_VERSION_PLACEHOLDER = "__PANEL_VERSION__"
 
 
 class _Session:
@@ -832,6 +837,10 @@ def read_panel() -> str:
         key = amap_js_key()
         html = html.replace(AMAP_KEY_PLACEHOLDER, key)
         log("panel 地图 key 注入", has_key=bool(key))
+    # 面板自报版本（`panel.boot` 轨迹）—— **唯一来源是 PANEL_VERSION**。
+    # 无条件替换：它是常量、不涉及 IO，且「漏替换 ⇒ 面板里出现裸占位符」比慢一点更糟。
+    if PANEL_VERSION_PLACEHOLDER in html:
+        html = html.replace(PANEL_VERSION_PLACEHOLDER, PANEL_VERSION)
     # M5：面板后端**全走线上** —— 线上 base + Basic 凭据都从 remote_config() 取
     # （打包后 = exe 同目录的 remote.json，随分享包分发；开发机回落 secrets.json）。
     # 本地常驻 API（local_api.py）自 M5 起**不再拉起** ⇒ 不再注入本地 base/token。

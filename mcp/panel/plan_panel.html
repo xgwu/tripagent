@@ -123,6 +123,7 @@
     <div class="row"><span class="k">页面路径</span><span class="v" id="diag3">—</span></div>
     <div class="row"><span class="k">照片加载</span><span class="v" id="diagPhoto">—</span></div>
     <div class="row"><span class="k">地图状态</span><span class="v" id="diagMap">—</span></div>
+    <div class="row"><span class="k">面板尺寸</span><span class="v" id="diagSize">—</span></div>
     <div class="row"><span class="k">线上后端</span><span class="v" id="diagApi">—</span></div>
     <div class="btns">
       <button class="primary" id="btnProbe" onclick="probe()">探测桥接</button>
@@ -240,6 +241,75 @@
       }, 10000);
     });
   }
+
+  // ---------------- 面板高度上报：让宿主把 iframe 撑到内容高度，面板内不再滚动 ----------------
+  // 为什么需要：宿主把 App 放进一个**定高** iframe，内容一长面板自己就得上下滚
+  //   （多天行程的时间线几百到几千 px 很正常）。MCP Apps 协议本就为此留了
+  //   `ui/notifications/size-changed`：App 上报内容高度 ⇒ 宿主把 iframe 撑到该高度，
+  //   滚动交还宿主页面（对话页），面板内部不再出现滚动条。
+  // ⚠️ 与宿主内建测量的关系（app.asar sandbox-proxy 源码取证）：宿主代理自己也会测一次，
+  //   但**一旦 App 主动上报**，代理会置 `appOwnsSize = true` 并 `stopMeasuring()`
+  //   **永久让位**。所以这里必须**持续**上报（ResizeObserver + 若干延时补测），
+  //   不能只报一次 —— 缩略图、地图脚本、字体全是 render 之后才落位的。
+  // ⚠️ 也不能只在渲染后报一次大值收工：换天/换点后内容会变**矮**，得能把 iframe 收回去。
+  // ---- panel-size:block:start ----
+  var lastSentH = 0, sizeTimer = 0, sizeSends = 0;
+
+  // 取「内容高度」，与宿主 measureSandboxContentHeight 同口径：
+  //   内容比视口高 ⇒ 用根元素 scrollHeight（这就是真实内容高度）；
+  //   否则用 body 的边框盒高度 + 上下 margin —— 此分支**不能用 scrollHeight**：
+  //   根元素的 scrollHeight 至少等于视口高度，缩不回去（内容变矮会留一大片空白）。
+  function contentHeight(){
+    var de = document.documentElement || {};
+    var vh = window.innerHeight || 0;
+    var sh = de.scrollHeight || 0;
+    if (sh > vh + 8) return Math.ceil(sh);
+    var b = document.body;
+    if (!b) return Math.ceil(sh);
+    var r = Math.ceil(b.getBoundingClientRect().height || 0);
+    var st = {};
+    try { st = window.getComputedStyle(b) || {}; } catch(e){ st = {}; }
+    var total = Math.ceil(r + (parseFloat(st.marginTop) || 0) + (parseFloat(st.marginBottom) || 0));
+    return total > 0 ? total : Math.ceil(sh);
+  }
+
+  function syncHeight(why){
+    if (window.parent === window) return;        // 不在宿主里（直接开文件 / 探针）不必报
+    var h = contentHeight();
+    if (!(h > 0)) return;
+    if (Math.abs(h - lastSentH) < 4) return;     // 与宿主同门槛（4px），避免来回抖动
+    lastSentH = h; sizeSends++;
+    setDiag("面板尺寸", "视口 " + (window.innerHeight || 0) + " / 内容 " + h + "px ｜ 第 "
+      + sizeSends + " 次上报（" + why + "）", "diagSize");
+    if (sizeSends === 1) log("!", "面板高度上报已接管（宿主代理会让位）：h=" + h);
+    try {
+      window.parent.postMessage({ jsonrpc: "2.0",
+        method: "ui/notifications/size-changed",
+        params: { height: h } }, "*");
+    } catch(e){ log("!", "size-changed 上报失败：" + e.message); }
+  }
+
+  function scheduleHeight(why){
+    if (sizeTimer) clearTimeout(sizeTimer);
+    sizeTimer = setTimeout(function(){ sizeTimer = 0; syncHeight(why); }, 60);
+  }
+
+  function watchSize(){
+    scheduleHeight("启动");
+    window.addEventListener("load", function(){ scheduleHeight("load"); });
+    if (typeof ResizeObserver !== "undefined"){
+      try {
+        var ro = new ResizeObserver(function(){ scheduleHeight("内容变化"); });
+        ro.observe(document.documentElement);
+        if (document.body) ro.observe(document.body);
+      } catch(e){ log("!", "ResizeObserver 不可用：" + e.message); }
+    }
+    // 图片 / 地图脚本 / 字体都可能在 render 之后才改变高度 ⇒ 多打几拍补测
+    [300, 1000, 2500, 5000].forEach(function(ms){
+      setTimeout(function(){ scheduleHeight(ms + "ms 补测"); }, ms);
+    });
+  }
+  // ---- panel-size:block:end ----
 
   // ---------------- M2.1/2.2：后端 HTTP 客户端 ----------------
   function showAlert(msg, ok){
@@ -489,6 +559,7 @@
       }
       lastHealthy = false;
     });
+    scheduleHeight("巡检");
   }
   function startWatchdog(){
     if (watchdogTimer) return;
@@ -573,6 +644,7 @@
     photoStat.ok++;
     document.getElementById("diagPhoto").textContent =
       "成功 " + photoStat.ok + " / 失败 " + photoStat.fail;
+    scheduleHeight("照片就绪");
   };
   window.photoFail = function(el){
     photoStat.fail++;
@@ -580,6 +652,7 @@
     document.getElementById("diagPhoto").textContent =
       "成功 " + photoStat.ok + " / 失败 " + photoStat.fail
       + "（失败多为 CSP 拦截或 URL 失效）";
+    scheduleHeight("照片失败");
   };
 
   function render(plan){
@@ -588,6 +661,7 @@
       box.innerHTML = '<div class="empty">还没有行程。请对助手说一句需求，'
         + '例如「杭州2天，带8岁孩子，想看西湖和灵隐寺」。</div>';
       setDiag("render 入参", "plan 为空（server 侧 hasPlan=false）");
+      scheduleHeight("render 空态");
       return;
     }
 
@@ -741,6 +815,7 @@
 
     box.innerHTML = h;
     setupMap(plan);
+    scheduleHeight("render");
   }
 
   // ---------------- M2：地图（高德 JS API） ----------------
@@ -851,6 +926,7 @@
       });
       amapObj.setFitView(null, false, [40, 40, 40, 40]);
       setMapHint("Day " + mapDay + "：已定位 " + pts.length + " 个景点（序号对应下方时间线顺序）");
+      scheduleHeight("地图就绪");
     } catch(e){
       setMapHint("地图渲染失败：" + e.message + " —— 行程与交互功能不受影响");
       log("!", "地图渲染异常 " + e.message);
@@ -1310,7 +1386,7 @@
   // M4 诊断：把**宿主 iframe 的上下文**一并落盘 —— 这是判断「远端兜底能不能用」的
   // 决定性证据：若 protocol=https，浏览器会把 http://<公网IP> 当 active mixed content
   // **直接 block**（`127.0.0.1` 有 potentially-trustworthy 豁免，公网 IP **没有**）。
-  trace("panel.boot", "v=m12 base=" + (REMOTE_BASE || "none")
+  trace("panel.boot", "v=__PANEL_VERSION__ base=" + (REMOTE_BASE || "none")
         + " auth=" + (REMOTE_AUTH ? "yes" : "no")
         + " session=" + (SESSION_ID ? SESSION_ID.slice(0, 6) : "none")
         + " seed=" + ((PLAN_SEED && PLAN_SEED.dayList) ? "yes" : "no")
@@ -1333,6 +1409,7 @@
     });
   }, 1500);
   startWatchdog();      // 掉线自动提示、恢复自动重拉行程（用户无需干预）
+  watchSize();          // 面板高度上报（宿主据此把 iframe 撑到内容高度 ⇒ 面板内不滚动）
   probe();
 })();
 </script>

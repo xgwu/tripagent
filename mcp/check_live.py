@@ -165,7 +165,8 @@ def host_panel_uri() -> tuple[str | None, float | None]:
     """宿主**实际请求过的**面板 uri（最近一次）+ 该记录的本地时间戳。
 
     证据来源：`~/.workbuddy/logs/mcp-apps-diag.log`，形如
-        openHostApp.created … resourceUri=ui://tripplanner/plan-m13
+        openHostApp.created … resourceUri=ui://tripplanner/plan-m<N>
+    （示例里刻意不写死版本号 —— 写死就会在下一次 `PANEL_VERSION` +1 时过期。）
 
     ⚠️ 2026-10-10 纠正：**不要**用 server 侧 `output/mcp_debug.log` 里的
     `resources/read` 记录当判据 —— `log()` 只写 **stderr**（宿主环境吞掉），

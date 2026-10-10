@@ -25,7 +25,8 @@ DEFAULT_QUERY = "杭州2天，喜欢自然风光"
 
 # 注入后**不该**再出现的占位符（面板 HTML 里若还有 = 注入没跑完）
 PLACEHOLDERS = ("__REMOTE_API_BASE__", "__REMOTE_API_AUTH__",
-                "__SESSION_ID__", "__PLAN_JSON__", "__AMAP_JS_KEY__")
+                "__SESSION_ID__", "__PLAN_JSON__", "__AMAP_JS_KEY__",
+                "__PANEL_VERSION__")
 
 # 线上/本地 secrets.json 都取不到 key 时的降级文案（面板仍可用，只是没地图）
 _PROBE_STDERR = ("[tripplanner-mcp] resources/read",)
@@ -122,6 +123,18 @@ def run(launch_cmd: list[str], cwd: str | None = None,
         r.add("面板里没有占位符残留（注入已完成）",
               not any(p in r.html for p in PLACEHOLDERS),
               str(re.findall(r"__[A-Z_]+__", r.html)[:4]))
+        # 🔴 包里的面板必须是**当前版本**：win 形态下面板是 PyInstaller 打进 exe 的
+        #    （`--add-data`）⇒ 改了 panel 却忘了重打包，宿主拿到的仍是旧面板 HTML，
+        #    而且 **uri 也还是旧的**、日志里看不出任何异常。这里用「面板自报版本
+        #    （由 server 注入）== resourceUri 里的版本」交叉校验，两边漏一个就红。
+        _ver = r.uri.rsplit("-", 1)[-1] if r.uri else ""
+        r.add(f"包内面板是当前版本（自报 v={_ver} == uri 里的版本）",
+              bool(_ver) and ("v=" + _ver + " base=") in r.html,
+              f"uri={r.uri}")
+        # M6：面板必须带高度上报（否则宿主给的是定高 iframe ⇒ 面板内又出现滚动条）
+        r.add("包内面板带高度上报（M6，宿主据此撑高 iframe）",
+              "ui/notifications/size-changed" in r.html
+              and "panel-size:block:start" in r.html)
 
         t0 = time.time()
         resp = _rpc(proc, {"jsonrpc": "2.0", "id": 4, "method": "tools/call",

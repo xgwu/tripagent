@@ -232,6 +232,14 @@ def phase_protocol():
         check("panel 文件已无本地 API 占位符（M5 下线）",
               "__LOCAL_API_BASE__" not in raw_panel
               and "__LOCAL_API_TOKEN__" not in raw_panel)
+        # M6：面板自报版本必须由 server 注入（曾写死 `v=m12`，PANEL_VERSION 涨到 m13 后
+        # 它就悄悄过期了 —— 「同一口径多处各写必漂移」的老坑）。这里做**交叉校验**：
+        # 注入进面板的版本号必须与 resourceUri 里的版本号一致，任何一边漏改都会红。
+        _ver = panel_uri.rsplit("-", 1)[-1] if panel_uri else ""
+        check("panel 文件用版本占位符（版本号唯一来源是 PANEL_VERSION）",
+              "__PANEL_VERSION__" in raw_panel and "v=__PANEL_VERSION__" in raw_panel)
+        check(f"resources/read 注入的面板版本与 resourceUri 一致（{_ver}）",
+              bool(_ver) and ("v=" + _ver + " base=") in html)
         m_base = re.search(r'var\s+REMOTE_BASE\s*=\s*"(https?://[^"]+)"', html)
         check("resources/read 已注入线上后端 base（真实地址）",
               bool(m_base), m_base.group(1) if m_base else "仍是占位符")
@@ -659,7 +667,9 @@ def phase_interactions():
                 check("order_respected=True ⇒ 顺序与请求完全一致", got == ok_perm,
                       f"got={got}")
             else:
-                print(OK + " 顺序受硬约束微调（order_respected=False，属既有行为）")
+                # ⚠️ 这里必须走 check()：原先直接 print(OK+…) ⇒ 这行**不计入总数**，
+                # 于是「N/N」长期少报 2（2026-10-10 对账时发现）。观测缺陷也是缺陷。
+                check("顺序受硬约束微调（order_respected=False，属既有行为）", True)
 
         # 边界：点集不一致必须拒绝（防拖拽悄悄丢点）
         base_ids = ok_perm if ok_perm is not None else ntl
@@ -1026,7 +1036,9 @@ def phase_remote_backend():
             if j.get("order_respected"):
                 check("order_respected=True ⇒ 顺序与请求完全一致", got == ok_perm, f"got={got}")
             else:
-                print(OK + " 顺序受硬约束微调（order_respected=False，属既有行为）")
+                # ⚠️ 这里必须走 check()：原先直接 print(OK+…) ⇒ 这行**不计入总数**，
+                # 于是「N/N」长期少报 2（2026-10-10 对账时发现）。观测缺陷也是缺陷。
+                check("顺序受硬约束微调（order_respected=False，属既有行为）", True)
             check("挪时段后的 day 已由云端归一化（poi 带 photo）",
                   bool(md0.get("timeline"))
                   and all(s.get("photo") is not None for s in (md0.get("timeline") or [])

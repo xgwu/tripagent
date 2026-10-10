@@ -71,7 +71,11 @@ def main() -> int:
                    # M5：会话（云端无状态 ⇒「我这份行程」靠 session 认领）
                    "__SESSION_ID__", "SESSION_ID", "__PLAN_JSON__", "PLAN_SEED",
                    # M4 诊断：上报宿主上下文（判定混合内容是否拦）
-                   "panel.remoteProbe", "location.protocol"):
+                   "panel.remoteProbe", "location.protocol",
+                   # M6：面板高度上报（宿主据此把 iframe 撑到内容高度 ⇒ 面板内不再滚动）
+                   "__PANEL_VERSION__", "ui/notifications/size-changed",
+                   "contentHeight", "syncHeight", "scheduleHeight", "watchSize",
+                   'id="diagSize"', "panel-size:block:start"):
         chk(f"含锚点 {anchor}", anchor in html)
 
     # 3b) M2.2 专项守卫 —— 这几条都是踩过的真坑，写死防复发
@@ -171,6 +175,78 @@ def main() -> int:
                 if not wants_fallback and "兜底" in out:
                     bad.append(f"{mode} -> {out}（误标兜底）")
             chk("mode 徽标口径正确（主路径不得标成兜底）", not bad, "; ".join(bad)[:180])
+
+    # 3.7) 面板高度上报 —— 同样**真跑**（M6，2026-10-10）
+    #      为什么必须验行为：这两条错了都**不报错**，只是面板里又出现滚动条（正是要修的东西）：
+    #        ① method 名写错 ⇒ 宿主 bridge 直接忽略 ⇒ 静默退回定高 iframe；
+    #        ② 只报「变大」不报「变小」⇒ 换天/换点后内容变矮，iframe 收不回去、留一大片空白。
+    #      另外 `contentHeight()` 在「内容比视口矮」时必须走 body 分支 —— 根元素 scrollHeight
+    #      至少等于视口高度，用它就永远缩不回去。
+    msize = re.search(r"// ---- panel-size:block:start ----(.*?)// ---- panel-size:block:end ----",
+                      html, re.S)
+    if not msize:
+        chk("高度上报逻辑可定位（供行为验证）", False, "未找到 panel-size:block 标记")
+    else:
+        sz_p = os.path.join(HERE, "_size_check.js")
+        harness = (
+            "var SENT = [];\n"
+            "var window = { innerHeight: 400,\n"
+            "  getComputedStyle: function(){ return { marginTop: '0px', marginBottom: '0px' }; },\n"
+            "  addEventListener: function(){} };\n"
+            "window.parent = { postMessage: function(m){ SENT.push(m); } };\n"
+            "var document = { documentElement: { scrollHeight: 0 },\n"
+            "  body: { getBoundingClientRect: function(){ return { height: 0 }; } } };\n"
+            "function setDiag(){}\nfunction log(){}\n"
+            + msize.group(1) + "\n"
+            "function setState(vh, sh, bodyH){\n"
+            "  window.innerHeight = vh;\n"
+            "  document.documentElement.scrollHeight = sh;\n"
+            "  document.body.getBoundingClientRect = function(){ return { height: bodyH }; };\n"
+            "}\n"
+            "var out = [];\n"
+            "setState(400, 3000, 3000); syncHeight('长内容');\n"
+            "out.push({ n: SENT.length, last: SENT[SENT.length-1], h: contentHeight() });\n"
+            "syncHeight('同高重复');\n"
+            "out.push({ n: SENT.length });\n"
+            "setState(3000, 3000, 500); syncHeight('内容变矮');\n"
+            "out.push({ n: SENT.length, last: SENT[SENT.length-1], h: contentHeight() });\n"
+            "setState(100, 5000, 5000); syncHeight('内容再变高');\n"
+            "out.push({ n: SENT.length, last: SENT[SENT.length-1], h: contentHeight() });\n"
+            "console.log(JSON.stringify(out));\n"
+        )
+        with open(sz_p, "w", encoding="utf-8") as f:
+            f.write(harness)
+        try:
+            sr = subprocess.run([NODE, sz_p], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace")
+            sz = json.loads((sr.stdout or "[]").strip() or "[]")
+        except Exception as e:                                    # noqa: BLE001
+            sz = None
+            print(f"  (高度探针执行失败: {e})")
+        finally:
+            if os.path.exists(sz_p):
+                os.remove(sz_p)
+        if not sz or len(sz) != 4:
+            chk("高度上报行为正确（撑着长内容 / 会收回去）", False,
+                f"探针未产出结果 stdout={sr.stdout!r} stderr={(sr.stderr or '')[:140]!r}")
+        else:
+            bad = []
+            first = sz[0].get("last") or {}
+            if sz[0].get("n") != 1:
+                bad.append(f"长内容应上报 1 次，实际 {sz[0].get('n')}")
+            if sz[0].get("h") != 3000:
+                bad.append(f"长内容时高度应为 3000，实际 {sz[0].get('h')}")
+            if first.get("method") != "ui/notifications/size-changed":
+                bad.append(f"method 名错：{first.get('method')!r}（宿主会静默忽略）")
+            if (first.get("params") or {}).get("height") != 3000:
+                bad.append(f"params.height 错：{(first.get('params') or {}).get('height')!r}")
+            if sz[1].get("n") != 1:
+                bad.append(f"同高重复上报未去抖（{sz[1].get('n')} 次）")
+            if sz[2].get("n") != 2 or sz[2].get("h") != 500:
+                bad.append(f"内容变矮应收回到 500 并上报，实际 h={sz[2].get('h')} n={sz[2].get('n')}")
+            if sz[3].get("n") != 3 or sz[3].get("h") != 5000:
+                bad.append(f"内容再变高应上报 5000，实际 h={sz[3].get('h')} n={sz[3].get('n')}")
+            chk("高度上报行为正确（撑着长内容 / 会收回去）", not bad, "; ".join(bad)[:200])
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)

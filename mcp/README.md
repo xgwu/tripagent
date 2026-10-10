@@ -995,11 +995,51 @@ grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbud
 `panel_guard.py` 新增的守卫是把面板那段 JS **用 node 真跑一遍**、喂 6 个真假 mode 断言输出，
 红队自测确认它对旧逻辑会红。
 
+### 面板高度：让宿主把 iframe 撑到内容高度（M6，2026-10-10）
+
+**症状**：行程一长（多天时间线动辄上千 px），面板**内部**出现上下滚动条，看行程要来回滚。
+
+**根因**：宿主把 App 放进一个**定高** iframe。MCP Apps 协议为此留了
+`ui/notifications/size-changed`（App 上报内容高度 ⇒ 宿主把 iframe 撑到该高度），但面板此前
+**从没上报过**，于是只能吃宿主的默认高度。
+
+**修法**（`plan_panel.html` 的 `// ---- panel-size:block ----`）：面板自己测量并上报。
+
+```js
+window.parent.postMessage({ jsonrpc: "2.0",
+  method: "ui/notifications/size-changed", params: { height: h } }, "*");
+```
+
+三条**必须**遵守（错任何一条都只是「又出现滚动条」，**不报错**）：
+
+| 要点 | 为什么 |
+|---|---|
+| 必须**持续**上报 | 缩略图 / 地图脚本 / 字体都在 render 之后才落位；只报一次会停在半成品高度 |
+| 必须能**变矮** | 换天 / 换点后内容变短，收不回去就留一大片空白 ⇒ `contentHeight()` 在「内容比视口矮」时必须走 **body 分支**，不能用根元素 `scrollHeight`（它至少等于视口高度） |
+| `method` 名一字不差 | 宿主 bridge 只认 `ui/notifications/size-changed`，写错**静默忽略** |
+
+**与宿主内建测量的关系**（`app.asar` 里 sandbox-proxy 源码取证）：宿主代理自己也会测一次，
+但**一旦 App 主动上报**，代理就置 `appOwnsSize = true` 并 `stopMeasuring()` **永久让位** ——
+所以接管之后我们就是唯一来源，必须自己保证准确。
+
+**怎么验**：面板「协议诊断 → 面板尺寸」那行会显示 `视口 / 内容 ｜ 第 N 次上报（原因）`。
+若宿主确实采纳，**视口应≈内容**（不再小于内容）；否则视口会明显小于内容。
+
+**顺带修的两处**：
+
+- 面板 `panel.boot` 轨迹里的版本号原**写死** `v=m12`，`PANEL_VERSION` 涨到 m13 后它就悄悄过期了
+  ⇒ 改为 `__PANEL_VERSION__` 由 server 注入（版本号唯一来源仍是 `PANEL_VERSION`），
+  `selftest` 做**交叉校验**：注入进去的版本必须与 `resourceUri` 里的版本一致。
+- `selftest.py` 有 2 处用 `print(OK + …)` 直接打 PASS、**不计入总数** ⇒ 「N/N」长期少报 2，
+  已改走 `check()`。
+
+⚠️ 改动 `plan_panel.html` ⇒ `PANEL_VERSION` **必须 +1**（宿主按 uri 缓存注入后的成品 HTML）。
+
 ### 版本
 
-`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m13**、`WEBUI_VERSION` → **m5**、
-`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标行为验证）、
-`mcp/selftest.py`（211 项）、`mcp/smoke_exe.py`（17 项，断言共用 `bundle_check.py`）、
+`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m14**、`WEBUI_VERSION` → **m5**、
+`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标与**高度上报**
+的行为验证）、`mcp/selftest.py`（213 项）、`mcp/smoke_exe.py`（17 项，断言共用 `bundle_check.py`）、
 `mcp/build_bundle.py`（跨平台出包 + `--self-check` 铺包自检 + 冒烟）、`mcp/check_orphans.py`、
 `mcp/check_live.py`（宿主侧实况）、`mcp/bundle_redteam.py`（证明自检可被击穿，**手动跑**）。
 
@@ -1036,11 +1076,12 @@ openHostApp.created … resourceUri=ui://tripplanner/plan-m13
 ### ⚠️ 仍未做
 
 - **分享包尚未在别人的 WorkBuddy 里实测**（本机已以 exe 形态跑通全链路）。
-- exe 分发形态下面板的**肉眼渲染**待 Kenny 确认（宿主日志已证请求的是 `plan-m13`，即新版 HTML）。
+- **面板高度上报（M6）待肉眼确认**：宿主日志只能证「请求了 `plan-m14`」，采纳与否要看
+  「协议诊断 → 面板尺寸」那行的**视口 vs 内容**。若视口仍明显小于内容 ⇒ 宿主没采纳，
+  得改用别的办法（例如把地图卡折叠）。
 - 高德 JS API 在宿主**双层 iframe** 内的行为仍未实测（沿用 M3 的遗留项）。
-- ⚠️ **云端 `src/md_export.py` 尚未同步**：`/api/export` 跑在云主机上，本机修好但云上仍是
-  旧版 ⇒ 导出仍回「离线兜底（m7_proposal）」（2026-10-10 16:0x 实测）。需跑一次
-  `bash deploy/cvm/sync_from_local.sh ubuntu@101.35.47.213`。
+- ✅ 云端 `src/md_export.py` **已同步**（2026-10-10 跑过 `deploy/cvm/sync_from_local.sh`，
+  导出模式行已由「离线兜底（m7_proposal）」变为「**M7 经验提案**」）。
 
 ---
 
