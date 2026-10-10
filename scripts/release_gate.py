@@ -23,7 +23,8 @@ M5 清理死码时，`mcp/tripplanner_mcp_server.py` 被**整段误删** 228 行
     python scripts/release_gate.py --fast     # 跳过回归评测（本地快速自检）
     python scripts/release_gate.py --step 2   # 只跑第 2 步（单测）
     python scripts/release_gate.py --mcp      # 五步之后追加 MCP 专属门禁
-                                              # （面板守卫 → 自检 → exe 冒烟；冒烟需先 build_exe）
+                                              # （面板守卫 → 铺包自检 → 自检 → exe 冒烟；
+                                              #   冒烟需先出包，否则自己跳过）
 
 退出码：0 全绿 / 1 某一步失败
 """
@@ -42,9 +43,12 @@ STEPS = 5
 # MCP 专属门禁（`--mcp`）：与主链路解耦，故不占编号。
 #   smoke_exe 在 `dist/` 不存在时**自己 exit 0**（未打包就不该红）。
 MCP_PHASE = [
-    ("面板守卫", ROOT / "mcp" / "panel_guard.py"),
-    ("MCP 自检", ROOT / "mcp" / "selftest.py"),
-    ("exe 冒烟", ROOT / "mcp" / "smoke_exe.py"),
+    ("面板守卫", [ROOT / "mcp" / "panel_guard.py"]),
+    # 铺包自检：只跑纯 Python 的铺包 + 临时打 zip，验「zip 丢可执行位 / .sh 成 CRLF /
+    # mcp.json 占位符少一处」这三类**静默不可用**。不跑 PyInstaller、不碰云端。
+    ("铺包自检", [ROOT / "mcp" / "build_bundle.py", "--self-check"]),
+    ("MCP 自检", [ROOT / "mcp" / "selftest.py"]),
+    ("exe 冒烟", [ROOT / "mcp" / "smoke_exe.py"]),
 ]
 
 
@@ -111,11 +115,12 @@ def step5_orphans() -> bool:
 
 def mcp_phase() -> bool:
     print("\n== MCP 专属门禁（--mcp）==")
-    for label, script in MCP_PHASE:
+    for label, argv in MCP_PHASE:
+        script = argv[0]
         if not script.exists():
             print(f"   ⚠️ 跳过 {label}：找不到 {script.name}")
             continue
-        ok, out = _run([PY, str(script)], label)
+        ok, out = _run([PY] + [str(a) for a in argv], label)
         tail = out.rstrip().splitlines()[-2:]
         print("\n".join("   " + ln for ln in tail))
         if not ok:
@@ -129,7 +134,7 @@ def main() -> int:
     ap.add_argument("--fast", action="store_true", help="跳过第 3 步（离线回归）")
     ap.add_argument("--step", type=int, choices=range(1, STEPS + 1), help="只跑指定步骤")
     ap.add_argument("--mcp", action="store_true",
-                    help="五步之后追加 MCP 专属门禁（面板守卫 → 自检 → exe 冒烟）")
+                    help="五步之后追加 MCP 专属门禁（面板守卫 → 铺包自检 → 自检 → exe 冒烟）")
     args = ap.parse_args()
 
     print(f"发布门禁（cwd={ROOT}）")

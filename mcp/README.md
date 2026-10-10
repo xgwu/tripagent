@@ -806,9 +806,19 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 "$PY" mcp/build_bundle.py --target mac           # ★在 Windows 上也能生成 mac 源码包
 "$PY" mcp/build_bundle.py --target win --binary  # 真打 exe（须 Windows）；mac 上加 --binary 得真 Mach-O
 "$PY" mcp/build_bundle.py --stage-only           # 只铺目录（不冒烟、不打包）—— 廉价门禁
+"$PY" mcp/build_bundle.py --self-check           # 自检铺包链路（不跑 PyInstaller、不碰云端；见下）
 ```
 
 产物（都在 `dist/`）：`stage-<target>/tripplanner-mcp/` 与 `tripplanner-mcp-<target>-share-<日期>.zip`。
+
+🔴 **`--self-check` 为什么存在**：出包脚本坏了，正常只有真出包时才暴露（win 要跑一分钟
+PyInstaller、mac 要有人在 mac 上试）。而「铺包 + 打 zip」是纯 Python、任意 OS 都能跑，且恰好是
+**唯一会让分享包静默不可用**的地方 —— 三个坑都不出声：① zip 丢可执行位（解压后 `Permission denied`，
+宿主只报一句 spawn 失败）② `.sh` 写成 CRLF（mac/linux 报 `\r: command not found`）
+③ `mcp.json` 占位符少一处（收包人照抄注册，`command/cwd/env` 指着 `<你放的那个目录>`）。
+自检真跑 `stage_source()` 铺 mac/linux 包 + 打一次**临时** zip 再删掉，逐条断言上面三类
+（win 只在 `dist/` 已有 exe 时验四件套，没有就跳过）。**已并入 `release_gate.py --mcp`。**
+无 `secrets.json` 的机器也能跑（用哨兵 base 只验结构，会打印提示）。
 
 🔴 **为什么 mac/linux 没有 exe**：PyInstaller **不能跨系统编译**（Windows 上产不出 Mach-O）。
 但 M5 的 server 是**纯标准库**，所以 mac/linux 用「`tripplanner-mcp` bash 启动器 +

@@ -12,6 +12,7 @@
     python mcp/build_bundle.py --target win --binary     # 真打 exe（须在 Windows 上跑）
     python mcp/build_bundle.py --target mac --binary     # 真打 Mach-O（须在 mac 上跑）
     python mcp/build_bundle.py --stage-only         # 只铺目录：不冒烟、不打包（廉价门禁用）
+    python mcp/build_bundle.py --self-check         # 自检铺包链路（release_gate --mcp 会调）
 
 产物（都在 `dist/` 下）：
     stage-<target>/tripplanner-mcp/   铺好的包目录
@@ -277,8 +278,12 @@ def _fresh_stage(target: str) -> tuple[str, str]:
     return stage_root, pkg
 
 
-def stage_source(target: str) -> tuple[str, str]:
-    """铺 mac/linux 源码包。**可在任意 OS 上生成**（只是不能冒烟启动器本身）。"""
+def stage_source(target: str, payload: dict | None = None) -> tuple[str, str]:
+    """铺 mac/linux 源码包。**可在任意 OS 上生成**（只是不能冒烟启动器本身）。
+
+    `payload` 为 None 时走 `build_exe.remote_payload()`（正常出包路径）；自检模式会
+    显式传入哨兵值，好让**没有 secrets.json 的机器也能验布局**（自检只验结构，不验凭据）。
+    """
     stage_root, pkg = _fresh_stage(target)
     os.makedirs(os.path.join(pkg, "mcp", "panel"))
     shutil.copy2(SERVER, os.path.join(pkg, "mcp", "tripplanner_mcp_server.py"))
@@ -286,7 +291,8 @@ def stage_source(target: str) -> tuple[str, str]:
 
     # remote.json —— 复用 build_exe.remote_payload()（唯一出口，别在这再写一遍读配置逻辑）
     import build_exe
-    payload = build_exe.remote_payload()
+    if payload is None:
+        payload = build_exe.remote_payload()
     if not payload["base"]:
         raise RuntimeError("没有后端 base（secrets.json 缺 remote_basic_auth）")
     import json
@@ -337,9 +343,9 @@ def verify(target: str, pkg: str, binary: bool) -> bundle_check.Result:
     return bundle_check.run(launch, cwd=pkg, env_extra=env)
 
 
-def zip_pkg(target: str, stage_root: str, pkg: str) -> str:
-    zpath = os.path.join(DIST, "tripplanner-mcp-%s-share-%s.zip"
-                         % (target, time.strftime("%Y%m%d")))
+def zip_pkg(target: str, stage_root: str, pkg: str, out_path: str | None = None) -> str:
+    zpath = out_path or os.path.join(DIST, "tripplanner-mcp-%s-share-%s.zip"
+                                     % (target, time.strftime("%Y%m%d")))
     if os.path.exists(zpath):
         os.remove(zpath)
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
@@ -357,6 +363,148 @@ def zip_pkg(target: str, stage_root: str, pkg: str) -> str:
     return zpath
 
 
+# ---------------------------------------------------------------------------
+# 自检（`--self-check`）：**廉价**验「出包链路自己有没有坏」
+# ---------------------------------------------------------------------------
+# 为什么单独做：打包脚本坏了，正常只有真出包时才暴露（win 要跑一分钟 PyInstaller、
+# mac 要有人在 mac 上试）。而「铺包 + 打 zip」这段是纯 Python，任意 OS 都能跑，且恰好是
+# **唯一会让分享包静默不可用**的地方 —— 三个坑都无声无息：
+#   ① zip 丢可执行位 ⇒ 解压后启动器不可执行 ⇒ 宿主只报一句 spawn 失败（不说权限）
+#   ② .sh 写成 CRLF  ⇒ mac/linux 报 `\r: command not found`
+#   ③ mcp.json 占位符少一处 ⇒ 收包人照抄注册，command/cwd/env 指着「<你放的那个目录>」
+# 本函数只铺目录 + 打一次**临时** zip 再删掉：不跑 PyInstaller、不碰云端（不耗限流配额）。
+SENTINEL_PAYLOAD = {"base": "http://127.0.0.1:1", "auth": ""}
+PLACEHOLDER = "<你放的那个目录>"
+
+
+class _SelfCheck:
+    def __init__(self) -> None:
+        self.passed = 0
+        self.failed: list[str] = []
+
+    def ok(self, name: str, cond, detail: str = "") -> bool:
+        if cond:
+            self.passed += 1
+            print(f"   ✓ {name}")
+        else:
+            self.failed.append(name)
+            print(f"   ✗ {name}" + (f"  [{detail}]" if detail else ""))
+        return bool(cond)
+
+
+def _zip_modes(zpath: str) -> dict:
+    with zipfile.ZipFile(zpath) as z:
+        return {i.filename: (i.external_attr >> 16) for i in z.infolist()}
+
+
+def self_check() -> int:
+    import json
+    import tempfile
+
+    c = _SelfCheck()
+    print("铺包自检（不跑 PyInstaller、不碰云端）")
+
+    # 凭据可有可无：自检验的是**结构**，不是凭据。没有 secrets.json 的机器也该能跑。
+    import build_exe
+    try:
+        payload = build_exe.remote_payload()
+    except Exception:                                            # noqa: BLE001
+        payload = {"base": "", "auth": ""}
+    degraded = not payload.get("base")
+    if degraded:
+        payload = dict(SENTINEL_PAYLOAD)
+        print("   ℹ️ 无后端凭据（secrets.json 缺 remote_basic_auth）⇒ 用哨兵 base 只验结构")
+
+    os.makedirs(DIST, exist_ok=True)
+
+    for target in ("mac", "linux"):
+        doc = "使用说明-%s.txt" % ("Mac" if target == "mac" else "Linux")
+        build_sh = "build_%s.sh" % ("macos" if target == "mac" else "linux")
+        print(f"\n-- {target} --")
+
+        try:
+            stage_root, pkg = stage_source(target, payload=payload)
+        except Exception as e:                                   # noqa: BLE001
+            c.ok(f"{target}: 铺包成功", False, str(e))
+            continue
+        c.ok(f"{target}: 铺包成功", True)
+
+        # ① 文件集必须完整（少一个 = 收包人第 1 步就对不上说明）
+        want = sorted(["tripplanner-mcp", "mcp/tripplanner_mcp_server.py",
+                       "mcp/panel/plan_panel.html", "remote.json", "mcp.json",
+                       build_sh, doc])
+        got = sorted(os.path.relpath(os.path.join(r, n), pkg).replace(os.sep, "/")
+                     for r, _d, fs in os.walk(pkg) for n in fs)
+        c.ok(f"{target}: 文件集完整（{len(want)} 项）", got == want,
+             f"多={sorted(set(got) - set(want))} 少={sorted(set(want) - set(got))}")
+
+        # ② 启动器：LF + shebang + TRIPPLANNER_HOME（缺它则 server 找不到 remote.json/panel）
+        lb = open(os.path.join(pkg, "tripplanner-mcp"), "rb").read()
+        c.ok(f"{target}: 启动器无 CRLF", b"\r" not in lb)
+        c.ok(f"{target}: 启动器 shebang + 注入 TRIPPLANNER_HOME",
+             lb.startswith(b"#!/bin/bash") and b'export TRIPPLANNER_HOME="$DIR"' in lb)
+        sb = open(os.path.join(pkg, build_sh), "rb").read()
+        c.ok(f"{target}: {build_sh} 无 CRLF 且可解析", b"\r" not in sb and sb.startswith(b"#!/bin/bash"))
+
+        # ③ 注册片段：占位符恰好 3 处（command / cwd / env），且是合法 JSON
+        mj = open(os.path.join(pkg, "mcp.json"), encoding="utf-8").read()
+        c.ok(f"{target}: mcp.json 占位符 3 处", mj.count(PLACEHOLDER) == 3,
+             f"实际 {mj.count(PLACEHOLDER)}")
+        try:
+            entry = json.loads(mj)["mcpServers"]["tripplanner"]
+            c.ok(f"{target}: mcp.json 结构（command/cwd/env）",
+                 bool(entry.get("command") and entry.get("cwd")
+                      and entry.get("env", {}).get("TRIPPLANNER_HOME")))
+        except Exception as e:                                   # noqa: BLE001
+            c.ok(f"{target}: mcp.json 结构（command/cwd/env）", False, str(e))
+
+        # ④ remote.json 必须与启动器同层且可解析（少它 = 面板「后端不可达」）
+        try:
+            rj = json.load(open(os.path.join(pkg, "remote.json"), encoding="utf-8"))
+            c.ok(f"{target}: remote.json 与启动器同层且可解析", bool(rj.get("base")))
+        except Exception as e:                                   # noqa: BLE001
+            c.ok(f"{target}: remote.json 与启动器同层且可解析", False, str(e))
+
+        # ⑤ zip 回合：可执行位（丢它 = 解压后 Permission denied，且错误信息完全不提权限）
+        tmp = os.path.join(tempfile.gettempdir(),
+                           f"_bundle_selfcheck_{target}.zip")
+        try:
+            zip_pkg(target, stage_root, pkg, out_path=tmp)
+            modes = _zip_modes(tmp)
+            names = set(modes)
+            c.ok(f"{target}: zip 含全部文件", names == {"tripplanner-mcp/" + g for g in want},
+                 f"多={names ^ {'tripplanner-mcp/' + g for g in want}}")
+            c.ok(f"{target}: zip 内启动器带可执行位",
+                 modes.get(f"tripplanner-mcp/{build_sh}", 0) & 0o111 != 0
+                 and modes.get("tripplanner-mcp/tripplanner-mcp", 0) & 0o111 != 0)
+            c.ok(f"{target}: zip 内数据文件不带可执行位",
+                 modes.get("tripplanner-mcp/mcp.json", 1) & 0o111 == 0)
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+
+    # ⑥ win：exe 通常不存在（要 PyInstaller 现打）⇒ 有就验 4 件套，没有就跳过（不算失败）
+    print("\n-- win --")
+    exe = os.path.join(DIST, exe_name("win"))
+    if os.path.exists(exe):
+        missing = [n for n in ("remote.json", "mcp.json", "使用说明.txt")
+                   if not os.path.exists(os.path.join(DIST, n))]
+        c.ok("win: dist/ 四件套齐（exe + remote.json + mcp.json + 说明）",
+             not missing, f"缺 {missing}")
+    else:
+        print("   · 跳过（dist/ 无 exe；跑 build_bundle --target win 后此项才有意义）")
+
+    total = c.passed + len(c.failed)
+    print(f"\n{'🟢' if not c.failed else '🔴'} 铺包自检 {c.passed}/{total}")
+    if c.failed:
+        for f in c.failed:
+            print("   - " + f)
+        return 1
+    if degraded:
+        print("   （注：本次无凭据，凭据正确性由 --target mac 真出包时验）")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--target", choices=TARGETS, help="产物目标系统（默认=当前系统）")
@@ -366,7 +514,11 @@ def main() -> int:
     ap.add_argument("--no-verify", action="store_true", help="跳过冒烟（省一次真实云端调用）")
     ap.add_argument("--no-zip", action="store_true", help="只铺目录，不打包 zip")
     ap.add_argument("--stage-only", action="store_true", help="等价 --no-verify --no-zip")
+    ap.add_argument("--self-check", action="store_true",
+                    help="只验铺包链路（文件集/LF/可执行位/占位符）：不打 exe、不冒烟、不碰云端")
     args = ap.parse_args()
+    if args.self_check:
+        return self_check()
     if args.stage_only:
         args.no_verify = args.no_zip = True
 
