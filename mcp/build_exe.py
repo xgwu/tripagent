@@ -136,6 +136,22 @@ def _unlock(target: str) -> None:
         print(f"⚠️ 腾不出 {os.path.basename(target)}（{e}）—— 构建可能失败")
 
 
+def remote_payload(base: str | None = None, auth: str | None = None) -> dict:
+    """`remote.json` 的内容（线上后端地址 + 凭据）—— **唯一实现**。
+
+    `build_bundle.py` 也要写 remote.json，所以这里必须只有一个出口：两处各写一遍
+    就会漂移（本项目已因「同一口径多处各写」吃过教训）。
+    配置来源 = server 模块的 `remote_config()`（其内部已处理 secrets.json / 环境优先级）。
+    """
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("_tpmcp_build", SERVER)
+    srv = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(srv)
+    cfg = srv.remote_config()
+    return {"base": (base or cfg.get("base") or "").rstrip("/"),
+            "auth": auth or cfg.get("auth") or ""}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean", action="store_true", help="先删除 build/ 与 dist/")
@@ -207,19 +223,13 @@ def main() -> int:
 
     # ---- 3) remote.json（**随包分发**的后端地址 + 凭据）----
     sys.path.insert(0, REPO)
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("_tpmcp_build", SERVER)
-    srv = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(srv)
-    cfg = srv.remote_config()
-    base = (args.base or cfg.get("base") or "").rstrip("/")
-    auth = args.auth or cfg.get("auth") or ""
+    payload = remote_payload(args.base, args.auth)
+    base, auth = payload["base"], payload["auth"]
     if not base:
         return _fail("没有后端 base（secrets.json 里配 remote_basic_auth，或用 --base 指定）")
-    remote_json = {"base": base, "auth": auth}
     rp = os.path.join(DIST, "remote.json")
     with open(rp, "w", encoding="utf-8") as f:
-        json.dump(remote_json, f, ensure_ascii=False, indent=2)
+        json.dump({"base": base, "auth": auth}, f, ensure_ascii=False, indent=2)
         f.write("\n")
     print(f"✓ remote.json 已写入（base={base}，auth={'有' if auth else '**无**'}）")
     if not auth:

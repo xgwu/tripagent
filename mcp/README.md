@@ -795,10 +795,41 @@ server 侧**只剩四件事**：MCP 协议、面板资源（含占位符注入�
    - 无状态 + 会话表：`_SESSIONS`（OrderedDict，200 条 / TTL 2h），key = session id；
      `?shape=mcp&session=` 可回读本会话行程。
 
-### 打包与分发（`mcp/build_exe.py` / `mcp/smoke_exe.py`）
+### 打包与分发（`mcp/build_bundle.py` / `mcp/build_exe.py` / `mcp/smoke_exe.py`）
+
+🟢 **一条命令出包（推荐）**：
 
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
+
+"$PY" mcp/build_bundle.py                        # 按当前系统：win=exe；mac/linux=启动器+源码包
+"$PY" mcp/build_bundle.py --target mac           # ★在 Windows 上也能生成 mac 源码包
+"$PY" mcp/build_bundle.py --target win --binary  # 真打 exe（须 Windows）；mac 上加 --binary 得真 Mach-O
+"$PY" mcp/build_bundle.py --stage-only           # 只铺目录（不冒烟、不打包）—— 廉价门禁
+```
+
+产物（都在 `dist/`）：`stage-<target>/tripplanner-mcp/` 与 `tripplanner-mcp-<target>-share-<日期>.zip`。
+
+🔴 **为什么 mac/linux 没有 exe**：PyInstaller **不能跨系统编译**（Windows 上产不出 Mach-O）。
+但 M5 的 server 是**纯标准库**，所以 mac/linux 用「`tripplanner-mcp` bash 启动器 +
+`mcp/tripplanner_mcp_server.py` + `mcp/panel/`」的**源码包**即可 —— **不需要 pip 装任何东西**
+（系统有 python3 就行），好处是**完全绕开 Gatekeeper 对未签名二进制的拦截**。
+启动器就一句：把 `TRIPPLANNER_HOME` 设成包目录，再 `exec python3 mcp/tripplanner_mcp_server.py`。
+想要免 python3 的单文件二进制，在**目标机**上跑包内 `build_macos.sh` / `build_linux.sh`。
+
+🔴 **源码模式的路径规则**（决定了包布局，错一个就静默失败）：`bundle_dir()` 源码模式 =
+**脚本所在目录** ⇒ 面板必须在 `<包>/mcp/panel/plan_panel.html`；`project_root()` = `TRIPPLANNER_HOME`
+⇒ `remote.json` / `output/` 必须在 `<包>/`。`build_bundle.py` 的冒烟就是按这套跑的
+（用本机 python 拉起包内脚本 + `TRIPPLANNER_HOME=<包>`，验的是**布局与协议层**；
+启动器那十几行 bash 需在**目标机**实测）。
+
+⚠️ **zip 必须带可执行位**（`ZipInfo.external_attr = 0o100755 << 16`），否则解压后启动器
+不可执行，宿主只报一句 spawn 失败 —— `build_bundle.py` 已处理，别用 Git Bash 的 `zip` 重打。
+⚠️ zip 内 `remote.json` 是**明文口令** ⇒ 只发给信任的人。
+
+下面这段是 **Windows / exe 形态**的细节（`build_bundle.py --target win` 内部正是调它）：
+
+```bash
 "$PY" mcp/build_exe.py --clean        # 自查→PyInstaller onefile→写 dist/remote.json、dist/mcp.json、说明
 "$PY" mcp/smoke_exe.py                # 把 dist/*.exe 当真 server 拉起，验 17 项（含一次真实云端规划）
 "$PY" mcp/register.py --exe dist/tripplanner-mcp.exe   # 注册打包模式条目（分享给他人时用）
@@ -949,7 +980,8 @@ grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbud
 
 `SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m13**、`WEBUI_VERSION` → **m5**、
 `/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标行为验证）、
-`mcp/selftest.py`（211 项）、`mcp/smoke_exe.py`（17 项）、`mcp/check_orphans.py`、
+`mcp/selftest.py`（211 项）、`mcp/smoke_exe.py`（17 项，断言共用 `bundle_check.py`）、
+`mcp/build_bundle.py`（跨平台出包 + 冒烟）、`mcp/check_orphans.py`、
 `mcp/check_live.py`（宿主侧实况）。
 
 ### ✅ 宿主侧实测验收入口（2026-10-10 已跑通）
@@ -1096,12 +1128,14 @@ MCP server 只是一层 stdio JSON-RPC 壳，**M5 起连 import 都不做了**�
 ```
 mcp/
   tripplanner_mcp_server.py   # stdio MCP server（M5：**纯标准库**瘦客户端，只做代理+注入+落盘）
-  build_exe.py                # M5：AST 依赖自查 → PyInstaller onefile → 写 dist/（exe + remote.json + mcp.json + 说明）
-  smoke_exe.py                # M5：把 dist/*.exe 当真 server 拉起冒烟（17 项，含一次真实云端规划）
+  bundle_check.py             # M5：**「怎么算跑通」的唯一实现**（initialize/工具表/面板/真实云端规划/panel_ready）
+  build_bundle.py             # M5：跨平台出包（--target win|mac|linux）+ 冒烟 + zip；mac/linux 出「启动器+源码」包
+  build_exe.py                # M5：Windows/原生 exe（AST 依赖自查 → PyInstaller onefile → 写 dist/）；被 build_bundle 调用
+  smoke_exe.py                # M5：exe 形态冒烟（17 项；断言共用 bundle_check，另查 remote.json 同目录 / 注入 / 落盘位置）
   check_orphans.py            # M5：AST 比对 HEAD，抓「删了但还在用」的顶层名字（已并入 release_gate 第 5 步）
   check_live.py               # M5：**宿主侧**实况检查（注册形态 dev/exe、**信任指纹是否过期**、宿主日志里有没有 stdio-connected、宿主已加载的工具表是否落后于源码）
   panel/plan_panel.html       # 面板（自包含；线上 base / Basic 凭据 / 地图 key / session 用占位符，由 server 注入）
-  selftest.py                 # 不开 WorkBuddy 也能验协议 / 规划 / 交互 / 线上后端 / 分享包模拟（206 项）
+  selftest.py                 # 不开 WorkBuddy 也能验协议 / 规划 / 交互 / 线上后端 / 分享包模拟（211 项）
   panel_guard.py              # 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全 / 后端列表）
   register.py                 # 注册进用户级 MCP 配置（双写 mcp.json + .mcp.json，合并不覆盖；--exe 走打包模式）
 src/poi_swap.py               # 换点 / 挪时段公共内核（Web UI 与云端共用）
@@ -1123,7 +1157,7 @@ dist/                         # M5 打包产物（含**明文口令**的 remote.
 ```bash
 PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 
-"$PY" mcp/selftest.py          # 1. 自检（206 项：协议 / 真实规划 / 交互 / 线上后端 / 分享包模拟）
+"$PY" mcp/selftest.py          # 1. 自检（211 项：协议 / 真实规划 / 交互 / 线上后端 / 分享包模拟）
 "$PY" mcp/panel_guard.py       # 2. 面板前端守卫（U+FFFD / 标签配对 / node --check / 占位符安全）
 "$PY" mcp/check_orphans.py     # 3. 「删了还在用」静态守门
 "$PY" mcp/register.py          # 4. 注册进 WorkBuddy 配置（源码模式）
@@ -1143,13 +1177,14 @@ PY="D:/Users/xgwu/.workbuddy/binaries/python/envs/tripagent/Scripts/python.exe"
 ### B. 分享给别人（打包模式）
 
 ```bash
-"$PY" mcp/build_exe.py --clean                          # 产出 dist/（exe + remote.json + mcp.json + 说明）
-"$PY" mcp/smoke_exe.py                                  # 冒烟（exe 不在则自动跳过）
+"$PY" mcp/build_bundle.py                # 当前系统出包（含冒烟 + zip）
+"$PY" mcp/build_bundle.py --target mac   # ★在 Windows 上直接生成 mac 源码包
 "$PY" mcp/register.py --exe dist/tripplanner-mcp.exe    # 本机想用打包形态时
 ```
 
-对方拿到**整个 `dist/` 目录**后：把目录放到任意位置 → 改 `mcp.json` 里的路径 →
-粘进 `~/.workbuddy/mcp.json` → 重载 → 点「信任」。详见包内 `使用说明.txt`。
+对方拿到 `tripplanner-mcp-<target>-share-<日期>.zip` 后：解压到任意位置 →
+按包内 `使用说明.txt`（win）/ `使用说明-Mac.txt` / `使用说明-Linux.txt` 走三步。
+mac/linux 需要 `chmod +x tripplanner-mcp`（zip 已带可执行位，但部分解压工具会丢）。
 
 ### 改完面板/ server 后怎么让它生效
 
