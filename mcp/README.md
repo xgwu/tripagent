@@ -713,7 +713,7 @@ Let's Encrypt 收到的是腾讯云的 `dnspod.qcloud.com/.../webblock.html?d=10
 
 ---
 
-## 🟢 M5：瘦客户端 + 单文件 exe 分发（2026-10-10，自检 206/206、打包冒烟 17/17）
+## 🟢 M5：瘦客户端 + 单文件 exe 分发（2026-10-10，自检 211/211、打包冒烟 17/17）
 
 ### 起因（Kenny 原话）
 
@@ -931,17 +931,44 @@ grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbud
 ⇒ 三处改为分支文案（`move_poi` / `/api/move` / `amapKey`）。
 **教训：守卫的报错文案也是守卫的一部分** —— 文案误导等于把红看成绿。
 
+⑥ 🔴 **`mode` 徽标口径三处漂移（本机 exe 实测才暴露的用户可见缺陷）**：
+线上**主路径**是 M7 经验提案，成功时 `mode == "m7_proposal"` —— 它**不以 `llm` 开头**。
+而「展示 mode」这件事在三个地方各写了一遍：
+`webui/index.html`（对，`startsWith("m7")` → 「M7 经验提案」）、
+**`src/md_export.py`**（`startswith("llm")` ⇒ 错标「离线兜底」）、
+**`mcp/panel/plan_panel.html`**（`/^llm/` ⇒ 面板徽标错显「离线兜底规划」）。
+⇒ **每一条 M7 行程，面板与导出都显示错标签**（`m2_toptw` 同样中招）。
+修法：导出内核提炼 `md_export.mode_label()` 作**唯一口径**（`m7`→M7 经验提案、
+`m2`→M2 库内直选、`llm`→LLM 规划，含 `degrad/fallback/offline` 才追加「（降级）」），
+面板同口径改写，`PANEL_VERSION` +1。
+**教训：同一个口径被复制成多份时，必须验「行为」而不是 grep 源码** ——
+`panel_guard.py` 新增的守卫是把面板那段 JS **用 node 真跑一遍**、喂 6 个真假 mode 断言输出，
+红队自测确认它对旧逻辑会红。
+
 ### 版本
 
-`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m12**、`WEBUI_VERSION` → **m5**、
-`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿）、`mcp/selftest.py`（206 项）、
-`mcp/smoke_exe.py`（17 项）、`mcp/check_orphans.py`（新）。
+`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m13**、`WEBUI_VERSION` → **m5**、
+`/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标行为验证）、
+`mcp/selftest.py`（211 项）、`mcp/smoke_exe.py`（17 项）、`mcp/check_orphans.py`、
+`mcp/check_live.py`（宿主侧实况）。
+
+### ✅ 宿主侧实测验收入口（2026-10-10 已跑通）
+
+`register.py --exe` + UI 保存（写信任）后，`mcp/check_live.py` 四项全绿：
+注册形态=exe、新指纹已信任、工具表 9 项且 `plan_trip` 描述与源码一致、宿主
+`stdio-connected` 晚于配置改动。真实调用链路（**服务方是 exe 而非源码**）：
+`dist/output/mcp_debug.log` 被创建而仓库 `output/mcp_debug.log` mtime **纹丝不动**。
+9 个工具在 exe 形态下逐个真跑：规划（杭州2天，`m7_proposal`）／回读／城市（31 城 1193 POI）
+／换点（茅家埠→满觉陇，同类目）／挪时段／导出 —— 全部正常。
 
 ### ⚠️ 仍未做
 
-- **分享包尚未在别人的 WorkBuddy 里实测**（仅本机以 exe 形态跑通）。
-- exe 分发形态下**面板能否正常渲染**未实测（本机 MCP 仍注册的是源码模式条目）。
+- **分享包尚未在别人的 WorkBuddy 里实测**（本机已以 exe 形态跑通全链路）。
+- exe 分发形态下**面板的肉眼渲染**待 Kenny 确认（HTML 已被宿主拉到，`uri` 升到 `plan-m13`）。
 - 高德 JS API 在宿主**双层 iframe** 内的行为仍未实测（沿用 M3 的遗留项）。
+- ⚠️ **云端 `src/md_export.py` 尚未同步**：`/api/export` 跑在云主机上，本机修好但云上仍是
+  旧版 ⇒ 导出仍回「离线兜底（m7_proposal）」（2026-10-10 16:0x 实测）。需跑一次
+  `bash deploy/cvm/sync_from_local.sh ubuntu@101.35.47.213`。
 
 ---
 

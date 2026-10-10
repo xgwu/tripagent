@@ -11,6 +11,39 @@ from __future__ import annotations
 
 TYPE_ICON = {"poi": "📍", "hop": "→", "meal": "🍽", "hotel": "🏨"}
 
+# 降级关键词：只要 mode 里出现这些，就说明**没走到**该模式的原生路径
+_DEGRADED_KEYS = ("degrad", "fallback", "offline")
+
+
+def mode_label(mode) -> str:
+    """行程 mode → 人类可读标签。**导出与面板、Web UI 必须同一口径。**
+
+    ⚠️ 为什么不能只判 `startswith("llm")`（2026-10-10 实测暴露的真缺陷）：
+    线上**主路径**是 M7 经验提案，成功时 mode == `"m7_proposal"` —— 它不以 `llm`
+    开头，于是被错标成「离线兜底」，**每一条 M7 行程导出后都显示错标签**
+    （面板徽标 `plan_panel.html` 犯的是同一个错，导致用户看到「离线兜底规划」）。
+
+    真实取值（`src/` 全量枚举）：
+        `m7_proposal`                   M7 提案成功（LLM）      → M7 经验提案
+        `m7_proposal → m7_degraded`     M7 提案被降级           → M7 经验提案（降级）
+        `m7_proposal_failed → m2_fallback`  M7 失败退 M2        → M7 经验提案（降级）
+        `m2_toptw` / `m2_...`           M2 库内直选 + TOPTW      → M2 库内直选 + TOPTW
+        `llm`                           M1 直接走 LLM           → LLM 规划
+        `offline_fallback(...)`         真兜底                  → 离线兜底（…）
+    """
+    m = str(mode or "").strip()
+    if not m:
+        return "未知"
+    low = m.lower()
+    degraded = any(k in low for k in _DEGRADED_KEYS)
+    for prefix, name in (("m7", "M7 经验提案"),
+                         ("m2", "M2 库内直选 + TOPTW"),
+                         ("llm", "LLM 规划")):
+        if m.startswith(prefix):
+            return name + ("（降级）" if degraded else "")
+    # 认不出的：真兜底就按兜底写（保持历史文案），否则原样回显（诚实 > 好看）
+    return f"离线兜底（{m}）" if degraded else m
+
 
 def _to_min(t):
     """HH:MM → 分钟数；非法返回 None。"""
@@ -43,7 +76,7 @@ def plan_to_markdown(plan: dict) -> str:
     md.append(f"# 【{plan.get('city', '')}】{plan.get('days', '')} 天行程")
     md.append("")
     mode = str(plan.get("mode") or "")
-    mode_txt = "LLM 规划" if mode.startswith("llm") else f"离线兜底（{mode or '未知'}）"
+    mode_txt = mode_label(mode)
     md.append(f"**需求**：{plan.get('query') or '—'}  ")
     md.append(f"**模式**：{mode_txt} ｜ **总里程**：{plan.get('totalTravelKm')} km ｜ "
               f"**硬约束违规**：{plan.get('totalViolations')} ｜ "

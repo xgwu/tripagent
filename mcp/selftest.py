@@ -1207,6 +1207,28 @@ def phase_m3_remote():
           md_export.export_filename(out).endswith("杭州-2天.md"),
           md_export.export_filename(out))
 
+    # ---- 2.5) mode 口径（2026-10-10 实测暴露的真缺陷）----
+    # 导出内核原来只判 `startswith("llm")`，而**线上主路径**是 m7_proposal（不以 llm
+    # 开头）⇒ 每一条 M7 行程导出后都标成「离线兜底」。同一个口径在 Web UI(index.html)、
+    # 导出内核(md_export)、面板(plan_panel.html) **各写了一遍** ⇒ 必须三处一起验。
+    check("md_export：M7 主路径不得标成兜底",
+          "兜底" not in md_export.mode_label("m7_proposal")
+          and "M7" in md_export.mode_label("m7_proposal"),
+          md_export.mode_label("m7_proposal"))
+    check("md_export：降级态要标「降级」",
+          "降级" in md_export.mode_label("m7_proposal → m7_degraded"),
+          md_export.mode_label("m7_proposal → m7_degraded"))
+    check("md_export：M2 库内直选不得标成兜底",
+          "兜底" not in md_export.mode_label("m2_toptw"),
+          md_export.mode_label("m2_toptw"))
+    check("md_export：真兜底仍标「离线兜底」",
+          "兜底" in md_export.mode_label("offline_fallback"),
+          md_export.mode_label("offline_fallback"))
+    _md_m7 = md_export.plan_to_markdown(dict(out, mode="m7_proposal"))
+    _mode_line = next((ln for ln in _md_m7.splitlines() if ln.startswith("**模式**")), "")
+    check("导出的 Markdown「模式」行对 M7 主路径正确（不是兜底）",
+          "M7" in _mode_line and "兜底" not in _mode_line, _mode_line[:90])
+
     # ---- 3) 线上后端端点（面板的远端兜底）----
     for ep in ('"/api/health"', '"/api/move"', '"/api/export"'):
         check(f"Web UI 含端点源码锚点 {ep}", ep in wv)

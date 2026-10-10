@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -121,6 +122,55 @@ def main() -> int:
         "location.protocol" in html and "location.origin" in html)
     chk("启动即主动探远端后端（panel.remoteProbe 落盘）",
         'trace("panel.remoteProbe"' in html)
+
+    # 3.5) mode 徽标口径 —— **真跑一遍**（2026-10-10 实测暴露的真缺陷：原逻辑只判
+    #      /^llm/，而线上主路径是 `m7_proposal`（不以 llm 开头）⇒ 每一次 M7 行程
+    #      都被错标成「离线兜底规划」。同一个口径在 Web UI / 导出内核 / 面板**各写
+    #      了一遍**，所以必须验**行为**、不能只 grep 源码。
+    #      ⚠️ 中文/箭头别过命令行（Windows GBK 污染）→ 写成 UTF-8 的 .js 再跑。
+    mblk = re.search(r"(var _m = String\(plan\.mode.*?\+ '</span>';)", html, re.S)
+    if not mblk:
+        chk("mode 徽标逻辑可定位（供行为验证）", False,
+            "未找到 `var _m = String(plan.mode …` 代码块")
+    else:
+        expect = [("m7_proposal", "M7 经验提案", False),
+                  ("m7_proposal → m7_degraded", "（降级）", False),
+                  ("m7_proposal_failed → m2_fallback", "（降级）", False),
+                  ("llm", "LLM 规划", False),
+                  ("m2_toptw", "M2 库内直选", False),
+                  ("offline_fallback", "离线兜底", True)]
+        js_p = os.path.join(HERE, "_mode_check.js")
+        src = ("var plan = {mode: ''};\n"
+               "function badge(){\n" + mblk.group(1) + "\n  return modeBadge;\n}\n"
+               "var CASES = " + json.dumps([c for c, _, _ in expect], ensure_ascii=False) + ";\n"
+               "console.log(JSON.stringify(CASES.map(function(c){"
+               "plan.mode = c; return badge(); })));\n")
+        with open(js_p, "w", encoding="utf-8") as f:
+            f.write(src)
+        try:
+            jr = subprocess.run([NODE, js_p], capture_output=True, text=True,
+                                encoding="utf-8", errors="replace")
+            got = json.loads((jr.stdout or "[]").strip() or "[]")
+        except Exception as e:                                    # noqa: BLE001
+            got = None
+            print(f"  (mode 探针执行失败: {e})")
+        finally:
+            if os.path.exists(js_p):
+                os.remove(js_p)
+        if got is None or len(got) != len(expect):
+            chk("mode 徽标口径正确（主路径不得标成兜底）", False,
+                f"探针未产出结果 stdout={jr.stdout!r} stderr={(jr.stderr or '')[:120]!r}")
+        else:
+            bad = []
+            for (mode, must, wants_fallback), out in zip(expect, got):
+                out = str(out)
+                if must not in out:
+                    bad.append(f"{mode} -> {out}（缺 {must}）")
+                if wants_fallback and "兜底" not in out:
+                    bad.append(f"{mode} -> {out}（未标兜底）")
+                if not wants_fallback and "兜底" in out:
+                    bad.append(f"{mode} -> {out}（误标兜底）")
+            chk("mode 徽标口径正确（主路径不得标成兜底）", not bad, "; ".join(bad)[:180])
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)

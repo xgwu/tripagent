@@ -611,8 +611,18 @@
       + " timeline=" + tlTot);
 
     document.getElementById("titleCity").textContent = "【" + plan.city + "】" + plan.days + " 天行程";
-    var modeBadge = /^llm/.test(plan.mode || "") ? '<span class="badge b-ok">LLM 规划</span>'
-                                                 : '<span class="badge b-blue">离线兜底规划</span>';
+    // mode 徽标 —— 必须与 Web UI(index.html) / 导出(md_export.mode_label) **同一口径**。
+    // ⚠️ 2026-10-10 实测暴露：原来只判 `/^llm/`，而线上**主路径**是 `m7_proposal`
+    //    （不以 llm 开头）⇒ 每一次 M7 行程面板都错显「离线兜底规划」。
+    var _m = String(plan.mode || ""), _low = _m.toLowerCase();
+    var _deg = /degrad|fallback|offline/.test(_low);
+    var _name = _m.indexOf("m7") === 0 ? "M7 经验提案"
+              : _m.indexOf("m2") === 0 ? "M2 库内直选 + TOPTW"
+              : /^llm/.test(_low) ? "LLM 规划"
+              : "离线兜底规划";
+    var _okMode = !_deg && _name !== "离线兜底规划";
+    var modeBadge = '<span class="badge ' + (_okMode ? 'b-ok' : 'b-blue') + '">'
+                  + _name + (_deg && _name !== "离线兜底规划" ? "（降级）" : "") + '</span>';
     var violBadge = (plan.totalViolations === 0)
       ? '<span class="badge b-ok">硬约束 0 违规</span>'
       : '<span class="badge b-bad">违规 ' + plan.totalViolations + '</span>';

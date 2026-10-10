@@ -103,6 +103,39 @@ def _fail(msg: str) -> int:
     return 1
 
 
+def exe_path() -> str:
+    return os.path.join(DIST, EXE_NAME + (".exe" if os.name == "nt" else ""))
+
+
+def _unlock(target: str) -> None:
+    """腾出被占用的产物文件。
+
+    ⚠️ 2026-10-10 实踩：宿主**按需 spawn** 本 exe，且进程不会立刻回收 ⇒ 重新打包时
+    `dist/tripplanner-mcp.exe` 被占用。Windows 下**运行中的 exe 删不掉、但能改名**
+    （loader 以 FILE_SHARE_DELETE 打开），所以先改名腾位，再让 PyInstaller 写新文件。
+    （顺带说明：本机沙箱还把 `os.remove` 重定向到 safe-delete/回收站，同样会失败。）
+    """
+    if not os.path.exists(target):
+        return
+    try:
+        os.remove(target)
+        return
+    except OSError:
+        pass
+    aside = target + ".old"
+    if os.path.exists(aside):
+        try:
+            os.remove(aside)
+        except OSError:
+            aside = f"{target}.old{os.getpid()}"
+    try:
+        os.replace(target, aside)
+        print(f"⚠️ {os.path.basename(target)} 正被占用（宿主进程还活着）"
+              f"：已改名为 {os.path.basename(aside)} 腾位")
+    except OSError as e:                                          # noqa: BLE001
+        print(f"⚠️ 腾不出 {os.path.basename(target)}（{e}）—— 构建可能失败")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--clean", action="store_true", help="先删除 build/ 与 dist/")
@@ -120,6 +153,8 @@ def main() -> int:
         for d in (DIST, os.path.join(REPO, "build")):
             shutil.rmtree(d, ignore_errors=True)
             print(f"已清理 {d}")
+        # 被宿主占用时 rmtree 会静默跳过 ⇒ 这里再显式腾一次位
+        _unlock(exe_path())
 
     try:
         import PyInstaller  # noqa: F401
@@ -147,6 +182,7 @@ def main() -> int:
 
     # ---- 2) PyInstaller 单文件 ----
     os.makedirs(DIST, exist_ok=True)
+    _unlock(exe_path())      # 宿主可能正拿着旧 exe（见 _unlock 注释）
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean", "--onefile", "--console",
