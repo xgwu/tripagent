@@ -1,0 +1,2 @@
+# 部署/运维脚本必须保持 LF —— 它们会被 tar 到 Linux 上执行，CRLF 会因 "\r" 报错。
+*.sh text eol=lf
