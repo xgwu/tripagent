@@ -64,7 +64,7 @@ CFG: dict = {}
 #   `tripplanner_find_pois` 的后端：让**调用方 agent** 在写提案前能查到「库内真实有哪些点」，
 #   而不是凭世界知识编名字（见 docs/MCP-Agent提案外包-方案探讨.md §5）。
 #   拆在云端而不是客户端读库，因为 M5 起 MCP 是**瘦客户端**（分享包里没有 data/）。
-WEBUI_VERSION = "m12"
+WEBUI_VERSION = "m13"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -1045,13 +1045,17 @@ def merge_near_destinations(cities: list, km: float = NEAR_MERGE_KM) -> tuple:
 
 def plan_multi(cities: list, query: str, days: int, date0: str | None,
                use_llm: bool, planner, hotel_text: str | None = None,
-               progress=None) -> dict:
+               progress=None, skip_copy: bool = False) -> dict:
     """跨城规划：按天均分逐城走完整规划链，合并时间轴/统计/city_meta。
 
     planner 为单城规划模块（m7/m1）。住宿锚点是城市专属概念（2026-09-15 报障 13
     改进 B：此前跨城直接忽略 hotel_text）——用 _hotel_city_probe 探测归属城市，
     命中段传 hotel_text、其余段不传。改进 C：住宿城市天数 +1（从天数最多的其他
     城扣 1，每城至少保留 1 天），使「住西湖国宾馆附近」的杭州段多分到时间。
+
+    `skip_copy`（文案懒生成，Phase 3.1）：逐段把该参数透传给段内核——段内核
+    支持才传（proposal_planner 有；m1 无 ⇒ 该段回落 full）。顶层 `copy_mode`
+    以「每一段都真的懒成」为准，任一回落即 full，绝不谎报 lazy。
 
     城际转移段：段边界按 src/intercity 的三级模型算真实驾车时长。
       - 长途（≥ LONG_TRANSFER_MIN=240min）：占用抵达城 1 天作为纯转移日
@@ -1145,6 +1149,7 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
     merged_notices = list(_alloc_notice)
     tot = {"violations": 0, "km": 0.0, "dup": 0, "cands": 0, "lat": 0.0,
            "proposed": 0, "unmatched": 0, "rate_w": 0.0}
+    _copy_modes = set()  # 各段实际落账的 copy_mode：顶层 lazy 须「段段皆 lazy」
     seg_date0 = _date.fromisoformat(date0) if date0 else None
     day_no = 0
     hotel_out = None  # 住宿锚点（报障 18）：单城 plan() 会透出 hotel，多城此前整个丢掉
@@ -1218,7 +1223,9 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
                    (lambda st, _i=i: progress(st, {"i": _i + 1, "n": n, "city": cname})))
         r = planner.plan(city, query, di, use_llm=use_llm, date0=d0,
                          hotel_text=seg_hotel,
-                         **_plan_extra_kw(planner, _seg_cb))
+                         **_plan_extra_kw(planner, _seg_cb,
+                                          {"skip_copy": True} if skip_copy else None))
+        _copy_modes.add(r.get("copy_mode") or "full")
         if seg_hotel and r.get("hotel"):
             hotel_out = r["hotel"]  # 住宿城市段的解析结果（名称/经纬度/解析来源）
         it = r["itinerary"]
@@ -1317,6 +1324,10 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         grounding = {"grounding_rate": (tot["rate_w"] / tot["proposed"]) if tot["proposed"] else 0.0,
                      "gaps": merged_gaps, "n_proposed": tot["proposed"],
                      "unmatched": tot["unmatched"]}
+    # 文案懒生成（Phase 3.1）：多城逐段各自 compose ⇒ 只有**每一段都真的懒成**
+    # 才算 lazy；任一段内核不支持（LLM 不可用降级 m1）→ 顶层回落 full，绝不谎报
+    # （谎报会让 open_plan 白调一次 /api/copy，且面板拿到「假装待补」的行程）。
+    _top_copy = "lazy" if _copy_modes == {"lazy"} else "full"
     return {
         "mode": "m7_multi",
         "days": days,
@@ -1324,6 +1335,7 @@ def plan_multi(cities: list, query: str, days: int, date0: str | None,
         "date0": date0,
         "cities": use,
         "hotel": hotel_out,
+        "copy_mode": _top_copy,
         "notices": merged_notices,
         "itinerary": {"days": merged_days, "total_violations": tot["violations"],
                       "total_travel_km": round(tot["km"], 1), "dropped_pois": []},
@@ -1371,17 +1383,25 @@ def _stage_pop(sid: str) -> None:
         _plan_stages.pop(sid, None)
 
 
-def _plan_extra_kw(planner, progress_cb) -> dict:
-    """规划器签名兼容：仅当其 plan() 支持 progress 参数时才透传（m1 无此参数）。"""
-    if not progress_cb:
-        return {}
-    import inspect
+def _plan_extra_kw(planner, progress_cb, extra=None) -> dict:
+    """规划器签名兼容：仅透传其 plan() 真正接受的参数（m1 无 progress/skip_copy）。
+
+    `extra` 供多城逐段透传可选参数（如 skip_copy）——**必须逐项过签名**，否则把
+    skip_copy 丢给不支持的内核会 ValueError/TypeError（多城 lazy 的降级边界：
+    LLM 不可用时 planner 降级 m1，lazy 请求应静默回落 full 而非报错）。
+    """
+    kw = {}
     try:
-        if "progress" in inspect.signature(planner.plan).parameters:
-            return {"progress": progress_cb}
-    except (TypeError, ValueError):  # noqa: 内置/异常签名 → 不透传
-        pass
-    return {}
+        import inspect
+        params = inspect.signature(planner.plan).parameters
+    except (TypeError, ValueError):  # noqa: 内置/异常签名 → 什么都不透传
+        return kw
+    if progress_cb and "progress" in params:
+        kw["progress"] = progress_cb
+    for k, v in (extra or {}).items():
+        if k in params:
+            kw[k] = v
+    return kw
 
 
 def rate_allow(ip: str) -> bool:
@@ -1961,12 +1981,9 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json({"ok": False, "error":
                                            "多城联游暂不支持 proposal（提案按天带城属后续阶段）"},
                                           code=400)
-                    if copy_mode == "lazy":
-                        # ⚠️ 必须拦在多城分支里：单城段的 lazy 校验走不到这里
-                        # （首版踩过：校验放在多城分支之后 ⇒ 多城 lazy 请求 200 漏过）
-                        return self._json({"ok": False, "error":
-                                           "copy_mode=lazy 暂不支持多城联游（补文案需单城库）"},
-                                          code=400)
+                    # 文案懒生成（Phase 3.1，2026-10-11）：多城**已支持** copy_mode=lazy —
+                    # 逐段各自 compose 时透传 skip_copy（段段懒成）；定稿 /api/copy 按天
+                    # 反查城市分组补文案（_day_city + _ID_PREFIX_CITY，与 /api/photo 同源）。
                     d = extract_days(query) or (nl or {}).get("days")
                     days, _clamped, _want = clamp_days(d)
                     _days_notice = ([{"kind": "days_clamped", "message":
@@ -1988,7 +2005,8 @@ class Handler(BaseHTTPRequestHandler):
                         r = plan_multi(multi, query, days, m_date0,
                                        use_llm=use_llm_m, planner=planner_m,
                                        hotel_text=m_hotel_text,
-                                       progress=progress_cb_m)
+                                       progress=progress_cb_m,
+                                       skip_copy=(copy_mode == "lazy"))
                         merged_meta = {"name": "+".join(multi), "n_pois": 0, "n_closed": 0,
                                        "pois": {}}
                         for c in multi:
@@ -2073,9 +2091,7 @@ class Handler(BaseHTTPRequestHandler):
                     if mode != "m7":
                         return self._json({"ok": False,
                                            "error": "copy_mode=lazy 仅支持 mode=m7（经验提案链路）"}, code=400)
-                    if len(multi) >= 2:
-                        return self._json({"ok": False,
-                                           "error": "copy_mode=lazy 暂不支持多城联游（补文案需单城库）"}, code=400)
+                    # 多城联游在上面独立分支已处理（逐段懒成）；此处仅单城。
                     if planner is not proposal_planner:
                         return self._json({"ok": False,
                                            "error": "懒文案规划内核不可用（proposal_planner 导入失败）"},
@@ -2220,29 +2236,46 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False,
                                    "error": "会话已过期或无行程，请重新生成行程"}, code=404)
             cname = str(plan.get("city") or "")
-            if "+" in cname:
-                return self._json({"ok": False,
-                                   "error": "多城联游不支持补文案（lazy 规划时已显式拒绝）"}, code=400)
             if plan.get("copyMode") != "lazy":
                 # 幂等：full 行程（或已补过）原样返回，不重复消耗 LLM
                 return self._json({"ok": True, "plan": plan, "copyMode": plan.get("copyMode"),
                                    "regenerated": False})
+            # 逐天归城：单城直接用 cname；多城（city="A+B"）用该天 POI 的 id 前缀反查
+            # 所属城市（_day_city + _ID_PREFIX_CITY，与 /api/photo、换点/挪时段**同一份**
+            # 注册表）。补文案必须**逐城重建 all_pois**再送 _regen_reasons —— 单一
+            # load_city("A+B") 必失败，这正是 lazy 在多城下此前被拒的根因。
+            groups = {}
+            for d in plan["dayList"]:
+                if "+" in cname:
+                    _ids = [s.get("id") for s in (d.get("timeline") or [])
+                            if s.get("type") == "poi"]
+                    c = _day_city(cname, _ids) or ""
+                else:
+                    c = cname
+                groups.setdefault(c, []).append(d)
+            regen, unfilled = {}, []
             try:
                 from src import m2_planner as _m2
-                c = poi_db.load_city(cname)
-                all_pois = {p["id"]: p for p in
-                            (poi_db.parse_poi(p, c) for p in c["pois"])}
-                # 会话里的 plan 是归一化形状；dayList 的 day/weekday/finish/timeline
-                # （type/name/start/end/arrive/id）正是 _regen_reasons 消费的键。
-                regen, okr = _m2._regen_reasons(
-                    c, plan.get("query") or "", {"days": plan["dayList"]}, all_pois)
+                for c, days_of_c in groups.items():
+                    if not c:  # 定位不出城的那些天：绝不静默假装补过
+                        unfilled.extend(d.get("day") for d in days_of_c)
+                        continue
+                    cc = poi_db.load_city(c)
+                    all_pois = {p["id"]: p for p in
+                                (poi_db.parse_poi(p, cc) for p in cc["pois"])}
+                    # 会话里的 plan 是归一化形状；dayList 的 day/weekday/finish/timeline
+                    # （type/name/start/end/arrive/id）正是 _regen_reasons 消费的键。
+                    _rg, okr = _m2._regen_reasons(
+                        cc, plan.get("query") or "", {"days": days_of_c}, all_pois)
+                    if not okr:
+                        return self._json({"ok": False,
+                                           "error": "文案生成本轮不可用（LLM 异常），可重试"},
+                                          code=503)
+                    regen.update(_rg)
             except Exception as e:  # noqa: BLE001 —— 补文案失败不能拖垮 open_plan
                 stats_bump("copy_error")
                 return self._json({"ok": False,
                                    "error": f"文案生成失败：{type(e).__name__}: {e}"}, code=500)
-            if not okr:
-                return self._json({"ok": False, "error": "文案生成本轮不可用（LLM 异常），可重试"},
-                                  code=503)
             for d in plan["dayList"]:
                 info = regen.get(d.get("day")) or {}
                 if info.get("theme"):
@@ -2251,6 +2284,13 @@ class Handler(BaseHTTPRequestHandler):
                     d["reason"] = info["reason"]
                 if info.get("tips"):
                     d["tips"] = info["tips"]
+            if unfilled:
+                # 有天定位不出城 → 文案补不齐：**保持 lazy 供重试**，不置 full 掩盖缺口
+                stats_bump("copy_partial")
+                plan["updatedAt"] = time.strftime("%Y-%m-%d %H:%M:%S")
+                _session_put(sess, plan)
+                return self._json({"ok": True, "plan": plan, "copyMode": "lazy",
+                                   "regenerated": False, "unfilled": sorted(unfilled)})
             plan["copyMode"] = "full"          # 补完置 full ⇒ 天然幂等
             plan["updatedAt"] = time.strftime("%Y-%m-%d %H:%M:%S")
             _session_put(sess, plan)           # 会话里的当前行程跟着更新

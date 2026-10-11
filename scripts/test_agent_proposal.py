@@ -131,7 +131,7 @@ case("B5 normalize_plan 透传 planSource", '"planSource": raw.get("plan_source"
 
 # ==================== 用例 C：webui /api/plan 接线 ====================
 print("\n== 用例 C：webui 接线")
-case("C1 WEBUI_VERSION = m12（换点补文案）", sv.WEBUI_VERSION == "m12", sv.WEBUI_VERSION)
+case("C1 WEBUI_VERSION = m13（多城 lazy）", sv.WEBUI_VERSION == "m13", sv.WEBUI_VERSION)
 _sv = open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
 case("C2 do_POST 合并 /api/plan 的 JSON body（提案走 POST，不受 URL 长度限制）",
      'if u.path == "/api/plan":' in _sv and "return self.do_GET()" in _sv)

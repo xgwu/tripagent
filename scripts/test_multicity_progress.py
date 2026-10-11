@@ -111,11 +111,12 @@ case("4a _stage_put 存下 seg（前端据此显示「第 i/n 段」）",
 print("\n== 5. 源码/前端守卫 ==")
 src = io.open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
 html = io.open(os.path.join(ROOT, "webui", "index.html"), encoding="utf-8").read()
-case("5a plan_multi 签名带 progress", "progress=None) -> dict:" in src)
+case("5a plan_multi 签名带 progress（+ skip_copy）",
+     "progress=None, skip_copy: bool = False) -> dict:" in src)
 case("5b 多城调用点把 progress=progress_cb_m 传进去",
      "progress=progress_cb_m" in src)
-case("5c 段内 plan() 经 _plan_extra_kw 透传段回调",
-     "**_plan_extra_kw(planner, _seg_cb)" in src)
+case("5c 段内 plan() 经 _plan_extra_kw 透传段回调（含可选 skip_copy）",
+     "**_plan_extra_kw(planner, _seg_cb," in src)
 case("5d /api/progress 回传 seg", '"seg": ent.get("seg")' in src)
 case("5e 前端渲染段信息", "pr.seg" in html and "段 · " in html)
 case("5f 前端阶段表未被改（后端阶段名必须与它精确对齐）",

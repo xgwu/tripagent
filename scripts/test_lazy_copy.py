@@ -135,7 +135,8 @@ case("C1 copy_mode 解析与非法值 400",
      'copy_mode = (q.get("copy_mode") or "full").strip().lower()' in _sv
      and "copy_mode 只支持 full/lazy" in _sv)
 case("C2 lazy×mode!=m7 → 400", "copy_mode=lazy 仅支持 mode=m7" in _sv)
-case("C3 lazy×多城 → 400", "copy_mode=lazy 暂不支持多城联游" in _sv)
+case("C3 多城 lazy 已支持（不再 400）",
+     "copy_mode=lazy 暂不支持多城联游" not in _sv)
 case("C4 lazy×内核缺失 → 500", "懒文案规划内核不可用" in _sv)
 case("C5 lazy 注入 skip_copy", '_plan_args["skip_copy"] = True' in _sv)
 case("C6 lazy 绕过 LLM 缓存", 'copy_mode != "lazy"' in _sv)
@@ -143,7 +144,7 @@ case("C7 POST /api/copy 端点存在", '"/api/copy"' in _sv and "文案生成失
 case("C8 幂等分支（full 原样返回）", '"regenerated": False' in _sv)
 case("C9 补完置 full + 会话回写",
      'plan["copyMode"] = "full"' in _sv and "_session_put(sess, plan)" in _sv)
-case("C10 WEBUI_VERSION = m12", 'WEBUI_VERSION = "m12"' in _sv)
+case("C10 WEBUI_VERSION = m13", 'WEBUI_VERSION = "m13"' in _sv)
 
 print("\n== 用例 D：MCP 工具契约与行为")
 _spec = importlib.util.spec_from_file_location(
@@ -258,7 +259,7 @@ case("G3 /api/move 对称接线（挪时段后旧「依次游览」同样过期�
      _sv_txt.count("entry = _regen_one_day_copy(") == 2)
 case("G4 fail-open：异常吞掉返回 None 不拖垮换点",
      "except Exception:  # noqa: BLE001\n        pass\n    return None" in _sv_txt)
-case("G5 WEBUI_VERSION = m12", 'WEBUI_VERSION = "m12"' in _sv_txt)
+case("G5 WEBUI_VERSION = m13", 'WEBUI_VERSION = "m13"' in _sv_txt)
 # 行为级：_regen_one_day_copy 用归一化 day 真跑（打桩 LLM）
 _ws = importlib.util.spec_from_file_location(
     "_webui_lazy_g", os.path.join(ROOT, "webui", "server.py"))
@@ -282,6 +283,30 @@ try:
          json.dumps(_entry, ensure_ascii=False)[:120] if _entry else "None")
 finally:
     _llcg.chat = _orig_chat_g
+
+# ========== H 组：多城联游 lazy（Phase 3.1，2026-10-11） ==========
+# Kenny：「多城不支持 proposal、不支持 lazy，什么原因、能否支持」→ 先做 lazy。
+# 根因：/api/copy 补文案按单一 load_city(plan.city)，而多城 city="A+B" 是非法城名；
+# 多城文案在每段各自 compose 内生成 ⇒ lazy 需逐段 skip_copy + /api/copy 按天分组补。
+case("H1 plan_multi 签名含 skip_copy", "skip_copy: bool = False" in _sv_txt)
+case("H2 plan_multi 逐段透传 skip_copy（过签名，m1 不加）",
+     '{"skip_copy": True} if skip_copy else None' in _sv_txt)
+case("H3 顶层 copy_mode「段段皆 lazy」才落 lazy",
+     '_copy_modes == {"lazy"}' in _sv_txt)
+case("H4 多城分支调用点传 skip_copy",
+     'skip_copy=(copy_mode == "lazy")' in _sv_txt)
+case("H5 /api/copy 多城按天归城分组（不再整条 400）",
+     "多城联游不支持补文案" not in _sv_txt
+     and "groups.setdefault(c, []).append(d)" in _sv_txt)
+case("H6 /api/copy 逐城重建库（load_city(c) 落在分组内）",
+     "cc = poi_db.load_city(c)" in _sv_txt)
+# 行为级：_day_city 多城按 POI id 前缀归城（/api/copy 分组共用同一份口径）
+case("H7 _day_city 多城 → 按 id 前缀归城",
+     wsv._day_city("苏州+杭州", ["HZ001"]) == "杭州"
+     and wsv._day_city("苏州+杭州", ["SZ001"]) == "苏州",
+     f'{wsv._day_city("苏州+杭州", ["HZ001"])}/{wsv._day_city("苏州+杭州", ["SZ001"])}')
+case("H8 _day_city 单城 id 优先于城名（防串库）",
+     wsv._day_city("苏州", ["HZ001"]) == "杭州")
 
 print("\n" + "=" * 56)
 if FAIL:
