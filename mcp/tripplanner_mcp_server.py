@@ -15,7 +15,7 @@ M2.1（本地 HTTP 兜底）→ M3（交互远端化）→ M4（自建云主机�
 发给别人「零依赖」即可跑（对方机器上连 `data/` 都没有）。
 
 工具分层（关键：**只有带 _meta.ui.resourceUri 的才会开面板**）：
-  tripplanner_open_plan   ★带面板：**面板的唯一入口**（展示当前最新行程）
+  tripplanner_open_plan   ★带面板：**面板的唯一入口**（展示当前最新行程；**每个需求**定稿后调一次）
   tripplanner_plan_trip     无面板：做规划（可反复调用，重拍不堆面板；M6.3 起摘掉面板）
   tripplanner_get_plan      无面板：面板握手后主动来拉行程（M1 数据通道）
   tripplanner_list_cities   无面板：列出可规划城市
@@ -29,7 +29,22 @@ M2.1（本地 HTTP 兜底）→ M3（交互远端化）→ M4（自建云主机�
 的去重键是 `"${sessionId}::${toolCallId}"`（见 mcp/README.md 的取证）—— 即**每一次工具调用
 都会新开一扇面板**，宿主只看「工具定义里有没有 `_meta.ui.resourceUri`」，**完全不读**工具
 结果里的任何字段。所以早期那套 A+C「返回 panelOpened=false 防堆叠」在宿主层从未生效：
-重拍 N 次就叠 N 扇。唯一有效做法＝**把会开面板的工具收成一个，并只调一次**。
+重拍 N 次就叠 N 扇。
+
+🔴 M6.6（2026-10-10，**修正 M6.3 的过度收敛**）：节律的粒度是「**需求**」，不是「会话」。
+
+  · **同一需求内**：思考 / 重拍期间只调 `plan_trip`（它不带面板，调多少次都不堆面板），
+    **定稿后**才调 `open_plan` **一次** ⇒ 一扇面板。
+  · **新需求**（用户在同一会话里又提了一件新事）：新行程定稿后**再调一次** `open_plan`
+    ⇒ 为新方案弹一扇新面板。**这是预期行为，不是缺陷。**
+
+  ⇒ 服务端**根本无法**阻止宿主开面板（它只看工具定义）；唯一能控制的只有「模型**调不调**
+    `open_plan`」，而那是**事前**决策 ⇒ 节律只能写进**工具描述**（见 OPEN_TOOL / PLAN_TOOL
+    的 description），服务端只回最新行程 + 诊断计数 —— **不做任何判重或劝阻**。
+
+  ⚠️ M6.3 初版把节律实现成「服务端会话级封锁」（`_Session.opened_any` 一开就不再开），
+    后果是**同一会话里第二个需求永远出不来面板**（2026-10-10 报障）。那种"封锁"拦不住
+    宿主，只会拦住模型自己 —— 等于把功能砍掉。现已整体删除（`should_open_panel` 已不存在）。
 
 ⚠️ M2.1（2026-10-09，**M5 起已不适用**）：面板 → 宿主 → server 的 `tools/call` 通道
 在本宿主上是**死的**（宿主有 `rpc.callTool`/`proxyAppToolCall.ok`，但请求从未到达任何
@@ -41,7 +56,8 @@ server 进程、12ms 假成功、structuredContent 被剥）。M2.1 曾用 `mcp/
 设计要点（照 app.asar 源码挖出的硬约束）：
   - 工具是否「带面板」**完全取决于** tool._meta.ui.resourceUri；不用手写 isApp
   - **面板开几次由宿主说了算**：去重键 `${sessionId}::${toolCallId}` ⇒ 每次工具调用各一扇，
-    服务端返回什么字段都拦不住（见 M6.3 说明）⇒ 会开面板的工具必须「只调一次」
+    服务端返回什么字段都拦不住（见 M6.3 / M6.6 说明）⇒ 节律只能靠 `open_plan` 的
+    **工具描述**约定（「每个需求定稿后调一次」），服务端不做拦截
   - resources/read 返回的 HTML 有 256KiB 预取阈值 → 面板必须自包含、不引兄弟资源
   - 宿主用 document.write 注入（非 srcdoc）→ 相对路径会 404，故面板不做任何外部引用
   - 图片走高德直链 store.is.autonavi.com → 必须写进 csp.resourceDomains 才不被静默拦掉
@@ -65,7 +81,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.0-m5"
+SERVER_VERSION = "0.5.2-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -164,27 +180,30 @@ GET_PLAN_TOOL = "tripplanner_get_plan"
 REPLACE_TOOL = "tripplanner_replace_poi"
 MOVE_TOOL = "tripplanner_move_poi"
 EXPORT_TOOL = "tripplanner_export"
+# Phase 0（2026-10-11）：POI 发现 —— 见 TOOLS 里 FIND_POIS_TOOL 的 description
+FIND_POIS_TOOL = "tripplanner_find_pois"
 
 # ---------------------------------------------------------------------------
-# 「面板只在定稿后开一次」（M6.3，2026-10-10）
+# 「面板的调用节律」—— 服务端拦不住宿主，节律只能靠工具描述约定（M6.3 / M6.6）
 #
 # 🔴 宿主侧的硬事实（从 app.asar 源码取证，见 mcp/README.md）：
 #     `McpAppsGateway.handleAgentToolCall()` 的去重键是 **`${sessionId}::${toolCallId}`**，
 #     即「**每一次**工具调用 = 一扇新面板」。它对**工具定义**里的 `_meta.ui.resourceUri`
 #     判定「这算不算 App」，**完全不读** 工具结果里的任何字段。
-#     ⇒ 服务端**无法**用返回字段阻止宿主再开一扇（历史 A+C「防堆叠」正是错在这）。
+#     ⇒ 服务端**没有**任何办法阻止宿主再开一扇（历史 A+C「防堆叠」正是错在这）。
 #
-#     唯一有效的办法：**让「会开面板的工具」只被调用一次** ——
-#     所以面板入口收敛到 `tripplanner_open_plan` 一个，`plan_trip` 不再带面板。
+#     能控制的只有「模型**调不调** `open_plan`」这一件事，而这是**事前**决策 ⇒
+#     节律写进工具描述（见 OPEN_TOOL / PLAN_TOOL 的 description），这里只是配套文案：
+#       · 同一需求内：思考 / 重拍期间不调，**定稿后调一次**  ⇒ 一扇
+#       · 新需求完成新规划后：**再调一次**  ⇒ 新面板（预期行为）
+#     ⚠️ 别再加「同一会话只开一次」的服务端封锁：它拦不住宿主，只会让**第二个需求
+#        永远没有面板**（2026-10-10 报障，已回退）。
 # ---------------------------------------------------------------------------
 PANEL_OPEN_HINT = (
-    "（本次**没有**打开面板 —— 面板由 `tripplanner_open_plan` 打开，"
-    "同一对话只调一次。行程定稿后再调它，重拍过程中不要调，否则会堆面板。）"
-)
-PANEL_ALREADY_HINT = (
-    "⚠️ 本会话已经打开过面板了，**请不要再调用本工具**：宿主对**每一次**调用都会"
-    "新开一扇面板（它按「单次工具调用」去重，服务端拦不住）。"
-    "要刷新到最新行程，请点面板里的「重新拉取行程」按钮。"
+    "（行程已生成，面板尚未打开。请**确认这一版就是最终方案后**，在给出答复前调用 "
+    "`tripplanner_open_plan` **一次**：它是面板的唯一入口，同一需求内反复调整 / 重拍期间"
+    "不要调（每次调用宿主都会新开一扇面板）。若用户随后在同一会话里提出**新需求**，"
+    "新行程定稿后**再调一次**，即为新方案弹出新面板。）"
 )
 
 # 面板上「天数」的合理区间；query_days 里有同名常量，这里取值保持一致
@@ -593,19 +612,27 @@ class _Session:
     """一次「会话」的状态。
 
     ⚠️ **持久性分两类**（2026-10-09 修正）：
-      - **进程级**：`opened_any` / `instances` —— 控制流用，生命周期短，
-        放内存即可（宿主按需起进程时它只会「少判一次已开」，不会读到脏数据）。
+      - **进程级**：`opened_any` / `instances` / `panel_opens` —— 只做诊断，生命周期短，
+        放内存即可。
       - **必须落盘**：`last_plan` —— 「一次调用写、另一次调用读」，而宿主
         按需 spawn 进程（pidSpawned 每次都不同）⇒ 纯内存必空。见 `_plan_state_*`。
 
-    C（兜底）：opened_any  —— 本进程是否已经开过面板。
-    A（精确）：instances   —— 面板自报的 appInstanceId 集合（谁在看着这个面板）。
-    M1：last_plan          —— 最近一次规划结果，面板 get_plan 拉取（内存优先、磁盘兜底）。
+    ⚠️ M6.6（2026-10-10）：**本类不再参与「要不要开面板」的判定**。曾经的
+    `should_open_panel()` 一旦 `opened_any=True` 就永不再开 ⇒ 把同一会话的**第二个需求**
+    也一并封死了（服务端拦不住宿主，那种"封锁"只拦住了模型自己）。面板节律已改由
+    `open_plan` 的**工具描述**约定（每个需求定稿后调一次）。这里只留诊断计数：
+
+    opened_any   —— 本会话是否展示过面板（`resources/read` 会回，供诊断）。
+    instances    —— 面板自报的 appInstanceId 集合（由 `panel_ready` 登记）。
+    panel_opens  —— `open_plan` 被调用的次数（>1 既可能是「用户提了新需求」，
+                    也可能是「同一需求内重复调」；服务端不判、也不拦）。
+    last_plan    —— 最近一次规划结果，面板 get_plan 拉取（内存优先、磁盘兜底）。
     """
 
     def __init__(self) -> None:
         self.opened_any = False
         self.instances: set[str] = set()
+        self.panel_opens: int = 0
         self.proposals: int = 0
         self._last_plan = None
         self._plan_loaded = False
@@ -638,19 +665,19 @@ class _Session:
             "label": label,
         }
 
-    def should_open_panel(self, instance_id: str | None) -> bool:
-        """要不要**新开**一扇面板。
+    def note_panel_shown(self, instance_id: str | None) -> int:
+        """记一次「展示面板」，返回这是本会话第几次。
 
-        面板侧已在看（实例已登记）→ 不开。
-        本进程已经开过任意一扇    → 不开（C 兜底，防实例 id 拿不到时堆面板）。
-        否则                      → 开。
+        ⚠️ **纯诊断**：不返回"要不要开"，更不做拦截 —— 宿主对每一次调用都会新开一扇，
+        服务端说什么都不影响它（见文件头 M6.3 / M6.6）。之所以还记这个数，是因为
+        「第几次」是唯一能帮模型/诊断区分「新需求」与「重复调用」的信号。
         """
         iid = (instance_id or "").strip()
-        if iid and iid in self.instances:
-            return False
-        if self.opened_any:
-            return False
-        return True
+        if iid:
+            self.instances.add(iid)
+        self.opened_any = True
+        self.panel_opens += 1
+        return self.panel_opens
 
 
 SESSION = _Session()
@@ -664,8 +691,9 @@ TOOLS = [
             "会从需求里自动识别城市与天数（也可显式传 city / days）。\n"
             "规划在云端完成（POI 库 / 交通缓存 / LLM 都在线上），本进程只做代理。\n"
             "⚠️ 本工具**不打开行程面板**，所以可以放心反复调用（调整需求、重拍都不会堆面板）。\n"
-            "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**同一对话只调一次**）；"
-            "重拍过程中不要调它。"
+            "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**每个需求定稿后调一次**）："
+            "同一需求内反复重拍时不要调它；用户在同一会话里提出**新需求**时，新行程定稿后"
+            "**再调一次**，即为新方案弹出新面板。"
         ),
         "inputSchema": {
             "type": "object",
@@ -708,14 +736,50 @@ TOOLS = [
         },
     },
     {
+        "name": FIND_POIS_TOOL,
+        "description": (
+            "【发现工具】查**库内真实存在**的 POI —— 在推荐 / 挑选景点前用它对齐事实，"
+            "别凭世界知识直接报点名字（库里没有的点排不进行程）。\n"
+            "用途：① 想知道某座城库里有哪些点；② 确认某个景点是否被收录（名字对不对）；"
+            "③ 按关键词 / 类目找同类替代点。\n"
+            "参数：`city` 城市（可用 `+` 连多城，如「贵阳+安顺」；**留空 = 全库搜**）；"
+            "`keyword` 关键词（匹配名称 / 标签 / 备注）；`category` 类目"
+            "（nature/history/culture/food/photo/family/shopping/nightlife/outdoor/view）；"
+            "`limit` 最多返回条数（默认 40，上限 100）。\n"
+            "返回每个点的：`id` / 名称 / 城市 / 类目 / 建议时长 / 建议时段 / 开放时间 /"
+            "闭馆日 / 亲子适配 / 价格 / 评级 / 标签 / 备注。\n"
+            "⚠️ 参数留空且不传 keyword / category 会返回错误提示（无条件的全库罗列没有意义）。\n"
+            "本工具**只读、不规划、不开面板**，可放心反复调用。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string",
+                         "description": "城市名；多城用 `+` 连接（如「贵阳+安顺」）。留空 = 全库"},
+                "keyword": {"type": "string",
+                            "description": "关键词，匹配 POI 名称 / 标签 / 备注（如「西湖」「古镇」「亲子」）"},
+                "category": {"type": "string",
+                             "description": "类目过滤：nature/history/culture/food/photo/family/shopping/nightlife/outdoor/view"},
+                "limit": {"type": "integer",
+                          "description": "最多返回条数（默认 40，上限 100）"},
+            },
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": OPEN_TOOL,
         "description": (
             "展示 TripPlanner 行程面板（渲染当前最新的行程；还没有行程则提示先调 "
             "tripplanner_plan_trip）。\n"
             "⚠️ 这是**面板的唯一入口**，而且**每次调用宿主都会新开一扇面板**"
-            "（宿主的去重键是「单次工具调用」，服务端拦不住）⇒ **同一对话只调用一次**。\n"
-            "用法：让 `tripplanner_plan_trip` 把需求拍定稿，**最后**再调本工具一次。\n"
-            "重拍过程中不要调；下方已有面板时也不要在调 —— 让用户点面板里的「重新拉取行程」刷新。"
+            "（宿主按「单次工具调用」去重，服务端拦不住）。\n"
+            "调用节律 —— **每个需求调一次**：\n"
+            "  ① 同一需求内：先让 `tripplanner_plan_trip` 把需求拍定稿，**最后**再调本工具一次；"
+            "思考 / 重拍过程中不要调（否则会一扇扇地堆）。\n"
+            "  ② 用户在同一会话里提出**新需求**时：新行程定稿后**应当再调一次** ——"
+            "这会给新方案弹出新面板，是预期行为，**不要**因为「刚才已经开过」就跳过。\n"
+            "  ③ 只想刷新**当前**面板（同一行程，用户点了换点 / 挪时段）→ 不要调本工具，"
+            "让用户点面板里的「重新拉取行程」。"
         ),
         "inputSchema": {
             "type": "object",
@@ -1054,6 +1118,48 @@ def plan_summary(plan: dict) -> str:
     return "\n".join(lines)
 
 
+def _pois_text(data: dict) -> str:
+    """`find_pois` 的人类可读回执（模型读这段；结构化清单另走 structuredContent）。
+
+    紧凑格式是刻意的：agent 要把这些点喂进上下文，一行一个点比 JSON 省 token，
+    但字段不能少 —— 少一个「闭馆日」或「亲子不适」就会让 agent 排出排不进的点。
+    """
+    pois = data.get("pois") or []
+    scope = "、".join(data.get("cities") or []) or "全库"
+    bits = []
+    if data.get("keyword"):
+        bits.append(f"关键词「{data['keyword']}」")
+    if data.get("category"):
+        bits.append(f"类目 {data['category']}")
+    cond = ("，" + "，".join(bits)) if bits else ""
+    total = data.get("total") or len(pois)
+    head = f"{scope} 命中 {total} 个 POI{cond}"
+    if total > len(pois):
+        head += f"（只显示前 {len(pois)} 个，可加 keyword 缩小范围）"
+    if data.get("unknown"):
+        head += f"；未收录：{'、'.join(data['unknown'])}"
+    lines = [head + "："]
+    for p in pois:
+        meta = []
+        if p.get("duration_h") is not None:
+            meta.append(f"约{p['duration_h']}h")
+        if p.get("best_time"):
+            meta.append(f"宜{p['best_time']}")
+        if p.get("open") and p.get("close"):
+            meta.append(f"{p['open']}-{p['close']}")
+        if p.get("closed_days"):
+            meta.append("闭馆 " + "/".join(str(x) for x in p["closed_days"]))
+        meta.append("免费" if not p.get("price") else f"¥{p['price']}")
+        meta.append("亲子OK" if p.get("family_ok") else "不适合小孩")
+        if p.get("tags"):
+            meta.append("标签 " + "/".join(str(x) for x in p["tags"]))
+        lines.append(f"- {p.get('id')} {p.get('name')} [{p.get('category')}] "
+                     + " · ".join(meta))
+        if p.get("note"):
+            lines.append(f"    {p['note']}")
+    return "\n".join(lines)
+
+
 # ☠️ M5 已删除：`_md_export()` / `plan_to_markdown()` / `export_filename()`
 #    （原先是指向 `src/md_export.py` 的薄包装）。导出改由**云端**做
 #    （`POST /api/export` ⇒ `md_export.plan_to_markdown`），瘦客户端只负责把
@@ -1152,6 +1258,57 @@ def handle(msg: dict):
                                       "llm": res.get("llm")},
             })
 
+        # ---------------- Phase 0：POI 发现（只读；M5 瘦客户端 ⇒ 库在云端） ----------------
+        #
+        # 为什么要有它：调用方 agent 若能自己先查「库内真实有哪些点」，就不用凭世界知识
+        # 编名字。这是 docs/MCP-Agent提案外包-方案探讨.md 里所有后续动作（Phase 1 的
+        # 可选 proposal 参数）的**地基**，而它自身零风险、不改 plan_trip。
+        if name == FIND_POIS_TOOL:
+            city = (args.get("city") or "").strip()
+            keyword = (args.get("keyword") or "").strip()
+            category = (args.get("category") or "").strip()
+            if not (city or keyword or category):
+                return ok(id_, tool_error(
+                    "至少提供 city / keyword / category 之一"
+                    "（如 city=「杭州」、keyword=「西湖」、category=「nature」）。"
+                    "不确定有哪些城市可先调 tripplanner_list_cities。"))
+            params = {}
+            if city:
+                params["city"] = city
+            if keyword:
+                params["keyword"] = keyword
+            if category:
+                params["category"] = category
+            if args.get("limit") is not None:
+                params["limit"] = args.get("limit")
+            try:
+                data = remote_request("/api/pois", params=params, timeout=30.0)
+            except RuntimeError as e:
+                return ok(id_, tool_error(str(e)))
+            if not data.get("ok"):
+                msg = data.get("error") or "查询失败"
+                sup = data.get("supported") or []
+                if sup:
+                    msg += f"（已收录：{'、'.join(sup)}）"
+                return ok(id_, tool_error(msg))
+            pois = data.get("pois") or []
+            log("find_pois", city=city, keyword=keyword, category=category,
+                total=data.get("total"), returned=len(pois))
+            sc = {"ok": True, "count": len(pois), "total": data.get("total"),
+                  "cities": data.get("cities") or [], "unknown": data.get("unknown") or [],
+                  "pois": pois, "server": SERVER_NAME, "version": SERVER_VERSION}
+            if not pois:
+                return ok(id_, {
+                    "content": [{"type": "text",
+                                 "text": "没有匹配的 POI。可换个关键词 / 类目，"
+                                         "或用 tripplanner_list_cities 看看有哪些城市。"}],
+                    "structuredContent": sc,
+                })
+            return ok(id_, {
+                "content": [{"type": "text", "text": _pois_text(data)}],
+                "structuredContent": sc,
+            })
+
         # ---------------- M1：真实规划（带面板） ----------------
         if name == PLAN_TOOL:
             query = (args.get("query") or "").strip()
@@ -1207,33 +1364,31 @@ def handle(msg: dict):
                 "structuredContent": {"hasPlan": True, "plan": SESSION.last_plan},
             })
 
-        # ---------------- M0/M1pre：开面板（复用上次行程） ----------------
+        # ---------------- M0/M1pre：开面板（展示当前最新行程） ----------------
+        #
+        # ⚠️ M6.6（2026-10-10）：服务端**不判重、不劝阻**。宿主对**每一次**调用都会新开一扇
+        #    面板，服务端返回什么字段都拦不住（见文件头 M6.3 / M6.6）。所以这里只做两件事：
+        #    ① 记诊断计数（本会话第几次展示）；② 回最新行程 + 调用节律提示。
+        #    曾经有过「本会话已开过 ⇒ 回劝阻文案」的分支，代价是**同一会话的第二个需求
+        #    永远出不来面板** ⇒ 已整体删除。节律改由工具描述约定（每个需求定稿后一次）。
         if name == OPEN_TOOL:
             iid = args.get("app_instance_id")
-            if SESSION.should_open_panel(iid):
-                SESSION.opened_any = True
-                if iid:
-                    SESSION.instances.add(str(iid).strip())
-                log("open_plan: 开面板", instance=iid, opened_any=True)
-                return ok(id_, {
-                    "content": [{"type": "text", "text": "行程面板已打开（本对话请勿再调用本工具）。"}],
-                    "structuredContent": {
-                        "server": SERVER_NAME, "version": SERVER_VERSION, "stage": "M1",
-                        "panelOpened": True, "appInstanceId": iid or "",
-                        "hasPlan": SESSION.last_plan is not None,
-                        "plan": SESSION.last_plan,
-                    },
-                })
-            log("open_plan: 本会话已开过，回劝阻文案", instance=iid,
-                known=len(SESSION.instances), opened_any=SESSION.opened_any)
+            nth = SESSION.note_panel_shown(iid)
+            log("open_plan: 展示面板", instance=iid, n=nth)
+            # 「第几次」是唯一能区分「新需求」与「同一需求内重复调」的信号 —— 交给模型判：
+            # 新需求 ⇒ 第 N 次属预期；重复调 ⇒ 提示别再调。**不改变 panelOpened**（宿主说了算）。
+            text = "行程面板已打开，展示的是当前最新行程。"
+            if nth > 1:
+                text += (f"（这是本会话第 {nth} 次展示：若用户提出了**新需求**，属预期行为；"
+                         f"若只是同一需求内的重复调用，请勿再调本工具。）")
             return ok(id_, {
-                "content": [{"type": "text", "text": PANEL_ALREADY_HINT}],
+                "content": [{"type": "text", "text": text}],
                 "structuredContent": {
                     "server": SERVER_NAME, "version": SERVER_VERSION, "stage": "M1",
-                    # ⚠️ 别把这当「宿主不会开面板」的保证：宿主只按 toolCallId 去重，
-                    #    每次调用它都会新开一扇。这里只用于诊断与劝阻。
-                    "panelOpened": False, "reason": "panel-already-open",
-                    "knownInstances": sorted(SESSION.instances),
+                    # ⚠️ 别把这当「宿主一定会开面板」的保证：宿主只按 toolCallId 去重、且
+                    #    只读工具定义里的 _meta.ui ⇒ 这里恒为 True，纯诊断。
+                    "panelOpened": True, "appInstanceId": iid or "",
+                    "panelOpenCount": nth,
                     "hasPlan": SESSION.last_plan is not None,
                     "plan": SESSION.last_plan,
                 },

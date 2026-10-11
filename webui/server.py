@@ -4,6 +4,7 @@
 路由：
   GET /                 → webui/index.html（前端单页）
   GET /api/cities       → 31 城元信息（POI 数、闭馆数、坐标）+ LLM 可用性
+  GET /api/pois         → POI 发现（Phase 0：city/keyword/category/limit → 库内真实 POI 清单）
   GET /api/plan         → 规划（city/query/days/date/hotel/mode/llm），包装 m1/m2 链路
 
 启动：python webui/server.py [port]   （默认 8765，绑定 127.0.0.1）
@@ -55,10 +56,15 @@ CFG: dict = {}
 # m6（2026-10-10）：新增 `POST /mcp`（云端 MCP 端点，Streamable HTTP）——
 #   把 /api/* 薄包一层 MCP 协议，供宿主「自定义 MCP」以远端 URL 直连（零安装分享原型）。
 #   ⚠️ `mcp/selftest.py` 会比对「云端 /api/health 的 version」与源码 ⇒ 改这里必须同步部署。
-# m7（2026-10-10）：修「换点导致当日主题丢失」（webui/index.html 的写回 + `/api/replace`
-#   会话同步走 `plan_view.apply_day`）—— 静态资源也在本服务的 synced 范围内，
-#   故这里一并 +1，免得「index.html 改了没部署」查不出来。
-WEBUI_VERSION = "m7"
+# m8（2026-10-10）：多城联游「贵州5日自驾游」面板地图不渲染 —— 根因＝`plan.city` 在
+#   多城路径下是 `"+".join(cities)`，`poi_coords` / `/api/replace|move` 却按单城名用
+#   ⇒ 归一化补不上坐标、换点/拖拽整条 400。修 `plan_view.poi_coords`（按 + 拆开合并）
+#   + 新增 `_day_city`（用 poi id 前缀定位生效城市）。`src/plan_view.py` 云端也在跑 ⇒ 必须部署。
+# m9（2026-10-11）：Phase 0 —— 新增 `GET /api/pois`（POI 发现，只读）。它是 MCP 侧新工具
+#   `tripplanner_find_pois` 的后端：让**调用方 agent** 在写提案前能查到「库内真实有哪些点」，
+#   而不是凭世界知识编名字（见 docs/MCP-Agent提案外包-方案探讨.md §5）。
+#   拆在云端而不是客户端读库，因为 M5 起 MCP 是**瘦客户端**（分享包里没有 data/）。
+WEBUI_VERSION = "m9"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -121,6 +127,33 @@ _ID_PREFIX_CITY = {"SH": "上海", "HZ": "杭州", "NJ": "南京", "SZ": "苏州
                    "XA": "西安", "CQ": "重庆", "CS": "长沙", "GY": "贵阳", "HG": "黄果树", "XY": "兴义", "WF": "万峰林", "XQ": "小七孔", "LP": "六盘水", "KL": "凯里", "ZG": "镇远古城", "ZY": "遵义", "XJ": "西江千户苗寨", "CH": "赤水", "AS": "安顺", "TR": "铜仁", "FJ": "梵净山", "TY": "中国天眼", "ZJ": "织金洞", "DY": "都匀", "ZX": "肇兴侗寨", "BL": "百里杜鹃"}
 _CITYCODE = {"上海": "021", "杭州": "0571", "南京": "025", "苏州": "0512", "武汉": "027", "北京": "010", "成都": "028", "广州": "020", "盐城": "0515",
              "西安": "029", "重庆": "023", "长沙": "0731", "贵阳": "0851", "黄果树": "0853", "兴义": "0859", "万峰林": "0859", "小七孔": "0854", "六盘水": "0858", "凯里": "0855", "镇远古城": "0855", "遵义": "0852", "西江千户苗寨": "0855", "赤水": "0852", "安顺": "0853", "铜仁": "0856", "梵净山": "0856", "中国天眼": "0854", "织金洞": "0857", "都匀": "0854", "肇兴侗寨": "0855", "百里杜鹃": "0857"}
+
+
+def _day_city(city_field: str, poi_ids) -> str | None:
+    """解析「换点 / 挪时段」真正作用于的**那一个**城市（多城联游支持）。
+
+    `plan.city` 在多城联游时是 `"+".join(cities)`（见 `plan_multi` 与 `plan_view.split_cities`），
+    而这两个动作只改**某一天** —— 那天必然属于其中某一城：
+      · 单城：`city_field` 本身就是城名 → 原样返回；
+      · 多城：用该天 POI 的 id 前缀定位（`_ID_PREFIX_CITY`，与 `/api/photo` **同一份**注册表）；
+      · 解析不出 → `None`（**不猜**：宁可 400，也不要静默换成别的城的点）。
+
+    为什么必须解析出**单城**：`poi_swap.replace_poi(city, …)` 要 `poi_db.load_city(city)`
+    才能拿到候选池，传拼接串 ⇒ `load_city` 抛错 / 被换点 404；`/api/move` 同理。
+    2026-10-10 报障（「贵州5日自驾游」地图不渲染）顺带暴露了这条：`cname not in CITIES`
+    会让多城行程的「🔁 换一个」与拖拽**整条 400**。
+    前端 `webui/index.html::swapPoi` 用「主题前缀」做了同一件事，两者互为兜底。
+
+    🔴 **优先级：POI id 说了算**（它才决定 `poi_id` 存在哪座城的库里）。`city_field` 只在
+    id 解析不出时兜底 —— 否则 agent 传一个「合法但不对」的单城名（多城行程里只说了一座城）
+    会让 `replace_poi` 落到 404「POI 不存在」，比 400 更难查。
+    """
+    cf = (city_field or "").strip()
+    for pid in poi_ids or []:
+        c = _ID_PREFIX_CITY.get(str(pid)[:2].upper())
+        if c:
+            return c
+    return cf if cf in CITIES else None
 
 
 def _load_photo_cache() -> dict:
@@ -1413,6 +1446,100 @@ def city_meta(name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Phase 0（2026-10-11）：POI 发现 —— `GET /api/pois`
+#
+# 它存在的唯一理由：给**调用方 agent** 一个「查真库」的通道。
+# MCP 侧新工具 `tripplanner_find_pois` 就是它的薄壳。没有它，agent 想配合
+# 「自己出提案」就只能凭世界知识编点名字 ⇒ 落地匹配失败 ⇒ 触发修正轮 ⇒ 反而更贵
+# （见 docs/MCP-Agent提案外包-方案探讨.md §5「契约发现」）。
+#
+# 为什么是云端端点而不是客户端读库：M5 起 MCP 是**瘦客户端**（分享包里没有 data/），
+# 任何「按库取数」都必须在云端做。这与 `/api/cities`、`/api/replace` 同一套理由。
+#
+# ⚠️ 匹配口径**必须**与全库其它环节共用 `poi_db.norm_name` / `core_name` ——
+#    本项目吃过「两套归一化必然漂移」的亏（落地匹配 vs 点名识别）。
+# ---------------------------------------------------------------------------
+_POI_DETAIL_CACHE: dict = {}
+
+
+def _city_pois_cached(city: str) -> list:
+    """某城 POI 原始列表（缓存）。缺文件返回 [] —— 发现工具不该因一座城炸掉整次查询。"""
+    if city not in _POI_DETAIL_CACHE:
+        try:
+            _POI_DETAIL_CACHE[city] = poi_db.load_city(city).get("pois") or []
+        except Exception:  # noqa: BLE001
+            _POI_DETAIL_CACHE[city] = []
+    return _POI_DETAIL_CACHE[city]
+
+
+def _poi_brief(p: dict, city: str) -> dict:
+    """发现工具下发的 POI 形状：只带「选点 / 说明」要用的字段。
+
+    不含坐标（面板地图才需要坐标，走 poi_coords）—— 省下的体积对 agent 的上下文有意义。
+    """
+    return {
+        "id": p.get("id"), "name": p.get("name"), "city": city,
+        "category": p.get("category"), "tags": list(p.get("tags") or []),
+        "duration_h": p.get("duration_h"),
+        "best_time": p.get("best_time"),
+        "open": p.get("open"), "close": p.get("close"),
+        "price": p.get("price"), "rating": p.get("rating"),
+        "family_ok": poi_db.is_family_ok(p),
+        "closed_days": list(p.get("closed_days") or []),
+        "note": p.get("note") or "",
+    }
+
+
+def search_pois(city: str = "", keyword: str = "", category: str = "",
+                limit: int = 40) -> dict:
+    """在（单城 / 多城 `A+B` / 全库）范围内发现 POI。
+
+    范围：`city` 空 ⇒ 全库（`CITIES` 全部）。多城用 `+` 连接，与 `plan.city` 同口径。
+    过滤：`category` 精确匹配；`keyword` 规范化后命中 name / name 主干 / tags / note 任一。
+    排序：name 命中 > tags 命中 > note 命中；同级按 rating 降序。
+    """
+    cities = plan_view.split_cities(city) or list(CITIES)
+    unknown = [c for c in cities if c not in CITIES]
+    cities = [c for c in cities if c in CITIES]
+    if city and not cities:
+        return {"ok": False, "error": f"未收录的城市：{'、'.join(unknown)}",
+                "supported": list(CITIES)}
+    kw = poi_db.norm_name(keyword)
+    cat = (category or "").strip()
+    try:
+        limit = int(limit or 40)
+    except (TypeError, ValueError):
+        limit = 40
+    limit = max(1, min(limit, 100))
+
+    scored, total = [], 0
+    for c in cities:
+        for p in _city_pois_cached(c):
+            if cat and (p.get("category") or "") != cat:
+                continue
+            if kw:
+                nm = p.get("name") or ""
+                hit_name = (kw in poi_db.norm_name(nm)
+                            or kw in poi_db.norm_name(poi_db.core_name(nm)))
+                hit_tags = any(kw in poi_db.norm_name(t) for t in (p.get("tags") or []))
+                hit_note = kw in poi_db.norm_name(p.get("note") or "")
+                if not (hit_name or hit_tags or hit_note):
+                    continue
+                rank = 0 if hit_name else (1 if hit_tags else 2)
+            else:
+                rank = 0
+            total += 1
+            scored.append((rank, -(p.get("rating") or 0), p.get("id") or "", c, p))
+    scored.sort(key=lambda x: (x[0], x[1], x[2]))
+    return {
+        "ok": True, "count": min(total, limit), "total": total,
+        "cities": cities, "unknown": unknown,
+        "keyword": keyword or "", "category": cat,
+        "pois": [_poi_brief(p, c) for _r, _g, _i, c, p in scored[:limit]],
+    }
+
+
+# ---------------------------------------------------------------------------
 # M5：会话表（面板 ↔ 云端之间的「当前行程」）
 #
 # 面板后端改「全走线上」后，云端必须能回答「我这份行程现在是什么」 —— 否则
@@ -1602,6 +1729,15 @@ class Handler(BaseHTTPRequestHandler):
             # 安全：前端只拿 JSAPI key（本就设计为公开）；Web 服务 key（amap_key）
             # 不出服务端——原 staticmap_key 字段为死代码已移除，js_key 缺失时
             # 也不再 fallback 到 Web 服务 key。
+        if u.path == "/api/pois":  # Phase 0：POI 发现（MCP 侧 find_pois 工具的后端）
+            try:
+                _lim = int(q.get("limit") or 40)
+            except ValueError:
+                _lim = 40
+            return self._json(search_pois(city=q.get("city") or "",
+                                          keyword=q.get("keyword") or "",
+                                          category=q.get("category") or "",
+                                          limit=_lim))
         if u.path == "/api/route":  # P1-1：实际路网路径（骑行/步行），带磁盘缓存
             mode = q.get("mode", "walking")
             o, d = _norm_ll(q.get("o") or ""), _norm_ll(q.get("d") or "")
@@ -1982,7 +2118,9 @@ class Handler(BaseHTTPRequestHandler):
             cname = payload.get("city")
             poi_id, day = payload.get("poi_id"), payload.get("day")
             day_ids = payload.get("day_ids") or []
-            if cname not in CITIES or not poi_id or not day or not day_ids:
+            # 多城联游：`city` 是拼接串 ⇒ 按被换点的 id 前缀定位到「那一天所在的那个城」
+            cname = _day_city(cname, [poi_id] + list(day_ids))
+            if not cname or not poi_id or not day or not day_ids:
                 return self._json({"ok": False, "error": "参数缺失（city/day/poi_id/day_ids）"}, code=400)
             # 逻辑已抽到 src/poi_swap.py —— MCP App 面板的「换一个」按钮共用同一实现，
             # 避免两处各写一遍后漂移（行为与原内联实现逐字段一致）。
@@ -2018,11 +2156,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": "请求体格式错误"}, code=400)
 
             if u.path == "/api/move":  # 挪时段：按给定新顺序重排某一天
-                cname = payload.get("city")
                 day = payload.get("day")
                 ordered = [str(x) for x in (payload.get("ordered_ids") or [])]
                 day_ids = [str(x) for x in (payload.get("day_ids") or [])]
-                if cname not in CITIES or not day or not ordered:
+                # 多城联游：同 /api/replace —— 用当天点的 id 前缀定位生效城市
+                cname = _day_city(payload.get("city"), ordered or day_ids)
+                if not cname or not day or not ordered:
                     return self._json({"ok": False, "error": "参数缺失（city/day/ordered_ids）"}, code=400)
                 # 守门：拖拽只改顺序，**不允许**悄悄丢点或加点（与本地 MCP 侧同一条规则）
                 if day_ids and set(ordered) != set(day_ids):

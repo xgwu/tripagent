@@ -6,9 +6,10 @@
 多副本实现必须有守测试）。故抽出为单一实现，`mcp/tripplanner_mcp_server.py` 与
 `webui/server.py` **共用同一份**。
 
-对外四件事：
+对外几件事：
   - `photo_of(poi_id)`         → 高德直链缩略图（读 `data/photo_cache.json`）
-  - `poi_coords(city)`         → `{poi_id: (lat, lng)}`（GCJ-02，可直接给高德）
+  - `split_cities(city_field)` → `plan.city` 的拆分口径（多城联游时是 `"A+B"`，只此一份）
+  - `poi_coords(city)`         → `{poi_id: (lat, lng)}`（GCJ-02，可直接给高德；支持 `"A+B"`）
   - `normalize_day(d, coords)` → 一天的内核 timeline → 面板形状（补照片 / 坐标）
   - `apply_day(plan, day)`     → 把改动后的一天写回整份行程，刷新总里程
   - `keep_day_meta(new, old)`  → 换点 / 挪时段只改时间轴，日内文案（theme）不因缺失被清空
@@ -49,25 +50,42 @@ def photo_of(poi_id: str) -> str:
 _COORD_CACHE: dict = {}
 
 
+def split_cities(city_field: str) -> list:
+    """把 `plan.city` 拆成城名列表。
+
+    多城联游时它是 `"+".join(cities)`（见 `webui/server.py::plan_multi`：
+    `_shape_mcp(..., "+".join(multi), ...)` ⇒ `normalize_plan` 把整串写进 `plan.city`）。
+    下游若把它当**单个城名**用就会静默失效 —— 2026-10-10 报障「贵州5日自驾游地图不渲染」
+    正是 `poi_db.load_city("贵阳+安顺+…")` 抛错后返回空坐标表。**拆分口径只有这一份**。
+    """
+    return [x.strip() for x in str(city_field or "").split("+") if x.strip()]
+
+
 def poi_coords(city: str) -> dict:
     """{poi_id: (lat, lng)} —— 面板地图需要坐标，而内核 timeline 不提供。
 
     坐标是 **GCJ-02**（POI 库来源即高德），可直接交给高德 JS API，无需转换。
     按城市缓存：一次规划后的多次换点 / 重排都复用，不必反复解析整个库。
+    `city` 可以是多城拼接串（`A+B`）—— 逐城合并（见 `split_cities`）。
     """
     if not city:
         return {}
     if city in _COORD_CACHE:
         return _COORD_CACHE[city]
     m: dict = {}
-    try:
-        city_data = poi_db.load_city(city)
-        for p in city_data.get("pois", []):
-            pp = poi_db.parse_poi(p, city_data)
-            if pp.get("id") is not None:
-                m[pp["id"]] = (pp.get("lat"), pp.get("lng"))
-    except Exception:  # noqa: BLE001
-        pass
+    for name in split_cities(city):
+        if name not in _COORD_CACHE:
+            one: dict = {}
+            try:
+                city_data = poi_db.load_city(name)
+                for p in city_data.get("pois", []):
+                    pp = poi_db.parse_poi(p, city_data)
+                    if pp.get("id") is not None:
+                        one[pp["id"]] = (pp.get("lat"), pp.get("lng"))
+            except Exception:  # noqa: BLE001 —— 未知城名不该炸掉整份行程
+                pass
+            _COORD_CACHE[name] = one
+        m.update(_COORD_CACHE[name])
     _COORD_CACHE[city] = m
     return m
 

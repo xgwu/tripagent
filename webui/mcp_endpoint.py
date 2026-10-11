@@ -29,10 +29,16 @@ stdio、可由云主机提供 ⇒ 收包人**零安装**（既不装 exe 也不�
   （客户端发的 `Accept: application/json, text/event-stream` 两者都接受）。
 
 ## 会话隔离（为什么必须做）
-`tripplanner_mcp_server.SESSION` 是**模块级全局**，而 `_Session.should_open_panel()`
-一旦 `opened_any=True` 就**永不再开面板**。云端是单进程多用户（`ThreadingHTTPServer`）
-⇒ 不隔离的话，第二个人**永远看不到面板**（而「面板能否渲染」正是本原型的验证目标）。
-故按 MCP 标准 `Mcp-Session-Id` 隔离：同一会话内保留「已开不再开」语义，跨会话互不影响。
+`tripplanner_mcp_server.SESSION` 是**模块级全局**，而它承载的是**一次会话的行程状态**
+（`last_plan`）与诊断计数。云端是单进程多用户（`ThreadingHTTPServer`）⇒ 不隔离的话，
+第二个人的 `get_plan` / 面板会拿到**第一个人的行程**。
+
+故按 MCP 标准 `Mcp-Session-Id` 隔离：每个会话一份 `_Session`，互不影响。
+
+⚠️ 2026-10-10（M6.6）：本文件早年还写着「同一会话内保留『已开不再开面板』语义」——
+那种服务端封锁**已删除**（它拦不住宿主，只会让同一会话的**第二个需求**出不来面板；
+详见 `tripplanner_mcp_server.py` 文件头的 M6.3 / M6.6 说明）。**会话隔离仍需保留**，
+但理由只剩「状态隔离」这一条。
 
 ⚠️ 已知取舍（原型阶段）：`handle()` 读的是模块全局 `SESSION`，故「设置 SESSION + 调
    handle」用一把 `_exec_lock` **串行**执行 —— 正确性优先。生产化应把 SESSION 传参化。

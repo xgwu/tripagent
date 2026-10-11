@@ -5,32 +5,37 @@
 把 `mcp/tripplanner_mcp_server.py` 复制成**同目录**的临时变体，注入坏法后
 用 `TRIPPLANNER_SERVER=<变体>` 跑守卫；`finally` 里删掉变体。
 
-注入两种「回退到老行为」的坏法：
+注入三种坏法（覆盖两个方向 + 一次历史回退）：
   M1) 给 `tripplanner_plan_trip` 加回 `_meta.ui.resourceUri`
       ⇒ 宿主又会「每次调用开一扇」⇒ 重拍堆面板（不变式 A 必须红）
-  M2) `plan_trip` 里把 `SESSION.opened_any` 写回 True
-      ⇒ 「已开过面板」状态被污染，open_plan 首次调用就会被劝阻（不变式 B 必须红）
+  M2) 给 `tripplanner_open_plan` **摘掉** `_meta.ui.resourceUri`
+      ⇒ 面板永远出不来（不变式 A 必须红）—— 与 M1 反向，证明 A 锁的是"恰好一个"
+  M3) 复活**会话级封锁**：open_plan 第 2 次调用直接返回 `panelOpened=false`
+      ⇒ **同一会话的第二个需求再也弹不出面板**（不变式 C 必须红）
+      —— 这正是 2026-10-10 报障二的形态
 
 基线必须先绿：否则说明守卫本身坏了，而不是抓住问题。
 """
 import io
 import os
-import shutil
 import subprocess
 import sys
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py")
-MUT = os.path.join(ROOT, "mcp", "_rt_panel_single.py")   # 同目录：bundle_dir() 才对
+MUT = os.path.join(ROOT, "mcp", "_rt_panel_single.py")   # 同目录：路径推断才对
 GUARD = os.path.join(ROOT, "scripts", "test_panel_single_open.py")
 PY = sys.executable
 
-# 锚点：PLAN_TOOL 里那句刻意的注释（唯一）
+# 锚点（每个都必须在真文件里唯一 —— 锚点比被测对象更危险）
 ANCHOR_META = (
     "        # 🔴 **刻意不带** `_meta.ui.resourceUri`：带了宿主就会「每次调用开一扇面板」⇒ 重拍时堆面板。\n"
 )
-ANCHOR_STATE = "            SESSION.last_plan = plan          # 面板（open_plan）之后靠它/云端会话取数\n"
+ANCHOR_OPEN_META = (
+    '        "_meta": {"ui": {"resourceUri": VIEWER_URI, "visibility": ["model", "app"]}},\n'
+)
+ANCHOR_SHOWN = "            nth = SESSION.note_panel_shown(iid)\n"
 
 
 def run_guard(server_path=None):
@@ -46,7 +51,8 @@ def run_guard(server_path=None):
 def main():
     src = open(SRC, encoding="utf-8").read()
     misses = []
-    for name, anchor in (("META", ANCHOR_META), ("STATE", ANCHOR_STATE)):
+    for name, anchor in (("META", ANCHOR_META), ("OPEN_META", ANCHOR_OPEN_META),
+                         ("SHOWN", ANCHOR_SHOWN)):
         if src.count(anchor) != 1:
             misses.append(f"{name}（出现 {src.count(anchor)} 次）")
     if misses:
@@ -58,18 +64,30 @@ def main():
     rc, out = run_guard()
     print(f"[基线] 守卫 rc={rc}  {'✅ 绿' if rc == 0 else '❌ 红了（守卫本身有问题）'}")
     if rc != 0:
-        print(out[-1200:])
+        print(out[-1500:])
         return 1
 
+    refusal = (
+        "            if nth > 1:   # 🔴 红队注入：复活会话级封锁（历史坏法）\n"
+        "                return ok(id_, {\n"
+        "                    \"content\": [{\"type\": \"text\", \"text\": \"已展示过，不再开\"}],\n"
+        "                    \"structuredContent\": {\"panelOpened\": False,\n"
+        "                                          \"reason\": \"panel-already-open\"},\n"
+        "                })\n"
+    )
     mutants = {
-        "M1 plan_trip 加回 _meta.ui（宿主又会每次开一扇）": (
+        "M1 plan_trip 加回 _meta.ui（重拍又堆面板）": (
             ANCHOR_META,
             ANCHOR_META + '        "_meta": {"ui": {"resourceUri": VIEWER_URI, '
                           '"visibility": ["model", "app"]}},\n',
         ),
-        "M2 plan_trip 写脏 opened_any（open_plan 首次就被劝阻）": (
-            ANCHOR_STATE,
-            ANCHOR_STATE + "            SESSION.opened_any = True\n",
+        "M2 open_plan 摘掉 _meta.ui（面板永远出不来）": (
+            ANCHOR_OPEN_META,
+            "",
+        ),
+        "M3 复活会话级封锁（第二个需求弹不出面板）": (
+            ANCHOR_SHOWN,
+            ANCHOR_SHOWN + refusal,
         ),
     }
 
@@ -87,7 +105,7 @@ def main():
                 caught += 1
             else:
                 print(f"❌ 漏网：{title}  → rc={rc}（守卫没能识别）")
-                print(out[-800:])
+                print(out[-900:])
     finally:
         if os.path.exists(MUT):
             os.remove(MUT)

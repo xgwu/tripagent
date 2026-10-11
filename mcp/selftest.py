@@ -7,8 +7,8 @@ MCP server 本地自检 —— 不开 WorkBuddy 也能验协议（把 server 当
     D:\\Users\\xgwu\\.workbuddy\\binaries\\python\\envs\\tripagent\\Scripts\\python.exe mcp/selftest.py
 
 验的是：initialize 协商、tools/list（含面板标记）、resources/read（含 _meta.ui.csp、地图 key、
-线上后端 base + Basic 凭据 + session id 注入）、tools/call（全量 9 个工具，含 M1 真实规划 +
-M2 换点/挪时段/导出）、A+C 面板分流、跨进程取数、**M5 线上后端**（health / plan?shape=mcp /
+线上后端 base + Basic 凭据 + session id 注入）、tools/call（全量 10 个工具，含 M1 真实规划 +
+M2 换点/挪时段/导出 + Phase 0 POI 发现）、A+C 面板分流、跨进程取数、**M5 线上后端**（health / plan?shape=mcp /
 会话回读 / 换点 / 挪时段 / 导出 / 城市 / 日志，含「没有 src/ 与 data/ 也能跑」的分享包模拟），
 以及「stdout 是否被日志污染」。
 
@@ -131,7 +131,8 @@ def phase_protocol():
         r = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = ((r or {}).get("result") or {}).get("tools") or []
         names = [t["name"] for t in tools]
-        check("tools/list 返回 9 个工具（M1 六个 + M2 三个）", len(tools) == 9, str(names))
+        check("tools/list 返回 10 个工具（M1 六个 + M2 三个 + Phase 0 一个）",
+              len(tools) == 10, str(names))
         by = {t["name"]: t for t in tools}
 
         # 面板 URI 从 server **动态取** —— 按项目惯例「源码守卫锁 wiring，别硬编码版本号」，
@@ -149,14 +150,15 @@ def phase_protocol():
               meta.get("visibility") == ["model", "app"], repr(meta.get("visibility")))
         _app = [t["name"] for t in tools
                 if (((t.get("_meta") or {}).get("ui") or {}).get("resourceUri"))]
-        check("全 9 个工具里带面板的恰好 1 个（= 面板唯一入口）",
+        check("全 10 个工具里带面板的恰好 1 个（= 面板唯一入口）",
               _app == ["tripplanner_open_plan"], repr(_app))
 
-        # 不带面板：其余八个（含 plan_trip —— 误配会让**每次重拍**都堆一扇面板）
+        # 不带面板：其余九个（含 plan_trip —— 误配会让**每次重拍**都堆一扇面板）
         for tname in ("tripplanner_plan_trip", "tripplanner_get_plan",
                       "tripplanner_list_cities", "tripplanner_ping",
                       "tripplanner_panel_ready", "tripplanner_replace_poi",
-                      "tripplanner_move_poi", "tripplanner_export"):
+                      "tripplanner_move_poi", "tripplanner_export",
+                      "tripplanner_find_pois"):
             check(f"{tname} 不带 _meta（对照组）",
                   not (by.get(tname) or {}).get("_meta"),
                   repr((by.get(tname) or {}).get("_meta")))
@@ -271,23 +273,25 @@ def phase_protocol():
               bool((r_bad or {}).get("error")),
               str(((r_bad or {}).get("error") or {}).get("code")))
 
-        # ---- 面板入口唯一 + A/C 判重（M6.3：入口收敛到 open_plan） ----
+        # ---- 面板入口唯一 + 「每个需求展示一次」（M6.6：去掉了会话级封锁） ----
         r = rpc(proc, {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
                        "params": {"name": "tripplanner_open_plan", "arguments": {}}})
         sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
-        check("首次 open_plan 判定为开面板", sc.get("panelOpened") is True,
+        check("首次 open_plan 判定为展示面板", sc.get("panelOpened") is True,
               json.dumps(sc, ensure_ascii=False)[:120])
         check("无行程时 open_plan 标记 hasPlan=false", sc.get("hasPlan") is False, str(sc.get("hasPlan")))
 
+        # 🔴 M6.6 核心判据：**每一次**调用都判定为展示面板 —— 这是「同一会话里提出第二个
+        #    需求后也能弹出新面板」的充要条件。曾经的会话级封锁（`opened_any` 一开就不再开、
+        #    第二次回劝阻文案）必须**不再存在**：它拦不住宿主，只会把第二个需求一并封死。
         r = rpc(proc, {"jsonrpc": "2.0", "id": 51, "method": "tools/call",
                        "params": {"name": "tripplanner_open_plan", "arguments": {}}})
         sc2 = ((r or {}).get("result") or {}).get("structuredContent") or {}
-        check("二次 open_plan 不再判为开面板（并给劝阻文案）",
-              sc2.get("panelOpened") is False and sc2.get("reason") == "panel-already-open",
+        check("二次 open_plan 仍判定为展示面板（不得会话级拒绝）",
+              sc2.get("panelOpened") is True and "reason" not in sc2,
               json.dumps(sc2, ensure_ascii=False)[:140])
-        check("劝阻文案讲清「宿主每次调用都会新开一扇」",
-              "新开一扇" in ((((r or {}).get("result") or {}).get("content") or [{}])[0].get("text") or ""),
-              ((((r or {}).get("result") or {}).get("content") or [{}])[0].get("text") or "")[:120])
+        check("展示计数只做诊断（第 2 次 ⇒ panelOpenCount=2）",
+              sc2.get("panelOpenCount") == 2, str(sc2.get("panelOpenCount")))
 
         r = rpc(proc, {"jsonrpc": "2.0", "id": 52, "method": "tools/call",
                        "params": {"name": "tripplanner_panel_ready",
@@ -310,8 +314,9 @@ def phase_protocol():
                        "params": {"name": "tripplanner_open_plan",
                                   "arguments": {"app_instance_id": "inst-aaa"}}})
         sc3 = ((r or {}).get("result") or {}).get("structuredContent") or {}
-        check("A 判据：已登记实例不再开面板",
-              sc3.get("panelOpened") is False and "inst-aaa" in (sc3.get("knownInstances") or []),
+        check("已登记实例也照常展示（服务端不判重，节律由工具描述约定）",
+              sc3.get("panelOpened") is True and sc3.get("panelOpenCount") == 3
+              and sc3.get("appInstanceId") == "inst-aaa",
               json.dumps(sc3, ensure_ascii=False)[:140])
 
         r = rpc(proc, {"jsonrpc": "2.0", "id": 6, "method": "tools/call",
@@ -348,6 +353,32 @@ def phase_planning():
               json.dumps(cities[:3], ensure_ascii=False))
         check("杭州在库中", any(c.get("city") == "杭州" for c in cities),
               str([c.get("city") for c in cities[:6]]))
+
+        # ★Phase 0：POI 发现（只读，走云端 /api/pois）—— 让调用方 agent 能查库内真实点位
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 40, "method": "tools/call",
+                       "params": {"name": "tripplanner_find_pois",
+                                  "arguments": {"city": "杭州", "keyword": "西湖"}}})
+        rc = (r or {}).get("result") or {}
+        sc = rc.get("structuredContent") or {}
+        check("find_pois 返回 ok", sc.get("ok") is True,
+              json.dumps(sc, ensure_ascii=False)[:160])
+        _pois = sc.get("pois") or []
+        check("find_pois 命中杭州含「西湖」的点", len(_pois) > 0,
+              str([p.get("name") for p in _pois[:3]]))
+        check("find_pois 每条带 id/name/category（选点必需字段）",
+              bool(_pois) and all(("id" in p and "name" in p and "category" in p)
+                                  for p in _pois[:5]))
+        check("find_pois 不下发坐标（省上下文，坐标走 poi_coords）",
+              bool(_pois) and all(("lat" not in p and "lng" not in p) for p in _pois[:5]))
+        check("find_pois 不带面板（不弹窗——它不是面板入口）",
+              "panelOpened" not in sc, json.dumps(sorted(sc))[:100])
+
+        # 无条件查询：应回指引而不是空跑一次全库
+        r = rpc(proc, {"jsonrpc": "2.0", "id": 41, "method": "tools/call",
+                       "params": {"name": "tripplanner_find_pois", "arguments": {}}})
+        sc = ((r or {}).get("result") or {}).get("structuredContent") or {}
+        check("find_pois 空参数回指引（ok=false）", sc.get("ok") is False,
+              str(sc.get("error"))[:60])
 
         # 无行程时 get_plan 应诚实说没有
         r = rpc(proc, {"jsonrpc": "2.0", "id": 11, "method": "tools/call",

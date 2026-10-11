@@ -2,7 +2,7 @@
 
 把 TripPlanner 接进 WorkBuddy 对话：一句话生成行程，并在对话下方渲染**可视化行程面板**。
 
-当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅ → M2 验收 ✅（换点/拖拽均可用了，Kenny 确认）→ M3 面板交互远端化 ✅（自检 176/176）→ 线上已部署 ✅（`tripagent-planner2-80644…` / `/api/health` = m3）→ M4 云主机 + CORS + Basic ✅ → M5 瘦客户端 ✅ → M5.x 云端 `/mcp`（Streamable HTTP）✅ 零安装分享 ✅ → M6 面板（定稿开一次 / 地图真实路网 / 标点 / 高度上报）✅（`PANEL_VERSION` m18）→ M6.4 换点不丢当日主题 ✅（`PANEL_VERSION` m19 / `WEBUI_VERSION` m7）→ ⛔ **本地打包（exe / mac 源码包）已退役（2026-10-10）**：分享一律走远端 URL，见「⛔ 已退役」一节**
+当前阶段：**M0 ✅ → M1-pre ✅ → M1 主体 ✅ → M1 修正 ✅ → M1 验收 ✅（Kenny 肉眼确认）→ M2 代码完成 ✅ → M2.1 通路修复 ✅ → M2.2 实测复修 ✅ → M2.3 死因取证 + 面板自愈 ✅ → M2 验收 ✅（换点/拖拽均可用了，Kenny 确认）→ M3 面板交互远端化 ✅（自检 176/176）→ 线上已部署 ✅（`tripagent-planner2-80644…` / `/api/health` = m3）→ M4 云主机 + CORS + Basic ✅ → M5 瘦客户端 ✅ → M5.x 云端 `/mcp`（Streamable HTTP）✅ 零安装分享 ✅ → M6 面板（定稿开一次 / 地图真实路网 / 标点 / 高度上报）✅（`PANEL_VERSION` m18）→ M6.4 换点不丢当日主题 ✅（`PANEL_VERSION` m19 / `WEBUI_VERSION` m7）→ M6.5 多城联游（跨城）坐标与换点/挪时段 ✅（`WEBUI_VERSION` m8；面板无需改，故 `PANEL_VERSION` 不动）→ M6.6 面板节律＝「每个需求一次」✅（`SERVER_VERSION` **0.5.1-m5**；面板无需改）→ ⛔ **本地打包（exe / mac 源码包）已退役（2026-10-10）**：分享一律走远端 URL，见「⛔ 已退役」一节**
 
 **M1 已在 WorkBuddy 内实测通过**：一句话需求 → 真实行程 → 面板渲染完整时间线
 （含每个点的**停留时长**）、每日主题/里程/违规徽标、**POI 缩略图**、被剔除点及原因。
@@ -48,7 +48,9 @@
 - **资源有缓存**：第二次调用命中 `resolver.resolve.cacheHit … shared=true`，不再拉 HTML
   → **改面板代码后宿主可能仍用旧版本**，需触发刷新或换 `resourceUri`。
 - **每次调用新开一扇**：两次调用得到**两个不同 `appInstanceId`**（不复用）
-  → 必须做「首次开面板 / 后续回摘要」分流，否则用户面前堆面板。
+  → 当年的「首次开面板 / 后续回摘要」分流在**宿主层从未生效**（见下面 A+C 的证伪）；
+  唯一有效做法是把「会开面板的工具」收成**一个**（M6.3），并把调用节律写进它的
+  **工具描述**（M6.6）—— 服务端拦不住宿主，只能约束模型调不调。
 
 ---
 
@@ -68,6 +70,10 @@
 |---|---|---|
 | **A**（精确） | 主判据 | 面板握手成功后调 `tripplanner_panel_ready`，把宿主注入的 `appInstanceId` 报给 server；server 维护「活跃实例集合」。`open_plan` 带该 id 且已登记 ⇒ `panelOpened=false` |
 | **C**（兜底） | 保险丝 | 模块级 `SESSION.opened_any`：**本进程只要开过任意一扇面板，后续 `open_plan` 一律判为「已打开」**。防实例 id 取不到时仍堆面板 |
+
+> 🗑️ **A 与 C 都已在 2026-10-10 删除**：C 那种「服务端会话级封锁」不仅拦不住宿主，还会
+> 把**同一会话里的第二个需求**一并封死（第二次调用回劝阻文案 ⇒ 新需求永远出不来面板）。
+> 现在 `open_plan` 每次都照常展示，节律由**工具描述**约定（见「M6.6」）。
 
 > 🔴 **证伪（2026-10-10，报障「重拍时面板叠了好几扇」后从 `app.asar` 取证）**：
 > 宿主 `McpAppsGateway.handleAgentToolCall()` 的去重键是 **`${sessionId}::${toolCallId}`**，
@@ -112,10 +118,11 @@ resourceDomains = ["http://127.0.0.1:*",
 
 | 工具 | 面板 | 作用 |
 |---|---|---|
-| `tripplanner_open_plan` | ★开 | **面板的唯一入口**。展示当前最新行程（还没有行程则提示先调 `plan_trip`）。同一对话**只调一次** |
+| `tripplanner_open_plan` | ★开 | **面板的唯一入口**。展示当前最新的行程（还没有行程则提示先调 `plan_trip`）。**每个需求调一次**：同一需求定稿后调一次，用户提出**新需求**、新行程定稿后**再调一次**（⇒ 新面板） |
 | `tripplanner_plan_trip` | — | **主入口**。一句话需求 → 真实行程（**不开面板**，可反复调用/重拍） |
 | `tripplanner_get_plan` | — | 面板握手后主动拉行程（M1 数据通道） |
 | `tripplanner_list_cities` | — | 列出 31 个可规划城市 + POI 数 |
+| `tripplanner_find_pois` | — | **Phase 0** POI 发现：按 `city`/`keyword`/`category` 查**库内真实点位**（id/名称/类目/时长/开放/闭馆/亲子/价格/标签）。供调用方 agent 在提案前对齐事实，别凭世界知识编名字 |
 | `tripplanner_panel_ready` | — | 面板自报 `appInstanceId`（A 方案，诊断用） |
 | `tripplanner_ping` | — | 连通性对照组 |
 | `tripplanner_replace_poi` | — | **M2** 换点（面板「🔁」按钮） |
@@ -124,8 +131,13 @@ resourceDomains = ["http://127.0.0.1:*",
 
 > 🔴 **M6.3 起 `plan_trip` 不再是面板入口**（2026-10-10）。原因：宿主按 `toolCallId` 去重
 > ⇒ **每次调用各开一扇**、服务端拦不住 ⇒ 重拍就叠面板。把入口收成 `open_plan` 一个之后，
-> `plan_trip` 调多少次都不会堆面板。守卫：`scripts/test_panel_single_open.py`（+ 红队
-> `mcp/redteam_panel_single.py`）。
+> `plan_trip` 调多少次都不会堆面板。
+>
+> 🔴 **M6.6（2026-10-10）修正了 M6.3 的过度收敛**：节律的粒度是「**需求**」不是「**会话**」。
+> M6.3 顺手加的「服务端会话级封锁」会让同一会话的**第二个需求永远出不来面板**（报障）——
+> 服务端拦不住宿主，那种封锁只拦得住模型自己。现已删除：`open_plan` **每次调用都照常展示**，
+> 节律改由它的 **description** 约定（每个需求一次 / 新需求应再调 / 重拍期间不要调）。
+> 守卫：`scripts/test_panel_single_open.py`（+ 红队 `mcp/redteam_panel_single.py`，3/3 捕获）。
 
 > ⚠️ **M2.1 起**：这三个交互工具面板**不再直接调**（宿主 `tools/call` 通道在本机不通，
 > 见「M2.1」一节），改走 `127.0.0.1` 的本地 HTTP。工具本身保留 ——
@@ -184,7 +196,7 @@ daemon.log:
 
 | 状态 | 持久性 | 理由 |
 |---|---|---|
-| `opened_any` / `instances`（A+C 分流） | **进程级，放内存** | 纯控制流，生命周期短；宿主起新进程时只会「少判一次已开」，不会读到**脏数据** |
+| `opened_any` / `instances` / `panel_opens` | **进程级，放内存** | **只做诊断**（M6.6 起不再参与任何「要不要开面板」的判定）；生命周期短，宿主起新进程时最多少记一次，不会读到**脏数据** |
 | `last_plan`（面板取数） | **🔴 必须落盘** | 「一次调用写、另一次调用读」，跨进程 ⇒ 纯内存必空 |
 
 - 落盘位置 `output/mcp_last_plan.json`（`output/` 已在 `.gitignore`，不会误入库）
@@ -236,7 +248,8 @@ Kenny 贴出的三行输出一次性定位了两个问题：
 
 **🔴 A 方案正式定论：不可用。** 面板 iframe 的 URL 是 `…/mcp-apps/sandbox-proxy.html?csp=…`，
 `location.pathname` 里**没有** `appInstanceId` 段；`ui/initialize` 回包也不含它。
-⇒ 受宿主实现所限。**C 兜底（`opened_any`）已足够防堆面板，不再纠缠 A。**
+⇒ 受宿主实现所限。**A 方案与 C 兜底都已删除**（2026-10-10）—— 它们只在服务端成立、
+拦不住宿主，C 还会把第二个需求一并封死；防堆叠改由「入口唯一 + 描述约定节律」实现（M6.3 / M6.6）。
 
 **✅ 高德直链照片方案成立**：面板内实测 **16 成功 / 0 失败**，
 CSP `resourceDomains` 放行即可，**不需要**改走本地 `/api/photo` 代理。
@@ -319,6 +332,19 @@ innerFrame.setAttribute('sandbox', params.sandbox || 'allow-scripts allow-same-o
 从 POI 库补 `lat/lng`（按城市缓存；GCJ-02，可直接给高德，无需转换）。
 换点 / 重排写回（`apply_day()`）走同一个归一化函数，所以坐标与照片都不会掉
 （`_normalize_day` 因此必须**幂等**，自检专门守这条）。
+
+🔴 **多城联游时 `plan.city` 是 `"+".join(cities)`**（`plan_multi` 拼的，如
+`贵阳+安顺+黄果树+西江千户苗寨`）—— 它**不是**一个城名。2026-10-10 报障「贵州5日自驾游
+面板不渲染地图（没有坐标）」就是下游把它当单城名用：`poi_db.load_city("贵阳+安顺+…")`
+抛错 ⇒ 坐标一个都补不上（照片不受影响：`photo_of` 查的是全局缓存 ⇒ 症状**只有地图**，
+与报障一致）。两处口径已固化：
+- `src/plan_view.py::split_cities` —— 拆分**只有这一份**，`poi_coords` 按它逐城合并；
+- `webui/server.py::_day_city` —— 换点/挪时段只作用于**某一天**，故用该天 POI 的
+  **id 前缀**（`_ID_PREFIX_CITY`，与 `/api/photo` 同一份注册表）定位生效城市；
+  **POI id 优先于传入的城名**（id 才决定这个点存在哪座城的库里），拼不出单城才 400。
+  守卫 `scripts/test_multicity_coords.py`（真实离线多城链路）+ 红队
+  `mcp/redteam_multicity_coords.py`（3/3 运行期打桩注入，**不动真文件**）。
+  面板**不需要**改（它照旧发 `LAST.city`，服务端解析）⇒ `PANEL_VERSION` 不动。
 
 ### 守门为什么这么严
 
@@ -844,9 +870,10 @@ server 侧**只剩四件事**：MCP 协议、面板资源（含占位符注入�
 | notification（无 `id` 的请求） | **202 + 空 body** | 回 JSON 会让客户端把通知当响应解析 |
 | 响应类型 | `application/json` 就够 | **不必**实现 SSE 流式；做了反而引入状态 |
 
-**🔴 必须按 `Mcp-Session-Id` 隔离会话**：`handle()` 里的 `SESSION` 是**模块全局**，且
-一旦 `opened_any=True` 就**永不再开面板** ⇒ 不隔离的话，**第二个用户永远看不到面板**
-（第一个人的状态把他的面板入口吃掉了）。云端适配层按请求头建立独立 `_Session` 解决。
+**🔴 必须按 `Mcp-Session-Id` 隔离会话**：`handle()` 里的 `SESSION` 是**模块全局**，而它装着
+**一次会话的行程状态**（`last_plan`）⇒ 不隔离的话，**第二个用户的 `get_plan` / 面板会拿到
+第一个人的行程**。云端适配层按请求头建立独立 `_Session` 解决。
+（⚠️ 早年这里的理由是「`opened_any=True` 就永不再开面板」—— 那个服务端封锁已在 M6.6 删除。）
 
 **实测**：本地 **21/21**、公网 **22/22**（含「面板入口唯一」）、云端 `plan_trip` **10.5s**
 出真实行程、同会话 `get_plan` 复取命中。
@@ -963,9 +990,12 @@ grep -o 'stdio-connected {"pid":[0-9]*,"id":"custom-mcp:tripplanner"' ~/.workbud
 肉眼验收四项（沿用 M0 的 V1–V3，外加 M5 的云端项）：
 
 - [ ] **E1** 工具表描述变成「规划在云端完成（…）本进程只做代理」⇒ 宿主吃到了 M5
-- [ ] **E2** 说一句「杭州2天，喜欢自然风光」→ 面板自动打开且**渲染完整时间线**（非降级页）
+- [ ] **E2** 说一句「杭州2天，喜欢自然风光」→ 面板打开且**渲染完整时间线**（非降级页）
 - [ ] **E3** 面板里「换一个 / 拖拽 / 导出」可用、**缩略图与地图点不消失**（验云端 `/api/replace` 归一化）
-- [ ] **E4** `tripplanner_ping` 回 `version=0.5.0-m5`
+- [ ] **E4** `tripplanner_ping` 回 `version=0.5.1-m5`
+- [ ] **E5**（M6.6）**节律肉眼验收**：① 同一需求内 agent 反复重拍 → 全程**只出现一扇**面板；
+      ② 紧接着在同一会话里提**第二个需求**（如「那再给我排个苏州 3 天」）→ 新规划定稿后
+      **应当再弹一扇新面板**（这是预期行为，不是堆叠）
 
 ### 本轮踩的坑（都已加守卫）
 
@@ -1052,13 +1082,14 @@ window.parent.postMessage({ jsonrpc: "2.0",
 
 ### 版本
 
-`SERVER_VERSION` → **0.5.0-m5**、`PANEL_VERSION` → **m19**、`WEBUI_VERSION` → **m7**、
+`SERVER_VERSION` → **0.5.1-m5**、`PANEL_VERSION` → **m19**、`WEBUI_VERSION` → **m8**、
 `/api/health.stage` → **M5**。守门：`mcp/panel_guard.py`（全绿，含 mode 徽标、**高度上报**、
 **hop 里程不重复**、**地图逐段真实路网**与**换点保留当日主题**的行为验证）、`mcp/selftest.py`（216 项）、
 `scripts/release_gate.py`（本地五步门禁，CI 也跑这条；`--mcp` 追加「面板守卫 + MCP 自检」）、
 `mcp/check_orphans.py`、`mcp/check_live.py`（宿主侧实况）、
-`scripts/test_panel_single_open.py`（**面板入口唯一 / 只开一次**，红队 `mcp/redteam_panel_single.py`）、
-`scripts/test_swap_keeps_theme.py`（**换点不丢当日主题**，红队 `mcp/redteam_theme_keep.py`）。
+`scripts/test_panel_single_open.py`（**面板入口唯一 + 每个需求展示一次**，红队 `mcp/redteam_panel_single.py` 3/3）、
+`scripts/test_swap_keeps_theme.py`（**换点不丢当日主题**，红队 `mcp/redteam_theme_keep.py`）、
+`scripts/test_multicity_coords.py`（**多城联游的坐标下发 + 换点/挪时段生效城市**，红队 `mcp/redteam_multicity_coords.py`）。
 <!-- 2026-10-10：`smoke_exe.py`（17 项，与 `build_bundle.py` 共用 `bundle_check.py`
      的产物断言）与 `mcp/bundle_redteam.py` 已随打包链路一并退役。 -->
 
@@ -1154,6 +1185,10 @@ label」实现 ⇒ `pin=0 / anchor=False` 变红。
 
 ### 🔴 M6.3：重拍时面板叠了好几扇 —— 面板入口收敛到 `open_plan`（2026-10-10，`PANEL_VERSION` m17→m18）
 
+> ⚠️ **本节结论已被 M6.6 修正**：「入口收敛」仍成立，但本节同时加的
+> **「服务端会话级封锁 + 重复调用回劝阻文案」是过度收敛**（会让同一会话的第二个需求
+> 永远出不来面板）⇒ 已删除。读本节时请以 M6.6 的节律（**每个需求一次**）为准。
+
 **报障（Kenny 原话）**：「当 mcp 被多次调用重拍的时候，面板可能显示多次。这样体验不好。
 应该等拍完后，有最终结果的时候，显示一次。」
 
@@ -1188,34 +1223,40 @@ openHostApp.start   … toolCallId=call_00_6qX74DfX7gSABlUwfiK17438
 openHostApp.created … appInstanceId=9df728ec-… htmlLen=68951
 ```
 
-**修法（唯一有效）**：把「会开面板的工具」收成**一个**，并要求只调一次。
+**修法（两层，都必要）**：
 
-| 工具 | 面板 | 说明 |
+| 层 | 做法 | 为什么 |
 |---|---|---|
-| `tripplanner_plan_trip` | — | 摘掉 `_meta.ui`。**可以反复调用**（重拍、调需求都不堆面板）；文本里明说「本工具不打开面板」并点名 `open_plan` |
-| `tripplanner_open_plan` | ★ | **唯一入口**。描述里写明「每次调用宿主都会新开一扇 ⇒ 同一对话只调一次」；重复调用回**劝阻文案**（讲清机制，不是含糊的「已经打开了」） |
+| ① 工具分层 | 把「会开面板的工具」收成**一个**：`plan_trip` 摘掉 `_meta.ui`（可反复调），`open_plan` 是唯一入口 | 宿主只看**工具定义**里的 `_meta.ui` ⇒ 「哪个工具算 App」是唯一可设计的旋钮 |
+| ② 调用节律 | 节律写进 `open_plan` 的 **description**（**每个需求**定稿后调一次；用户提**新需求**时应再调；只刷新当前面板用面板里的「重新拉取行程」） | 服务端**事后**说什么都拦不住宿主 ⇒ 只能影响模型**事前**调不调 |
 
-**顺带清理**：`plan_trip` 不再写 `SESSION.opened_any` / `instances`（那是面板入口的状态，
-不该被数据工具污染），失败分支同样只回文字、不开面板。
+**顺带清理**：`plan_trip` 不写 `SESSION.opened_any`（那是面板入口的状态，不该被数据工具污染），
+失败分支同样只回文字、不开面板。
 
 **守门**：
 - 🆕 `scripts/test_panel_single_open.py`（**行为级**，monkeypatch `run_plan` 后真调 `handle()`）：
-  A 面板入口恰好 1 个且 = `open_plan`；B `plan_trip` 连调 3 次 → `panelOpened=false` 且
-  `opened_any` 未被写脏 + 文本引导；B2 失败分支同样不开面板；C 首次 `open_plan` 开、再次劝阻。
-- `mcp/selftest.py`：「plan_trip 带面板」改为「**全 9 工具里带面板的恰好 1 个**」+
-  「plan_trip 不带 `_meta`」+ 描述文案断言。
+  A 面板入口恰好 1 个且 = `open_plan`；B `plan_trip` 连调 3 次 → **0 次展示**且计数未被污染；
+  B2 失败分支同样不开面板；**C `open_plan` 每次调用都判定为展示**（跨需求可再开、无会话级拒绝、
+  且第 2 次带的是**当时最新**的行程）；D description 必须写明节律（且不得再出现
+  「同一对话只调一次」）。
+- `mcp/selftest.py`：「全 9 工具里带面板的恰好 1 个」+「plan_trip 不带 `_meta`」+
+  「**二次 `open_plan` 仍判定为展示**」+ 描述文案断言。
 - 🔴 红队 `mcp/redteam_panel_single.py`（手动跑）：**不改真文件** —— 复制成同目录临时变体
-  （`TRIPPLANNER_SERVER=<变体>` 指过去），注入两种回退 ⇒ **2/2 被捕获**
-  （M1 给 `plan_trip` 加回 `_meta`；M2 `plan_trip` 把 `opened_any` 写回 True）。
+  （`TRIPPLANNER_SERVER=<变体>` 指过去），注入三种坏法 ⇒ **3/3 被捕获**
+  （M1 给 `plan_trip` 加回 `_meta`；M2 摘掉 `open_plan` 的 `_meta`；**M3 复活会话级封锁**）。
 
 #### 用法变更（⚠️ 会改变调用习惯，务必同步）
 
 ```
 旧：plan_trip（开面板）→ 重拍再调 plan_trip ⇒ 叠 N 扇面板
-新：plan_trip（可调 N 次，不开面板）→ 定稿后 open_plan 调 1 次 ⇒ 只有 1 扇
+新：同一需求内 plan_trip 可调 N 次（不开面板）→ 定稿后 open_plan 调 1 次 ⇒ 1 扇
+    用户提出**新需求** → 新行程定稿后**再调 1 次** open_plan ⇒ **再 1 扇**（预期行为）
 ```
 
-若模型仍多调了一次 `open_plan`，服务端只能**劝阻**（文案），拦不住宿主。
+⚠️ **别把「第二个需求也出面板」当堆叠去修** —— 那正是 M6.3 第一版的错误：服务端加
+「本会话已开过就不再开」，结果**第二个需求永远没有面板**（2026-10-10 报障）。
+**服务端拦不住宿主**，能做的是「入口唯一 + 描述讲清节律」，而不是把功能关掉。
+
 **为什么不做「面板自我折叠」**：panel 侧看不到兄弟实例；老面板要「知道自己过时」只能轮询，
 而面板 → 本地 server 的 `tools/call` 通道在本宿主是死的（见 M2.1），云端又不知道本地那份
 面板注册状态（split-brain）⇒ 不做这层，宁可把机制做在「少开一扇」这一侧。
@@ -1264,6 +1305,49 @@ Web UI 那条更隐蔽：它用的是 `Object.assign(d, r.day)`（本该是合�
 
 **已知取舍**：主题是**日内文案**、由 compose 按最终时间轴生成，故换点后主题会「略微不贴新点」。
 要真正贴合需在换点后重跑一次 compose（一次 LLM 调用 + 缓存版本），留作以后；旧主题 ≫ 无主题。
+
+### 🔴 M6.6：面板节律＝「**每个需求**一次」（2026-10-10，`SERVER_VERSION` 0.5.0-m5→0.5.1-m5）
+
+**报障（Kenny 原话）**：「在同一个任务框里做多轮对话的时候，面板只会开一次，这不是想要的效果。
+我之前指出的问题是，用户提一个需求、agent 在反复思考、多次调用 mcp 的情况下，面板不应该在每次
+mcp 调用的时候都出，只在最后出结果的时候渲染。但如果用户继续在同一个会话框里提出下一个需求的
+时候，在 agent 完成新的规划后，应该是要为新规划出面板。」
+
+**根因：把节律做成了服务端拦截 —— 而服务端根本没有这个能力。**
+
+M6.3 收掉 `plan_trip` 的面板（✅ 对），但**顺手**把节律实现成「服务端会话级封锁」：
+`_Session.should_open_panel()` 一旦 `opened_any=True` 就永不再开，第二次 `open_plan` 回劝阻文案。
+问题在于 —— 宿主开面板**只**看工具定义里的 `_meta.ui`，**服务端返回什么字段它都不看** ⇒
+那种封锁**拦不住宿主**，只会拦住**模型自己** ⇒ 同一会话的**第二个需求永远没有面板**。
+
+| # | 事实 |
+|---|---|
+| ① | 宿主去重键 `${sessionId}::${toolCallId}` ⇒ 每次 `open_plan` 都新开一扇，**服务端拦不住** |
+| ② | 「同一需求内不要重复调」只能靠**模型自律**，而得靠**工具描述**来建立 |
+| ③ | 把 ② 误做成 ① 的拦截 ⇒ 封锁只作用于模型 ⇒ 第二个需求被一刀切掉 |
+
+**修法：删拦截，把节律写进描述。**
+
+| 改动 | 内容 |
+|---|---|
+| `_Session` | 删 `should_open_panel()`；`opened_any`/`instances` 降级为**只读诊断**，另加 `panel_opens` 计数（`note_panel_shown()`） |
+| `handle(open_plan)` | **不再判重、不再劝阻**：每次都回 `panelOpened=true` + 当时的 `last_plan`；第 N(>1) 次在文本里给一句**条件式**提示（新需求 ⇒ 属预期；重复调 ⇒ 请勿再调） |
+| `OPEN_TOOL.description` | ① 同一需求：定稿后调**一次**，重拍期间不要调；② **新需求**：新行程定稿后**应当再调一次**；③ 只刷新**当前**面板 → 用面板里的「重新拉取行程」 |
+| `PLAN_TOOL.description` / `PANEL_OPEN_HINT` | 同步为「**每个需求定稿后调一次**」（删掉「同一对话只调一次」） |
+| 删除 | `PANEL_ALREADY_HINT` 常量 + `reason="panel-already-open"` 分支 |
+
+⚠️ **这条错误的普遍性**：任何「服务端拦不住客户端行为、却在服务端加拦截」的设计，都会退化成
+「**只拦住听话的那一方**」。此处听话的一方恰好是模型 ⇒ 功能被静默砍掉。判据：**拦截的收益必须
+落在真正做决定的那一侧**，否则它只是幻觉。
+
+**守门**：
+- `scripts/test_panel_single_open.py` 重钉四条：A 入口唯一｜B `plan_trip` ×3 → 0 次展示｜
+  C **`open_plan` 每次调用都展示**（含「第 2 次带的是当时最新行程」与「不得出现
+  `panel-already-open`」）｜D description 必须写明节律、且**不得再出现**「同一对话只调一次」。
+- 🔴 红队 `mcp/redteam_panel_single.py` 升到 **3/3**：M1 加回 `plan_trip` 的 `_meta`｜
+  M2 摘掉 `open_plan` 的 `_meta`｜**M3 复活会话级封锁**（= 本轮报障形态）。
+- 云端端到端：`dist/_verify_panel_cadence.py`（同一 MCP 会话连调两次 `open_plan`，两次都必须
+  `panelOpened=true`）—— ⚠️ **不部署就不生效**（云端 `/mcp` 是 importlib 复用同一份 server 源码）。
 
 ### ⚠️ 仍未做
 
@@ -1598,7 +1682,9 @@ type / command / args / env / cwd / url / headers / timeout
 4. 宿主有**两层** `frame-src`（HTTP 响应头 + 注入 meta）→ 必须靠 `_meta.ui.csp.frameDomains` 声明，**缺一层静默拦掉**。
 5. 🔴 **每次调「带面板的工具」= 新开一扇，不复用**（去重键 `${sessionId}::${toolCallId}`）
    → **服务端返回什么字段都拦不住**（早期「A+C 分流」正是错在这，见 M6.3）。
-   正确做法：**把会开面板的工具收成一个（`tripplanner_open_plan`）并要求只调一次**。
+   正确做法：**把会开面板的工具收成一个（`tripplanner_open_plan`）**，并把调用节律写进
+   它的 **description**（「**每个需求**定稿后调一次」；同一需求内重拍不要调；**新需求**应再调
+   —— 见 M6.6）。⚠️ 别加「同一会话只开一次」的服务端封锁：它拦不住宿主，只会让第二个需求没面板。
 6. `photo_cache` 值是**高德直链** `store.is.autonavi.com` → 要么 `resourceDomains` 放行，要么本地代理。
 
 ### 面板侧握手（对标 `@modelcontextprotocol/ext-apps`）
@@ -1675,7 +1761,9 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M6.2** | 🗺️ **地图对齐 webapp**（报障：「地图上景点之间是直线，webapp 是实际导航线路」）：面板 `drawMap()` **从未**移植 webapp 的 `drawRealRoutes()` ⇒ 改**逐段调 `/api/route`** 画真实路网 + 按天配色/显隐（`toggleDayLine`）+ 酒店锚点腿 + 城际 driving 腿（多城联游短城际段生效，生成点 `webui/server.py::plan_multi`）；`PANEL_VERSION` m15→**m16** | ✅ **完成（2026-10-10）** —— `panel_guard` 3.9 **node 真跑**行为验证（`nCalls=4 / nPolys=4 / 按天归组 / 城际 driving`），红队注入旧「单条直线」实现即变红；✅ 宿主 iframe 内**已肉眼确认**（按天配色实际路网） |
 | **M6.2b** | 📍 **标点走纯 HTML pin**（报障：「真实路网出来了，但 marker 没显示」）：面板 `AMap.Marker` 不传 `icon/content` ⇒ 用**高德默认图标**（外部图片资源）⇒ 宿主 iframe 内加载不出来、只剩数字 label 浮空。改为 `content: pinContent()`（旋转 45° 水滴，纯 CSS，按天配色+序号）+ `anchor:"bottom-center"`，与 `webui/index.html:412` 逐字同款；酒店锚点 `🏨` 不入 `DAY_MARKERS`（不随 Day 隐藏）；`PANEL_VERSION` m16→**m17** | ✅ **完成（2026-10-10）** —— `panel_guard` 3.9 追加 node 真跑断言（`mkContent / mkNoLabelOpt / mkAnchor / mkPin=4 / mkHotel=1 / mkCounts=[2,2]`），红队注入旧默认图标实现即变红（`pin=0`）；⚠️ 宿主 iframe 内待再确认 |
 | **M6.4** | 🔴 **换点不丢「当日主题」**（报障：「换点会导致当日主题丢失」）：根因＝内核 `build_itinerary` 产不出 `theme` → 云端归一化补**空串** → 写回端**整日替换** ⇒ 空串成了「明确的空」。四处写回点（`plan_view.apply_day`（新 `keep_day_meta`）/ `_merge_day_into_plan` / 面板 `applyDayToPlan` / webui `swapPoi`）统一「缺失才沿用旧值」；`PANEL_VERSION` m18→**m19**、`WEBUI_VERSION` m6→**m7** | ✅ **完成（2026-10-10）** —— 🆕 `scripts/test_swap_keeps_theme.py`（真实内核 + 反向守卫）、`mcp/panel_guard.py` 3.10（面板/webui **node 真跑**）、红队 `mcp/redteam_theme_keep.py` **3/3 捕获**；门禁全绿、云端已部署（公网端到端实测「茅家埠→太子湾公园，主题保留」） |
-| **M6.3** | 🪟 **面板入口收敛（重拍不再堆面板）**（报障：「mcp 被多次调用重拍时面板显示多次，应该等拍完有最终结果时显示一次」）：从 `app.asar` 取证出宿主去重键＝`${sessionId}::${toolCallId}` ⇒ **每次工具调用各开一扇**且**不读结果字段**（旧 A+C 防堆叠从未生效）⇒ `plan_trip` **摘掉** `_meta.ui`（可反复调）、`open_plan` 成**唯一入口**并要求只调一次、重复调用回劝阻文案；`PANEL_VERSION` m17→**m18** | ✅ **完成（2026-10-10）** —— 🆕 `scripts/test_panel_single_open.py`（**行为级**）+ 红队 `mcp/redteam_panel_single.py` **2/2 捕获**（不改真文件）；门禁全绿、云端已部署（公网 22/22 含「面板入口唯一」）；⏳ 待 Kenny 在 UI 再保存一次后肉眼确认「重拍只出一扇」 |
+| **M6.3** | 🪟 **面板入口收敛（重拍不再堆面板）**（报障：「mcp 被多次调用重拍时面板显示多次，应该等拍完有最终结果时显示一次」）：从 `app.asar` 取证出宿主去重键＝`${sessionId}::${toolCallId}` ⇒ **每次工具调用各开一扇**且**不读结果字段**（旧 A+C 防堆叠从未生效）⇒ `plan_trip` **摘掉** `_meta.ui`（可反复调）、`open_plan` 成**唯一入口**；`PANEL_VERSION` m17→**m18** | ✅ **完成（2026-10-10）** —— 🆕 `scripts/test_panel_single_open.py`（**行为级**）+ 红队 `mcp/redteam_panel_single.py`（不改真文件）；门禁全绿、云端已部署。⚠️ 本轮同时加的「服务端会话级封锁 + 重复调用回劝阻文案」**已被 M6.6 判定为过度收敛并删除** |
+| **M6.6** | 🪟 **面板节律＝「每个需求一次」**（报障：「同一会话里做多轮对话时，面板只会开一次，这不是想要的效果。新需求完成规划后应该为新规划出面板」）：上一轮把节律实现成**服务端会话级封锁**（`opened_any` 一开就不再开）—— 但**服务端根本拦不住宿主**（它只看工具定义的 `_meta.ui`），那种封锁只拦得住模型自己 ⇒ 第二个需求永远没面板。**修法**：删掉封锁与劝阻分支（`should_open_panel` 已不存在），`open_plan` **每次调用都照常展示**；节律改由**工具 description** 约定（① 同一需求：定稿后调一次；② **新需求**：定稿后**应再调**；③ 只刷新当前面板 → 用面板内「重新拉取行程」）；`SERVER_VERSION` 0.5.0-m5→**0.5.1-m5** | ✅ **完成（2026-10-10）** —— `test_panel_single_open.py` 改钉「每次调用都展示、无会话级拒绝」+ 红队 `mcp/redteam_panel_single.py` **3/3 捕获**（新增「复活会话级封锁」这一路，正是本轮报障形态）；自检 216/216；云端已部署（公网探针：同一 MCP 会话连调两次 `open_plan` 均 `panelOpened=true`） |
+| **Phase 0** | 🔎 **POI 发现工具**（架构探讨落地的第一步，见 `docs/MCP-Agent提案外包-方案探讨.md` §6）：新增 MCP 工具 `tripplanner_find_pois` + 云端 `GET /api/pois`（`city` / `keyword` / `category` / `limit`）。用途＝让**调用方 agent** 在写提案前能查「库内真实有哪些点」，而不是凭世界知识编名字（这正是 M1 存在的理由）。**刻意不改 `plan_trip`** ⇒ 零风险、可独立发布；它是后续「提案外包」（Phase 1 可选 `proposal` 参数）所有动作的**地基**。`SERVER_VERSION` 0.5.1-m5→**0.5.2-m5**、`WEBUI_VERSION` m8→**m9** | ✅ **完成（2026-10-11）** —— 🆕 `scripts/test_find_pois.py`（云端过滤 11 项 + 端点接线 2 项 + 工具契约 5 项 + MCP 行为 7 项）；自检新增 6 项 find_pois 实测；待部署 + 宿主侧实测 |
 
 ### 🐞 缺陷记录：hop 段里程/时长重复（2026-10-10 报障，`PANEL_VERSION` m15 修）
 
@@ -1706,7 +1794,7 @@ M1 复用入口：`src/m1_planner.plan(city, query, days=2, use_llm=True, date0=
 
 | # | 议题 | 定案 | 落地要点 |
 |---|---|---|---|
-| 1 | **「不复用」分流判据** | ~~用 `appInstanceId`~~ → **A + C 组合** | ⚠️ 原定案「server 侧维护 appInstanceId 集合」**前提有误**：取证发现 `appInstanceId` 只由宿主生成、server 侧拿不到。修正为：**A 精确**（面板经 `tripplanner_panel_ready` 自报实例 id）+ **C 兜底**（`SESSION.opened_any` 进程级标记）。已实施，`selftest.py` 4 项覆盖。 |
+| 1 | **「不复用」分流判据** | ~~用 `appInstanceId`~~ → ~~**A + C 组合**~~ | ⚠️ 原定案「server 侧维护 appInstanceId 集合」**前提有误**：取证发现 `appInstanceId` 只由宿主生成、server 侧拿不到。修正为 **A + C** 后又在 2026-10-10 **被证伪并全部删除**（服务端拦不住宿主；C 还会封死第二个需求）⇒ 见 M6.3 / M6.6。**现状：`open_plan` 每次调用都照常展示，节律由工具描述约定。** |
 | 2 | **照片来源** | **高德直链 + `resourceDomains` 放行** | 已实施：`resourceDomains` 追加 `https://store.is.autonavi.com` 等 4 条。面板内加「CSP 放行验证」按钮实测。 |
 
 其余待定项（薄壳策略 / 面板缓存 / 对照组）已按默认方案执行：
