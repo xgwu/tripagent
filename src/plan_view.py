@@ -197,6 +197,8 @@ def normalize_plan(raw: dict, city: str, city_note: str = "") -> dict:
         "days": raw.get("days"),
         "date0": raw.get("date0"),
         "mode": raw.get("mode"),
+        # Agent-Proposal（Phase 1）："agent"（调用方提案）| "server"（服务端提案，缺省路径）
+        "planSource": raw.get("plan_source"),
         "candidates": raw.get("candidates"),
         "hotel": raw.get("hotel"),
         "invalidPoiIds": raw.get("invalid_poi_ids") or [],

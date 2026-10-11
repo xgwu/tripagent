@@ -479,6 +479,82 @@ def _ground(proposal: dict, city: dict, all_pois: dict, days: int):
     return day_map, themes, stats
 
 
+def _name_candidates(name: str, by_name: list, top: int = 5) -> list:
+    """dry_run 用：给未落地的名字推荐库内候选（模糊相似度 + 包含覆盖，各取并集前 top）。"""
+    scored = {}
+    key = _norm(name)
+    for p in by_name:
+        r = difflib.SequenceMatcher(None, key, _norm(p["name"])).ratio()
+        if r >= 0.4:
+            scored[p["id"]] = (r, p)
+    for cover, _nm, p in (_contain_candidates(name, by_name) or [])[:top]:
+        scored[p["id"]] = (max(scored.get(p["id"], (0,))[0], cover), p)
+    return [{"id": p["id"], "name": p["name"]}
+            for _s, p in sorted(scored.values(), key=lambda x: -x[0])[:top]]
+
+
+def validate_proposal(city: dict, proposal: dict, days: int) -> dict:
+    """Agent-Proposal（Phase 1）：`dry_run` 校验回执 —— 「用算法验证 POI 真实存在」。
+
+    与正式规划**同一套** `_ground_one` 匹配口径（铁律：两处匹配不得各自实现），
+    纯确定性、零 LLM、零求解，供调用方 agent 在正式提交前自纠正：
+    返回哪些点库里有（数）、哪些没有（附候选替代）、以及结构性告警（跨天重复 /
+    天号越界 / 单天超员）。
+    ⚠️ 正式规划对 unmatched 还有 **LLM 辅助匹配**兜底（`_llm_match`），
+    故 `ok=False` 只代表「确定性口径未命中」，不是必然排不进——但应当修。
+    """
+    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
+    lodging_ids = {r["id"] for r in city["pois"] if _is_lodging(r)}
+    by_name = [p for p in all_pois.values() if p["id"] not in lodging_ids]
+    days_list = (proposal or {}).get("days") or []
+    warnings, unmatched = [], []
+    n_prop = n_hit = 0
+    seen: dict = {}
+    if not days_list:
+        warnings.append('proposal.days 为空——至少给一天（如 {"day":1,"theme":"…",'
+                        '"stops":[{"id":"HZ001"} 或 {"name":"西湖"}]}）')
+    for d in days_list:
+        if not isinstance(d, dict):
+            warnings.append("days 里存在非对象项，将被忽略")
+            continue
+        dd = d.get("day")
+        stops = d.get("stops") or []
+        if not isinstance(dd, int) or not (1 <= dd <= days):
+            warnings.append(f"Day {dd} 超出范围（应为 1-{days} 的整数），该天会被忽略")
+        if not stops:
+            warnings.append(f"Day {dd} 没有任何点位")
+        elif len(stops) > 5:
+            warnings.append(f"Day {dd} 排了 {len(stops)} 个点（建议 ≤5，"
+                            "超出的更可能被里程/时间约束剔除）")
+        for s in stops:
+            nm = (s.get("name") or "").strip() if isinstance(s, dict) else ""
+            if not nm:
+                warnings.append(f"Day {dd} 存在无 name 的点位，会被忽略")
+                continue
+            n_prop += 1
+            pid, method, _extra = _ground_one(nm, all_pois, by_name)
+            if pid:
+                n_hit += 1
+                prev = seen.get(pid)
+                if prev is not None and prev != dd:
+                    warnings.append(f"「{nm}」同时排在 Day {prev} 与 Day {dd}"
+                                    "——跨天重复只保留先出现的一天")
+                seen.setdefault(pid, dd)
+            else:
+                unmatched.append({"name": nm, "day": dd,
+                                  "candidates": _name_candidates(nm, by_name)})
+    return {
+        "ok": not unmatched,
+        "days": len(days_list),
+        "n_stops": n_prop,
+        "n_matched": n_hit,
+        "grounding_rate": round(n_hit / max(n_prop, 1), 3),
+        "unmatched": unmatched,
+        "warnings": warnings,
+        "note": "匹配口径与正式规划一致（确定性四级）；正式规划对未命中项还有 LLM 辅助匹配兜底",
+    }
+
+
 def _revise_proposal(city: dict, query: str, days: int, proposal: dict,
                      gaps: list, drops: list, hint: str,
                      dups: list | None = None) -> dict | None:
@@ -980,7 +1056,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
          date0: str | None = None, hotel_text: str | None = None,
          time_limit_s: float = m2_planner.toptw.TIME_LIMIT_S,
          main_bonus: float = m2_planner.toptw.MAIN_BONUS,
-         soft_w: float = m2_planner.toptw.SOFT_W, progress=None) -> dict:
+         soft_w: float = m2_planner.toptw.SOFT_W, progress=None,
+         agent_proposal: dict | None = None) -> dict:
     def _report(stage: str) -> None:
         if progress:
             try:
@@ -992,45 +1069,55 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         r = m1_planner.plan(city, query, days, use_llm=False, date0=date0,
                             hotel_text=hotel_text)
         r["mode"] = r["mode"] + " → m7_degraded"
+        r["plan_source"] = "server"
         return r
     t0 = time.time()
     # ---- A 提案：世界知识自由生成（允许库外补充；注入库内菜单引导优先选用）----
-    _report("proposal")
+    # Agent-Proposal（Phase 1，docs/MCP-Agent提案外包-方案探讨.md §6）：调用方 agent
+    # 已给出逐日提案 ⇒ 跳过 A 阶段的服务端 LLM 调用与缓存（省的是「重的那一次」），
+    # 提案直接进入 B 落地；未落地 gaps 仍走既有修正闭环。共存不替换：不传 = 原路径。
     all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
     hint = _library_hint(all_pois)
-    wd1 = poi_db.trip_weekday(date0, 1) if date0 else None
-    date_line = (f"出发日期：{date0}（第 1 天为{wd1}），请结合常见闭馆常识安排顺序。\n" if date0 else "")
-    # P2-5 天气感知：雨天意图 → 引导室内场馆优先、减少露天点位
-    weather_line = ("天气提示：需求含雨天/下雨，请优先安排室内场馆（博物馆/美术馆/科技馆/室内乐园/商场等），"
-                    "减少露天观景台、户外步道类点位。\n") if re.search(r"下雨|雨天|降雨|暴雨", query) else ""
-    norm_q = re.sub(r"\s+", "", query).lower()
-    # v10 按需注入：规则集随需求变化，必须进缓存键——否则「同 query 不同规则集」
-    # 会命中同一条缓存（如 hotel_text 有无导致住宿锚点规则进出）
-    _rules, _n_stops, _rule_hits = select_rules(query, all_pois, hotel_text)
-    pkey = hashlib.sha1(json.dumps(
-        [PROPOSE_PROMPT_VER, city["city"], days, norm_q, date0 or "",
-         bool(weather_line), len(all_pois), sorted(_rule_hits)],
-        ensure_ascii=False).encode("utf-8")).hexdigest()
-    cached = _pcache_get(pkey)
-    if cached is not None:
-        proposal = cached
+    agent_days = (agent_proposal or {}).get("days") or []
+    source = "agent" if agent_days else "server"
+    _report("proposal")
+    if agent_days:
+        proposal = {"days": agent_days}
     else:
-        raw = llm_client.chat([
-            {"role": "system", "content": PROPOSE_SYSTEM},
-            {"role": "user", "content": PROPOSE_PROMPT.format(city=city["city"], days=days,
-                                                              query=query, date_line=date_line,
-                                                              weather_line=weather_line,
-                                                              n_stops=_n_stops,
-                                                              rules="\n".join(_rules),
-                                                              library_hint=hint)}],
-            temperature=0.2, seed=42)
-        proposal = llm_client.parse_json_safe(raw)
-        if proposal.get("days"):
-            _pcache_put(pkey, proposal)
+        wd1 = poi_db.trip_weekday(date0, 1) if date0 else None
+        date_line = (f"出发日期：{date0}（第 1 天为{wd1}），请结合常见闭馆常识安排顺序。\n" if date0 else "")
+        # P2-5 天气感知：雨天意图 → 引导室内场馆优先、减少露天点位
+        weather_line = ("天气提示：需求含雨天/下雨，请优先安排室内场馆（博物馆/美术馆/科技馆/室内乐园/商场等），"
+                        "减少露天观景台、户外步道类点位。\n") if re.search(r"下雨|雨天|降雨|暴雨", query) else ""
+        norm_q = re.sub(r"\s+", "", query).lower()
+        # v10 按需注入：规则集随需求变化，必须进缓存键——否则「同 query 不同规则集」
+        # 会命中同一条缓存（如 hotel_text 有无导致住宿锚点规则进出）
+        _rules, _n_stops, _rule_hits = select_rules(query, all_pois, hotel_text)
+        pkey = hashlib.sha1(json.dumps(
+            [PROPOSE_PROMPT_VER, city["city"], days, norm_q, date0 or "",
+             bool(weather_line), len(all_pois), sorted(_rule_hits)],
+            ensure_ascii=False).encode("utf-8")).hexdigest()
+        cached = _pcache_get(pkey)
+        if cached is not None:
+            proposal = cached
+        else:
+            raw = llm_client.chat([
+                {"role": "system", "content": PROPOSE_SYSTEM},
+                {"role": "user", "content": PROPOSE_PROMPT.format(city=city["city"], days=days,
+                                                                  query=query, date_line=date_line,
+                                                                  weather_line=weather_line,
+                                                                  n_stops=_n_stops,
+                                                                  rules="\n".join(_rules),
+                                                                  library_hint=hint)}],
+                temperature=0.2, seed=42)
+            proposal = llm_client.parse_json_safe(raw)
+            if proposal.get("days"):
+                _pcache_put(pkey, proposal)
     if not proposal.get("days"):
         r = m1_planner.plan(city, query, days, use_llm=True, date0=date0,
                             hotel_text=hotel_text)
         r["mode"] = "m7_proposal_failed → m2_fallback"
+        r["plan_source"] = "server"
         return r
 
     # ---- B 落地 + 闭环反馈：未落地 gaps → LLM 修正 → 再落地（共享轮次预算）----
@@ -1081,6 +1168,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
         r["mode"] = "m7_grounding_empty → m2_fallback"
         r["proposal"] = proposal
         r["grounding"] = grounding
+        r["plan_source"] = "server_fallback"
         return r
 
     # ---- C 求解：复用 M2 compose（TOPTW + 修复链 + 文案）----
@@ -1154,6 +1242,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     final_kept_ids = {i for ids in final_day_ids.values() for i in ids}
     r["proposal"] = proposal
     r["grounding"] = grounding
+    r["plan_source"] = source  # "agent"（调用方提案）| "server"（服务端提案）
     # 用户可读通知：compose 层需求满足检测 + 提案层独占日建议 + 天气/节假日提示
     from src import weather as weather_mod
     r["notices"] = (list(r.get("notices") or [])

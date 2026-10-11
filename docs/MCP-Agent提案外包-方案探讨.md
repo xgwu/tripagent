@@ -134,7 +134,7 @@
 | 阶段 | 内容 | 风险 |
 |---|---|---|
 | **Phase 0** | ✅ **已落地（2026-10-11）** —— 发现工具 `tripplanner_find_pois`（MCP）+ `GET /api/pois`（云端）。**不改** `plan_trip` | 零风险，独立有价值（agent 能查库、能对话） |
-| **Phase 1** | `plan_trip` 加可选 `proposal` / `dry_run` / `mode`；返回加 `planSource` | 低（不传则走旧路径） |
+| **Phase 1** | ✅ **代码完成（2026-10-11，见 §10）** —— `plan_trip` 加可选 `proposal` / `dry_run`；返回加 `planSource`。**不传则走旧路径** | 低（共存不替换，全部入口显式报错不静默） |
 | **Phase 2** | Skill 文档 + 评测口径（`eval_regression` 增 agent-proposal 模式） | 低 |
 | **Phase 3** | 文案优化：扩大 `reuse_days` 复用面；评估两段式回写 | 中 |
 
@@ -210,6 +210,47 @@
 
 > 下一步（Phase 1，待 Kenny 拍板）：给 `plan_trip` 加**可选** `proposal` 参数 + `dry_run` 校验回执。
 > 不传 `proposal` ⇒ 完全走旧路径（共存不替换）。
+
+---
+
+## 10. Phase 1 实现记录（2026-10-11，代码完成，待部署）
+
+**MCP 工具**：`tripplanner_plan_trip` 新增可选 `proposal`（逐天数组，schema 必填 `day`+`stops`）
+与 `dry_run`（boolean）。**required 仍只有 `query`**；工具仍**不带 `_meta`**（面板入口唯一）。
+契约写进 description：先 `find_pois` 对齐事实 → `dry_run=true` 校验 → 去掉 dry_run 正式提交；
+不传 proposal = 服务端照旧提案。
+
+**云端**（`webui/server.py`，`WEBUI_VERSION` m9→**m10**）：
+- `POST /api/plan`：do_POST 解析 JSON body 合并进 query 后**复用 do_GET 同一段处理器**
+  （零逻辑分叉）。为什么必须 POST：提案 JSON 可能远超 URL/请求头长度（nginx 头默认 8K）。
+- `proposal` 宽容归一化：数组（契约面形状）⇒ 包成 `{"days":[…]}`（内核形状）。
+- `dry_run=1` ⇒ 短路返回 `proposal_planner.validate_proposal(...)` 回执，**不规划**。
+- 带 proposal 的 m7 请求**绕过 LLM 结果缓存**（提案每次都可能不同）；
+  `proposal_mode=auto|server|agent`（服务端参数，MCP 面不暴露；agent 必带 proposal）。
+- **显式拒绝**（不静默丢）：多城联游 + proposal / mode≠m7 + proposal / 内核导入失败。
+
+**内核**（`src/proposal_planner.py`）：`plan()` 加 `agent_proposal` ⇒ 有天清单就跳过
+A 阶段 LLM 与缓存，直接进 B 落地（未落地 gaps 仍走既有修正闭环）；
+`plan_source` 全路径落账（`agent`/`server`/`server_fallback`）；
+新增 `validate_proposal()`（dry_run 回执，与正式规划**同一套** `_ground_one`，零 LLM；
+未命中附 `_name_candidates` 候选 + 结构性告警：跨天重复/天号越界/空天/单天超员/无名点位）。
+`src/plan_view.py::normalize_plan` 透传 `planSource`。
+
+**守卫**：🆕 `scripts/test_agent_proposal.py`（36 项：回执口径 10 + 注入点 5 + webui 接线 9 +
+工具契约 7 + MCP 行为 5，远端打桩不打网络）。
+**HTTP 探针**：`dist/_probe_agent_proposal_http.py` **10/10** —— POST dry_run 全命中/未命中+候选、
+坏参五路 400、多城拒绝、health=m10、**真实规划端到端 `planSource=agent`（10.2s）**。
+
+**版本**：`SERVER_VERSION` 0.5.2-m5 → **0.5.3-m5**（必须部署）；`WEBUI_VERSION` m9 → **m10**。
+`/api/health.stage` 仍 M5；`PANEL_VERSION` 不动（面板零改动）。
+**门禁**：`release_gate` 五步全绿；`--mcp` 的 MCP 自检在**部署前**会钉在
+「cloud=0.5.2-m5/m9 vs local=0.5.3-m5/m10」——预期，部署后复验。
+
+**踩坑**：契约面（MCP schema / 方案稿）把 proposal 定义为**数组**，内核吃 `{"days":[…]}` ——
+第一版服务端只认对象 ⇒ POST 直接 400。修法：服务端宽容归一化（数组包一层），
+**契约面形状以 MCP schema 为准**。
+
+> 下一步（Phase 2）：Skill 文档 + 评测口径（`eval_regression` 增 agent-proposal 模式）。
 
 ---
 

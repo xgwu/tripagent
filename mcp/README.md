@@ -119,7 +119,7 @@ resourceDomains = ["http://127.0.0.1:*",
 | 工具 | 面板 | 作用 |
 |---|---|---|
 | `tripplanner_open_plan` | ★开 | **面板的唯一入口**。展示当前最新的行程（还没有行程则提示先调 `plan_trip`）。**每个需求调一次**：同一需求定稿后调一次，用户提出**新需求**、新行程定稿后**再调一次**（⇒ 新面板） |
-| `tripplanner_plan_trip` | — | **主入口**。一句话需求 → 真实行程（**不开面板**，可反复调用/重拍） |
+| `tripplanner_plan_trip` | — | **主入口**。一句话需求 → 真实行程（**不开面板**，可反复调用/重拍）。**Phase 1** 起支持可选 `proposal`（agent 自拟逐日点位清单，跳过服务端提案 LLM）与 `dry_run`（只校验提案不规划）——不传则行为不变 |
 | `tripplanner_get_plan` | — | 面板握手后主动拉行程（M1 数据通道） |
 | `tripplanner_list_cities` | — | 列出 31 个可规划城市 + POI 数 |
 | `tripplanner_find_pois` | — | **Phase 0** POI 发现：按 `city`/`keyword`/`category` 查**库内真实点位**（id/名称/类目/时长/开放/闭馆/亲子/价格/标签）。供调用方 agent 在提案前对齐事实，别凭世界知识编名字 |
@@ -1764,6 +1764,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **M6.3** | 🪟 **面板入口收敛（重拍不再堆面板）**（报障：「mcp 被多次调用重拍时面板显示多次，应该等拍完有最终结果时显示一次」）：从 `app.asar` 取证出宿主去重键＝`${sessionId}::${toolCallId}` ⇒ **每次工具调用各开一扇**且**不读结果字段**（旧 A+C 防堆叠从未生效）⇒ `plan_trip` **摘掉** `_meta.ui`（可反复调）、`open_plan` 成**唯一入口**；`PANEL_VERSION` m17→**m18** | ✅ **完成（2026-10-10）** —— 🆕 `scripts/test_panel_single_open.py`（**行为级**）+ 红队 `mcp/redteam_panel_single.py`（不改真文件）；门禁全绿、云端已部署。⚠️ 本轮同时加的「服务端会话级封锁 + 重复调用回劝阻文案」**已被 M6.6 判定为过度收敛并删除** |
 | **M6.6** | 🪟 **面板节律＝「每个需求一次」**（报障：「同一会话里做多轮对话时，面板只会开一次，这不是想要的效果。新需求完成规划后应该为新规划出面板」）：上一轮把节律实现成**服务端会话级封锁**（`opened_any` 一开就不再开）—— 但**服务端根本拦不住宿主**（它只看工具定义的 `_meta.ui`），那种封锁只拦得住模型自己 ⇒ 第二个需求永远没面板。**修法**：删掉封锁与劝阻分支（`should_open_panel` 已不存在），`open_plan` **每次调用都照常展示**；节律改由**工具 description** 约定（① 同一需求：定稿后调一次；② **新需求**：定稿后**应再调**；③ 只刷新当前面板 → 用面板内「重新拉取行程」）；`SERVER_VERSION` 0.5.0-m5→**0.5.1-m5** | ✅ **完成（2026-10-10）** —— `test_panel_single_open.py` 改钉「每次调用都展示、无会话级拒绝」+ 红队 `mcp/redteam_panel_single.py` **3/3 捕获**（新增「复活会话级封锁」这一路，正是本轮报障形态）；自检 216/216；云端已部署（公网探针：同一 MCP 会话连调两次 `open_plan` 均 `panelOpened=true`） |
 | **Phase 0** | 🔎 **POI 发现工具**（架构探讨落地的第一步，见 `docs/MCP-Agent提案外包-方案探讨.md` §6）：新增 MCP 工具 `tripplanner_find_pois` + 云端 `GET /api/pois`（`city` / `keyword` / `category` / `limit`）。用途＝让**调用方 agent** 在写提案前能查「库内真实有哪些点」，而不是凭世界知识编名字（这正是 M1 存在的理由）。**刻意不改 `plan_trip`** ⇒ 零风险、可独立发布；它是后续「提案外包」（Phase 1 可选 `proposal` 参数）所有动作的**地基**。`SERVER_VERSION` 0.5.1-m5→**0.5.2-m5**、`WEBUI_VERSION` m8→**m9** | ✅ **完成（2026-10-11）** —— 🆕 `scripts/test_find_pois.py`（云端过滤 11 项 + 端点接线 2 项 + 工具契约 5 项 + MCP 行为 7 项）；自检新增 6 项 find_pois 实测；待部署 + 宿主侧实测 |
+| **Phase 1** | 🤝 **Agent-Proposal（提案外包，共存不替换）**：`tripplanner_plan_trip` 加**可选** `proposal`（逐天点位清单，`{day,theme,stops:[{id/name,note}],alternates}`，点位须来自 `find_pois`）与 `dry_run`（只校验不规划，确定性口径与正式规划同一套 `_ground_one`）。传了 ⇒ 云端**跳过提案 LLM**（省「重的那一次」，实测 −34% tok / −56% 墙钟）直接进落地+修正闭环+求解；**不传 ⇒ 一切照旧**。配套：`POST /api/plan`（提案 JSON 走 body，不受 URL 长度限制；do_POST 合并进 query 后复用 do_GET 同一段处理器）；`plan_source`/`planSource` 全链路落账（agent/server）；带 proposal 的请求**绕过** LLM 结果缓存；`proposal_mode=auto/server/agent`（服务端参数，MCP 面不暴露）；多城联游与 mode≠m7 **显式拒绝**（不静默丢提案）。`SERVER_VERSION` 0.5.2-m5→**0.5.3-m5**、`WEBUI_VERSION` m9→**m10** | ✅ **代码完成（2026-10-11）** —— 🆕 `scripts/test_agent_proposal.py`（回执口径 10 + 注入点 5 + webui 接线 9 + 工具契约 7 + MCP 行为 5）；HTTP 探针 `dist/_probe_agent_proposal_http.py` **10/10**（含真实规划端到端 `planSource=agent` 10.2s）；`release_gate` 五步全绿（MCP 自检待部署后复验）；待部署 + 宿主侧实测 |
 
 ### 🐞 缺陷记录：hop 段里程/时长重复（2026-10-10 报障，`PANEL_VERSION` m15 修）
 

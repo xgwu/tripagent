@@ -64,7 +64,7 @@ CFG: dict = {}
 #   `tripplanner_find_pois` 的后端：让**调用方 agent** 在写提案前能查到「库内真实有哪些点」，
 #   而不是凭世界知识编名字（见 docs/MCP-Agent提案外包-方案探讨.md §5）。
 #   拆在云端而不是客户端读库，因为 M5 起 MCP 是**瘦客户端**（分享包里没有 data/）。
-WEBUI_VERSION = "m9"
+WEBUI_VERSION = "m10"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -1853,6 +1853,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False,
                                    "error": "会话已过期（云端保留 2 小时），请重新生成行程"})
 
+            # ---- Agent-Proposal（Phase 1，docs/MCP-Agent提案外包-方案探讨.md §6）----
+            # 可选 agent 提案 + dry_run 校验回执。不传 proposal ⇒ 一切照旧（共存不替换）。
+            proposal_data = None
+            if (q.get("proposal") or "").strip():
+                try:
+                    _p = json.loads(q["proposal"])
+                except (ValueError, TypeError):
+                    return self._json({"ok": False, "error": "proposal 不是合法 JSON"}, code=400)
+                # 宽容归一化：契约面（MCP schema / 方案稿）是「按天对象数组」，
+                # 内核是 {"days":[…]} ⇒ 数组进来包一层，别让调用方踩两种形状。
+                if isinstance(_p, list):
+                    _p = {"days": _p}
+                if not isinstance(_p, dict):
+                    return self._json({"ok": False,
+                                       "error": "proposal 需要是数组（逐天对象）或含 days 数组的对象"},
+                                      code=400)
+                proposal_data = _p
+            dry_run = q.get("dry_run") == "1"
+            proposal_mode = (q.get("proposal_mode") or "auto").strip().lower()
+            if proposal_mode not in ("auto", "server", "agent"):
+                return self._json({"ok": False,
+                                   "error": "proposal_mode 只支持 auto/server/agent"}, code=400)
+            if proposal_mode == "agent" and proposal_data is None:
+                return self._json({"ok": False,
+                                   "error": "proposal_mode=agent 需要同时传 proposal"}, code=400)
+
             if not rate_allow(ip):
                 stats_bump("plan_rate_limited")
                 return self._json({"ok": False,
@@ -1901,6 +1927,10 @@ class Handler(BaseHTTPRequestHandler):
                     query = f"{cname}2天经典深度游"
                 # ---- P2-2 多城联游：查询出现 ≥2 城（或「苏杭」别名）→ 跨城合并规划 ----
                 if len(multi) >= 2:
+                    if proposal_data is not None:
+                        return self._json({"ok": False, "error":
+                                           "多城联游暂不支持 proposal（提案按天带城属后续阶段）"},
+                                          code=400)
                     d = extract_days(query) or (nl or {}).get("days")
                     days, _clamped, _want = clamp_days(d)
                     _days_notice = ([{"kind": "days_clamped", "message":
@@ -1996,9 +2026,30 @@ class Handler(BaseHTTPRequestHandler):
                     planner = m2_planner if m2_planner is not None else m1_planner
                 if planner is None:
                     planner = m1_planner
-                # P0-3 LLM 结果缓存：m7+LLM 路径且非访客 Key 时，7 天内同参数直接秒回（?fresh=1 跳过）
+                # ---- Agent-Proposal（Phase 1）：可选 agent 提案进入 m7 链路 ----
+                # 共存不替换：不传 proposal / mode!=m7 / 内核缺失 ⇒ 一切照旧。
+                if proposal_data is not None and mode != "m7":
+                    return self._json({"ok": False,
+                                       "error": "proposal 仅支持 mode=m7（经验提案链路）"}, code=400)
+                if proposal_data is not None and planner is not proposal_planner:
+                    return self._json({"ok": False,
+                                       "error": "提案规划内核不可用（proposal_planner 导入失败）"},
+                                      code=500)
+                use_prop = (proposal_data is not None and proposal_mode != "server"
+                            and mode == "m7" and planner is proposal_planner)
+                if dry_run:
+                    if proposal_data is None:
+                        return self._json({"ok": False,
+                                           "error": "dry_run=1 需要同时传 proposal"}, code=400)
+                    return self._json({"ok": True, "dry_run": True, "city": cname,
+                                       "days": days,
+                                       "validation": proposal_planner.validate_proposal(
+                                           city, proposal_data, days)})
+                # P0-3 LLM 结果缓存：m7+LLM 路径且非访客 Key 时，7 天内同参数直接秒回（?fresh=1 跳过）。
+                # Agent-Proposal：结果取决于调用方给的提案（每次都可能不同）⇒ 该请求绕过缓存。
                 cache_key = None
-                if use_llm and mode == "m7" and not llm_key and q.get("fresh", "0") != "1":
+                if (use_llm and mode == "m7" and not llm_key and not use_prop
+                        and q.get("fresh", "0") != "1"):
                     cache_key = _llm_cache_key(cname, query, days, date0, hotel_text, mode)
                     cached = _llm_cache_get(cache_key)
                     if cached is not None:
@@ -2017,15 +2068,19 @@ class Handler(BaseHTTPRequestHandler):
                                         "hotel_text": hotel_text,
                                         "from_query": bool(query and (extract_days(query) or date0 or hotel_text))}},
                             cname, _resolve_notice))
+                # Agent-Proposal：提案经 kw 透传（就地组参数，避免用全局变量传请求态——
+                # 规划可并发，全局会串请求）
+                _plan_args = {"use_llm": use_llm, "date0": date0, "hotel_text": hotel_text,
+                              **_plan_extra_kw(planner, progress_cb)}
+                if use_prop:
+                    _plan_args["agent_proposal"] = proposal_data
                 if llm_key:
                     # 临时注入访客 Key → 规划 → 恢复环境（锁内串行，防并发互相覆盖）
                     with PLAN_LOCK:
                         old = os.environ.get("DEEPSEEK_API_KEY")
                         os.environ["DEEPSEEK_API_KEY"] = llm_key
                         try:
-                            r = planner.plan(city, query, days, use_llm=use_llm,
-                                             date0=date0, hotel_text=hotel_text,
-                                             **_plan_extra_kw(planner, progress_cb))
+                            r = planner.plan(city, query, days, **_plan_args)
                         finally:
                             if old is None:
                                 os.environ.pop("DEEPSEEK_API_KEY", None)
@@ -2033,9 +2088,7 @@ class Handler(BaseHTTPRequestHandler):
                                 os.environ["DEEPSEEK_API_KEY"] = old
                     cache_key = None  # 访客 Key 结果不落缓存
                 else:
-                    r = planner.plan(city, query, days, use_llm=use_llm,
-                                     date0=date0, hotel_text=hotel_text,
-                                     **_plan_extra_kw(planner, progress_cb))
+                    r = planner.plan(city, query, days, **_plan_args)
                 stats_latency(r.get("latency_s", 0))
                 # P2 观测：备选补位命中率累计（命中=确定性补位，miss=LLM 兜底）
                 _as = r.get("alt_sub") or {}
@@ -2076,6 +2129,25 @@ class Handler(BaseHTTPRequestHandler):
         # M5.x：云端 MCP 端点（Streamable HTTP）——实现全在 webui/mcp_endpoint.py
         if u.path == "/mcp":
             return self._mcp()
+        # Agent-Proposal（Phase 1）：/api/plan 的 proposal 可能比 URL 长得多
+        # （nginx 头默认 8K，5 天 × 多点的提案 JSON 会超）⇒ 支持 POST body 传参：
+        # 把 JSON body 合并进 query 后**复用 do_GET 的同一段处理器**（零逻辑分叉）。
+        if u.path == "/api/plan":
+            try:
+                n = int(self.headers.get("Content-Length") or 0)
+                body = (json.loads(self.rfile.read(n).decode("utf-8"))
+                        if 0 < n <= 262144 else None)
+            except Exception:  # noqa: BLE001 —— 脏 body 如实按 400 报，不静默
+                body = None
+            if not isinstance(body, dict):
+                return self._json({"ok": False,
+                                   "error": "POST /api/plan 需要 JSON 对象 body"}, code=400)
+            q = {k: v[0] for k, v in urllib.parse.parse_qs(u.query).items()}
+            q.update({k: v for k, v in body.items() if v is not None})
+            self.path = "/api/plan?" + urllib.parse.urlencode(
+                {k: (json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list))
+                     else v) for k, v in q.items()})
+            return self.do_GET()
         if u.path == "/api/log":  # M5：面板动作轨迹（面板改走线上后，落点搬到云端）
             try:
                 n = int(self.headers.get("Content-Length") or 0)

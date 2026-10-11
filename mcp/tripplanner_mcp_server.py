@@ -81,7 +81,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.2-m5"
+SERVER_VERSION = "0.5.3-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -693,7 +693,15 @@ TOOLS = [
             "⚠️ 本工具**不打开行程面板**，所以可以放心反复调用（调整需求、重拍都不会堆面板）。\n"
             "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**每个需求定稿后调一次**）："
             "同一需求内反复重拍时不要调它；用户在同一会话里提出**新需求**时，新行程定稿后"
-            "**再调一次**，即为新方案弹出新面板。"
+            "**再调一次**，即为新方案弹出新面板。\n"
+            "🤝 可选 `proposal`（Agent 提案外包）：你已对需求理解充分时，可自己拟逐日点位清单"
+            "交给云端直接落地+求解（服务端跳过自己的提案 LLM，**更快更省**）。要求：\n"
+            "  ① 拟清单**前先调 `tripplanner_find_pois`** 确认点位真实存在（库里没有的点排不进）；"
+            "  ② 拿不准可先 `dry_run=true` 校验（返回库内未命中项+候选替代，秒回、不规划）；\n"
+            "  ③ 每项 {\"day\":1,\"theme\":\"…\",\"stops\":[{\"id\":\"HZ001\"} 或 "
+            "{\"name\":\"西湖\"}]}，id 优先；备选放 alternates；\n"
+            "  ④ 未落地的点云端仍会自动修正/补强；质量兜底仍在服务端。\n"
+            "**不传 proposal ⇒ 服务端照旧自己提案**（默认行为，随时可用）。"
         ),
         "inputSchema": {
             "type": "object",
@@ -706,6 +714,50 @@ TOOLS = [
                 "days": {"type": "integer", "description": f"可选。天数 {MIN_DAYS}-{MAX_DAYS}，不传则从需求识别"},
                 "date": {"type": "string", "description": "可选。起始日期 YYYY-MM-DD（启用闭馆日约束）"},
                 "hotel": {"type": "string", "description": "可选。住宿锚点（酒店名或「名称@lng,lat」）"},
+                "proposal": {
+                    "type": "array",
+                    "description": (
+                        "可选。Agent 拟好的逐日提案，替代服务端提案（省一次服务端 LLM）。"
+                        "点位必须来自 tripplanner_find_pois 的结果（id 优先，name 兜底）；"
+                        "建议先 dry_run=true 校验再正式提交。不传 = 服务端自己提案。"
+                    ),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "day": {"type": "integer", "description": "第几天（1 起）"},
+                            "theme": {"type": "string", "description": "当天主题（可选）"},
+                            "stops": {
+                                "type": "array",
+                                "description": "当天的点位清单（按建议顺序）",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string",
+                                               "description": "库内 POI id（find_pois 返回的 id，优先用）"},
+                                        "name": {"type": "string",
+                                                 "description": "点位名（无 id 时的兜底；须为库内真实名称）"},
+                                        "note": {"type": "string",
+                                                 "description": "为什么去（可选）"},
+                                    },
+                                },
+                            },
+                            "alternates": {
+                                "type": "array",
+                                "description": "可选。同一天的备选点（主选被约束剔除时补位）",
+                                "items": {"type": "object", "properties": {
+                                    "id": {"type": "string"}, "name": {"type": "string"}}},
+                            },
+                        },
+                        "required": ["day", "stops"],
+                    },
+                },
+                "dry_run": {
+                    "type": "boolean",
+                    "description": (
+                        "可选。true = 只校验 proposal（确定性匹配口径，与正式规划一致）："
+                        "返回未命中项+候选替代+结构性告警，秒回、不规划、不耗时。"
+                    ),
+                },
                 "app_instance_id": {"type": "string", "description": "兼容字段，已不使用（保留以免旧调用报错）"},
             },
             "required": ["query"],
@@ -979,12 +1031,17 @@ PLAN_TIMEOUT_S = 240.0
 
 
 def run_plan(query: str, days: int | None, city_arg: str | None,
-             date0: str | None, hotel_text: str | None) -> dict:
+             date0: str | None, hotel_text: str | None,
+             proposal: list | None = None, dry_run: bool = False) -> dict:
     """跑一次真实规划 —— **M5 起整个委托给云端后端**（瘦客户端）。
 
     本进程不再加载规划内核（ortools / POI 库 / 交通缓存 / DeepSeek Key）：
     全部在云端。分享给别人时对方只需要 Python，连 `data/` 都不必带。
     返回统一结构：{"ok":…, "error":…, "plan":…}（plan 为**已归一化**的行程）。
+
+    Agent-Proposal（Phase 1）：`proposal`（调用方 agent 拟好的逐日点位清单）与
+    `dry_run`（只校验提案、不规划）。两者任一出现 ⇒ 走 **POST**（提案 JSON 可能
+    远超 URL/请求头长度限制），云端把 body 合并进同一套 /api/plan 处理器。
     """
     # `strict_city=1`：MCP App 是 **agent 面向**的 —— 需求里没提城市时必须明确报错，
     #   不能像 Web UI 那样落默认城市（否则 agent 会拿到一份用户没要的行程）。
@@ -998,11 +1055,23 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
         params["date"] = date0
     if hotel_text:
         params["hotel"] = hotel_text
+    payload = None
+    if proposal is not None or dry_run:
+        payload = {"proposal": proposal or []}
+        if dry_run:
+            payload["dry_run"] = "1"
     t0 = time.time()
     try:
-        res = remote_request("/api/plan", params=params, timeout=PLAN_TIMEOUT_S)
+        res = remote_request("/api/plan", params=params, payload=payload,
+                             method="POST" if payload else "GET",
+                             timeout=PLAN_TIMEOUT_S)
     except RuntimeError as e:
         return {"ok": False, "error": str(e)}
+    # ---- dry_run：回执不是行程，走独立的轻量返回 ----
+    if dry_run:
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error") or "云端校验失败"}
+        return {"ok": True, "dry_run": True, "validation": res.get("validation") or {}}
     if not res.get("ok"):
         return {"ok": False, "error": res.get("error") or "云端规划失败"}
     plan = res.get("plan")
@@ -1318,7 +1387,33 @@ def handle(msg: dict):
                     "structuredContent": {"ok": False, "error": "missing query"},
                 })
             res = run_plan(query, args.get("days"), args.get("city"),
-                           args.get("date"), args.get("hotel"))
+                           args.get("date"), args.get("hotel"),
+                           proposal=args.get("proposal"),
+                           dry_run=bool(args.get("dry_run")))
+
+            # ---- Agent-Proposal：dry_run 校验回执（不是行程，独立轻量返回）----
+            if res.get("dry_run"):
+                v = res.get("validation") or {}
+                um = v.get("unmatched") or []
+                lines = [f"提案校验（dry_run）：{'✅ 全部命中' if v.get('ok') else '⚠️ 有未命中项'}"
+                         f" —— {v.get('n_matched')}/{v.get('n_stops')} 个点位命中库内"
+                         f"（落地率 {v.get('grounding_rate')}）"]
+                for u in um:
+                    cand = "；".join(f"{c['name']}({c['id']})"
+                                     for c in (u.get("candidates") or [])[:3]) or "无近似候选"
+                    lines.append(f"  ❌ 「{u['name']}」（Day {u.get('day')}）库里没有 → "
+                                 f"候选：{cand}")
+                for w in (v.get("warnings") or []):
+                    lines.append(f"  ⚠️ {w}")
+                lines.append("未命中项在正式规划时还有 LLM 辅助匹配兜底，但建议换成候选点后"
+                             "再正式提交（去掉 dry_run 重新调用）。")
+                return ok(id_, {
+                    "content": [{"type": "text", "text": "\n".join(lines)}],
+                    "structuredContent": {"ok": bool(v.get("ok")), "dry_run": True,
+                                          "validation": v,
+                                          "server": SERVER_NAME,
+                                          "version": SERVER_VERSION},
+                })
 
             if not res.get("ok"):
                 # 失败只回文字：本工具**不再是面板入口**（M6.3）⇒ 不碰 opened_any，
@@ -1333,7 +1428,8 @@ def handle(msg: dict):
             plan = res["plan"]
             SESSION.last_plan = plan          # 面板（open_plan）之后靠它/云端会话取数
             log("plan_trip 完成", city=plan["city"], days=plan["days"],
-                mode=plan["mode"], km=plan["totalTravelKm"])
+                mode=plan["mode"], km=plan["totalTravelKm"],
+                src=plan.get("planSource"))
             return ok(id_, {
                 "content": [{"type": "text", "text": plan_summary(plan) + "\n\n" + PANEL_OPEN_HINT}],
                 "structuredContent": {
