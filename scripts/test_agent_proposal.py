@@ -156,8 +156,8 @@ case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
 # ==================== 用例 D：MCP 工具面 ====================
 print("\n== 用例 D：MCP 工具面")
 srv = _load_mcp()
-case("D1 SERVER_VERSION 已 +1（= 0.5.3-m5）",
-     srv.SERVER_VERSION == "0.5.3-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION 已 +1（= 0.5.4-m5）",
+     srv.SERVER_VERSION == "0.5.4-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
 case("D2 schema 有 proposal（array，item 必填 day+stops）",
@@ -227,6 +227,27 @@ srv.remote_request = lambda path, **kw: {"ok": True}
 res = _call({"query": "杭州2天", "dry_run": True})
 case("E5 云端缺 validation 字段 → 优雅空回执不崩",
      (res.get("structuredContent") or {}).get("validation") == {})
+
+# ==================== 用例 F：观测（徽标 / 摘要）====================
+# 报障（2026-10-11 Kenny）：宿主侧看不到 planSource=agent 徽标 —— planSource 只落账
+# 不渲染＝观测缺陷。徽标挂面板 mode 徽标旁 + 摘要文本「提案来源=…」。
+print("\n== 用例 F：观测（面板徽标 / plan_summary）")
+_html = open(os.path.join(ROOT, "mcp", "panel", "plan_panel.html"),
+             encoding="utf-8").read()
+case("F1 面板徽标：planSource=agent → 「Agent 提案」",
+     'String(plan.planSource || "") === "agent"' in _html
+     and "Agent 提案</span>" in _html
+     and "modeBadge + srcBadge + violBadge" in _html)
+case("F2 PANEL_VERSION 已 +1（= m20）", 'PANEL_VERSION = "m20"' in
+     open(os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py"),
+          encoding="utf-8").read())
+case("F3 plan_summary 文本带「提案来源=」", "提案来源=" in
+     inspect.getsource(srv.plan_summary))
+_sm = srv.plan_summary({"city": "杭州", "days": 2, "dayList": [], "latency_s": 1,
+                        "planSource": "agent"})
+case("F4 摘要：agent → 「调用方 agent」", "提案来源=调用方 agent" in _sm)
+_sm2 = srv.plan_summary({"city": "杭州", "days": 2, "dayList": [], "latency_s": 1})
+case("F5 摘要：旧数据无字段 → 「-」不崩", "提案来源=-" in _sm2)
 
 print("\n" + "=" * 56)
 if FAIL:

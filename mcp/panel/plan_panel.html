@@ -705,11 +705,15 @@
     var _okMode = !_deg && _name !== "离线兜底规划";
     var modeBadge = '<span class="badge ' + (_okMode ? 'b-ok' : 'b-blue') + '">'
                   + _name + (_deg && _name !== "离线兜底规划" ? "（降级）" : "") + '</span>';
+    // Phase 1 提案来源徽标：agent = 调用方拟的点位清单（服务端跳过自己的提案 LLM）；
+    // server/缺省 = 服务端提案（旧路径，不显示徽标，避免噪音）。
+    var srcBadge = (String(plan.planSource || "") === "agent")
+      ? '<span class="badge b-blue">Agent 提案</span>' : '';
     var violBadge = (plan.totalViolations === 0)
       ? '<span class="badge b-ok">硬约束 0 违规</span>'
       : '<span class="badge b-bad">违规 ' + plan.totalViolations + '</span>';
     document.getElementById("subLine").innerHTML =
-      modeBadge + violBadge + '<span class="badge b-idle">' + esc(plan.generatedAt) + '</span>'
+      modeBadge + srcBadge + violBadge + '<span class="badge b-idle">' + esc(plan.generatedAt) + '</span>'
       + (plan.updatedAt ? '<span class="badge b-blue">已调整 ' + esc(plan.updatedAt) + '</span>' : '');
 
     document.getElementById("toolbar").style.display = "flex";

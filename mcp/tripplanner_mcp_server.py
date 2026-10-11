@@ -81,7 +81,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.3-m5"
+SERVER_VERSION = "0.5.4-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -116,7 +116,7 @@ PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m19"
+PANEL_VERSION = "m20"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -1168,9 +1168,12 @@ def plan_summary(plan: dict) -> str:
     plan = plan or {}
     days_list = plan.get("dayList") or []
     dropped = plan.get("droppedPois") or []
+    # Phase 1 提案来源：agent = 调用方拟的点位清单；server = 服务端提案；缺省 = 旧数据无此字段
+    _src = {"agent": "调用方 agent", "server": "服务端"}.get(plan.get("planSource"), "-")
     lines = [
         f"已生成【{plan.get('city')}】{plan.get('days')} 天行程"
-        f"（模式={plan.get('mode')}，候选 {plan.get('candidates')} 个点，"
+        f"（模式={plan.get('mode')}，提案来源={_src}，"
+        f"候选 {plan.get('candidates')} 个点，"
         f"耗时 {plan.get('latency_s', 0)}s）",
         f"总里程 {plan.get('totalTravelKm')}km ｜ 硬约束违规 {plan.get('totalViolations')}"
         f" ｜ 被剔除 {len(dropped)} 个点",
