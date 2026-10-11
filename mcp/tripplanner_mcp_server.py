@@ -81,7 +81,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.5-m5"
+SERVER_VERSION = "0.5.6-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -710,6 +710,8 @@ TOOLS = [
             "会从需求里自动识别城市与天数（也可显式传 city / days）。\n"
             "规划在云端完成（POI 库 / 交通缓存 / LLM 都在线上），本进程只做代理。\n"
             "⚠️ 本工具**不打开行程面板**，所以可以放心反复调用（调整需求、重拍都不会堆面板）。\n"
+            "⏩ 重拍 / 探索阶段可传 `copy_mode=\"lazy\"` 跳过逐日文案生成（更快）；"
+            "**定稿那次用默认**（不传），open_plan 时会自动为最终行程补全文案。\n"
             "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**每个需求定稿后调一次**）："
             "同一需求内反复重拍时不要调它；用户在同一会话里提出**新需求**时，新行程定稿后"
             "**再调一次**，即为新方案弹出新面板。\n"
@@ -777,6 +779,17 @@ TOOLS = [
                     "description": (
                         "可选。true = 只校验 proposal（确定性匹配口径，与正式规划一致）："
                         "返回未命中项+候选替代+结构性告警，秒回、不规划、不耗时。"
+                    ),
+                },
+                "copy_mode": {
+                    "type": "string",
+                    "enum": ["full", "lazy"],
+                    "description": (
+                        "可选（默认 full）。**重拍 / 探索阶段建议传 \"lazy\"**：跳过逐日"
+                        "文案生成（占总耗时约一半），行程更快出来；点位/时间轴不受影响，"
+                        "只有 theme 理由和 tips 暂缺。**用户满意、定稿那次不要传**——"
+                        "调用 tripplanner_open_plan 时会自动为最终行程补全文案。"
+                        "同一需求反复重拍时：探索轮 lazy + 定稿轮 full 是最省的组合。"
                     ),
                 },
                 "app_instance_id": {"type": "string", "description": "兼容字段，已不使用（保留以免旧调用报错）"},
@@ -1053,7 +1066,8 @@ PLAN_TIMEOUT_S = 240.0
 
 def run_plan(query: str, days: int | None, city_arg: str | None,
              date0: str | None, hotel_text: str | None,
-             proposal: list | None = None, dry_run: bool = False) -> dict:
+             proposal: list | None = None, dry_run: bool = False,
+             copy_mode: str | None = None) -> dict:
     """跑一次真实规划 —— **M5 起整个委托给云端后端**（瘦客户端）。
 
     本进程不再加载规划内核（ortools / POI 库 / 交通缓存 / DeepSeek Key）：
@@ -1063,6 +1077,8 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
     Agent-Proposal（Phase 1）：`proposal`（调用方 agent 拟好的逐日点位清单）与
     `dry_run`（只校验提案、不规划）。两者任一出现 ⇒ 走 **POST**（提案 JSON 可能
     远超 URL/请求头长度限制），云端把 body 合并进同一套 /api/plan 处理器。
+    文案懒生成（Phase 3）：`copy_mode="lazy"` 跳过文案 LLM（重拍/探索用），
+    定稿后 open_plan 自动对最终行程补跑（`POST /api/copy`）。
     """
     # `strict_city=1`：MCP App 是 **agent 面向**的 —— 需求里没提城市时必须明确报错，
     #   不能像 Web UI 那样落默认城市（否则 agent 会拿到一份用户没要的行程）。
@@ -1076,6 +1092,8 @@ def run_plan(query: str, days: int | None, city_arg: str | None,
         params["date"] = date0
     if hotel_text:
         params["hotel"] = hotel_text
+    if copy_mode:
+        params["copy_mode"] = copy_mode
     payload = None
     if proposal is not None or dry_run:
         payload = {"proposal": proposal or []}
@@ -1199,6 +1217,12 @@ def plan_summary(plan: dict) -> str:
         f"总里程 {plan.get('totalTravelKm')}km ｜ 硬约束违规 {plan.get('totalViolations')}"
         f" ｜ 被剔除 {len(dropped)} 个点",
     ]
+    # 文案懒生成（Phase 3）：lazy 行程 reason/tips 空，提醒模型「重拍可继续 lazy、
+    # 定稿调 open_plan 会自动补文案」，避免模型误以为行程残缺。
+    if plan.get("copyMode") == "lazy":
+        lines.append("⏩ 文案懒生成模式：各日理由/tips 暂缺（正常）。"
+                     "继续调整请继续传 copy_mode=\"lazy\"；用户满意后调用 "
+                     "tripplanner_open_plan，会自动补全最终文案。")
     for d in days_list:
         pois = [f"{s.get('start')} {s.get('name')}"
                 for s in (d.get("timeline") or []) if s.get("type") == "poi"]
@@ -1459,7 +1483,8 @@ def handle(msg: dict):
             res = run_plan(query, args.get("days"), args.get("city"),
                            args.get("date"), args.get("hotel"),
                            proposal=args.get("proposal"),
-                           dry_run=bool(args.get("dry_run")))
+                           dry_run=bool(args.get("dry_run")),
+                           copy_mode=args.get("copy_mode"))
 
             # ---- Agent-Proposal：dry_run 校验回执（不是行程，独立轻量返回）----
             if res.get("dry_run"):
@@ -1540,6 +1565,23 @@ def handle(msg: dict):
         if name == OPEN_TOOL:
             iid = args.get("app_instance_id")
             nth = SESSION.note_panel_shown(iid)
+            # 文案懒生成（Phase 3）：重拍轮次 copy_mode=lazy 的行程 reason/tips 为空，
+            # 定稿展示前**在这里**补跑（云端 POST /api/copy，逐天并行 LLM）——
+            # 「用户满意、开面板前才生成最终文案」正是 lazy 的设计意图。失败不拦开面板：
+            # 面板拿 lazy 行程照常渲染（理由位空），文案可下次重试。
+            if SESSION.last_plan is not None \
+                    and SESSION.last_plan.get("copyMode") == "lazy":
+                try:
+                    _cres = remote_request("/api/copy",
+                                           payload={"session": session_id()},
+                                           method="POST", timeout=120.0)
+                    _cplan = _cres.get("plan") if isinstance(_cres, dict) else None
+                    if _cres.get("ok") and isinstance(_cplan, dict) and _cplan.get("dayList"):
+                        SESSION.last_plan = _cplan
+                        write_plan_state(_cplan)
+                        log("open_plan: lazy 文案已补", days=_cres.get("days"))
+                except Exception as e:  # noqa: BLE001 —— 补文案失败不拦面板
+                    dbg("open_plan.copy.skip", err=str(e))
             log("open_plan: 展示面板", instance=iid, n=nth)
             # 「第几次」是唯一能区分「新需求」与「同一需求内重复调」的信号 —— 交给模型判：
             # 新需求 ⇒ 第 N 次属预期；重复调 ⇒ 提示别再调。**不改变 panelOpened**（宿主说了算）。

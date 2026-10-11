@@ -654,7 +654,8 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             main_bonus: float = toptw.MAIN_BONUS, soft_w: float = toptw.SOFT_W,
             meta: dict | None = None, mode: str = "m2_toptw",
             forced_ids: set | None = None, alt_map: dict | None = None,
-            progress=None, reuse_days: dict | None = None) -> dict:
+            progress=None, reuse_days: dict | None = None,
+            skip_copy: bool = False) -> dict:
     """阶段2-4：逐日 TOPTW → 修复链 → 文案重生成。M2/M7 共用（M7 喂落地后的 day_map）。
 
     alt_map: {day: [poi_id]} LLM 备选（M7 提案 alternates）——并入当日求解池但
@@ -663,6 +664,10 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
     取值 "solving"（TOPTW 求解）/ "regen"（文案重生成）；异常静默，不影响规划。
     reuse_days: {day: {"ids": [上次最终有序id], "copy": {theme,reason,tips}}}——
     C 闭环增量重算：点位集合未变的天直接复用原解与原文案，只重算变化的天。
+    skip_copy: **文案懒生成**（Phase 3，2026-10-11）——跳过阶段4 文案重生成
+    （每天一次 LLM，占总调用 ~45%）。重拍/探索阶段用它，定稿那次由
+    `POST /api/copy` 对最终行程补跑 `_regen_reasons`。theme 沿用提案/落地层
+    值（不空），reason/tips 留空；落账 `copy_mode="lazy"`。
     """
     meta = meta or {}
 
@@ -794,7 +799,7 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
 
     # ---- 阶段4：文案重生成（对齐最终时间轴）----
     reasons_regen = False
-    if use_llm:
+    if use_llm and not skip_copy:
         _report("regen")
         # C 闭环增量重算：reuse_days 中「修复链/填空后点位仍与上次一致」的天复用原文案，
         # 只对变化的天调 LLM（若全部未变则零调用）
@@ -835,6 +840,8 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             "candidates": meta.get("candidates"), "invalid_poi_ids": meta.get("invalid_poi_ids"),
             "date0": date0, "n_dup_across_days": meta.get("n_dup_across_days", 0),
             "hotel": meta.get("hotel"),
+            # 文案懒生成（Phase 3）："lazy"=reason/tips 待定稿补跑；缺省/"full"=随规划生成
+            "copy_mode": "lazy" if skip_copy else "full",
             "llm_raw_violations": llm_raw_violations,
             "mains_kept": f"{n_mains_kept}/{n_mains}" if n_mains else "n/a",
             "n_llm_alts": n_llm_alts,

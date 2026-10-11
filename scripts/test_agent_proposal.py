@@ -131,7 +131,7 @@ case("B5 normalize_plan 透传 planSource", '"planSource": raw.get("plan_source"
 
 # ==================== 用例 C：webui /api/plan 接线 ====================
 print("\n== 用例 C：webui 接线")
-case("C1 WEBUI_VERSION 已 +1（= m10）", sv.WEBUI_VERSION == "m10", sv.WEBUI_VERSION)
+case("C1 WEBUI_VERSION = m11（Phase 3 懒文案）", sv.WEBUI_VERSION == "m11", sv.WEBUI_VERSION)
 _sv = open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
 case("C2 do_POST 合并 /api/plan 的 JSON body（提案走 POST，不受 URL 长度限制）",
      'if u.path == "/api/plan":' in _sv and "return self.do_GET()" in _sv)
@@ -156,8 +156,8 @@ case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
 # ==================== 用例 D：MCP 工具面 ====================
 print("\n== 用例 D：MCP 工具面")
 srv = _load_mcp()
-case("D1 SERVER_VERSION = 0.5.5-m5（Phase 2.5 引导通道）",
-     srv.SERVER_VERSION == "0.5.5-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION = 0.5.6-m5（Phase 3 懒文案）",
+     srv.SERVER_VERSION == "0.5.6-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
 case("D2 schema 有 proposal（array，item 必填 day+stops）",
@@ -284,7 +284,7 @@ _pd = _ptool["description"]
 case("G6 PLAN_TOOL description：默认路径话术 + 量化激励 + 退回条件",
      "默认应该走这条路" in _pd and "56%" in _pd
      and "仅当" in _pd and "慢速默认路径" in _pd)
-case("G7 SERVER_VERSION 已 +1（= 0.5.5-m5）", srv.SERVER_VERSION == "0.5.5-m5")
+case("G7 SERVER_VERSION = 0.5.6-m5", srv.SERVER_VERSION == "0.5.6-m5")
 
 print("\n" + "=" * 56)
 if FAIL:

@@ -1035,14 +1035,15 @@ def _compose_m7(city: dict, query: str, days: int, day_map: dict, themes: dict,
                 date0: str | None, hotel: dict | None, anchor_poi: dict | None,
                 grounding: dict, alt_map: dict | None,
                 time_limit_s: float, main_bonus: float, soft_w: float,
-                progress=None, reuse_days: dict | None = None) -> dict:
+                progress=None, reuse_days: dict | None = None,
+                skip_copy: bool = False) -> dict:
     """M7 复用 M2 compose（TOPTW + 修复链 + 文案），参数固定便于闭环重算。"""
     forced = forced_ids_for(anchor_poi, grounding)
     return m2_planner.compose(city, query, days, day_map, themes, use_llm=True,
                               date0=date0, hotel=hotel, time_limit_s=time_limit_s,
                               main_bonus=main_bonus, soft_w=soft_w,
                               progress=progress, reuse_days=reuse_days,
-                              alt_map=alt_map,
+                              alt_map=alt_map, skip_copy=skip_copy,
                               meta={"candidates": None, "invalid_poi_ids": [],
                                     "n_dup_across_days": grounding["dup_skipped"],
                                     "hotel": ({"name": hotel["name"], "lat": hotel["lat"],
@@ -1057,7 +1058,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
          time_limit_s: float = m2_planner.toptw.TIME_LIMIT_S,
          main_bonus: float = m2_planner.toptw.MAIN_BONUS,
          soft_w: float = m2_planner.toptw.SOFT_W, progress=None,
-         agent_proposal: dict | None = None) -> dict:
+         agent_proposal: dict | None = None,
+         skip_copy: bool = False) -> dict:
     def _report(stage: str) -> None:
         if progress:
             try:
@@ -1175,7 +1177,7 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     hotel = hotel_mod.resolve_hotel(city, hotel_text)
     r = _compose_m7(city, query, days, day_map, themes, date0, hotel,
                     anchor_poi, grounding, alt_map, time_limit_s, main_bonus, soft_w,
-                    progress=progress)
+                    progress=progress, skip_copy=skip_copy)
     # 闭环第二触发点：约束剔除过多 / 相邻两天片区重复 → 带原因反馈修正 → 重落地重求解（一轮）
     # 注意口径：每日 dropped 只有修复链剔除；主选被 TOPTW 剔除在 r["mains_dropped"]——
     # 求解器剔掉 LLM 主选 = 世界知识被时间预算否决（如宋城/迪士尼），是最需要闭环的信号
@@ -1229,7 +1231,8 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
                                      anchor_poi, g2, alt_map2,
                                      time_limit_s, main_bonus, soft_w,
                                      progress=_r2_progress if progress else None,
-                                     reuse_days=reuse_days or None)
+                                     reuse_days=reuse_days or None,
+                                     skip_copy=skip_copy)
                     drops2, overlap2 = _collect_issues(r2)
                     # 修正确实减少问题总数（剔除+片区重复）才采纳，防震荡
                     if len(drops2) + len(overlap2) < len(drops) + len(overlap):

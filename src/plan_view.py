@@ -102,6 +102,9 @@ def normalize_day(d: dict, coords: dict | None = None) -> dict:
                 "start": s.get("start"), "end": s.get("end")}
         if s.get("type") == "poi":
             item["id"] = s.get("id")
+            # 文案懒生成（Phase 3）：补跑 `_regen_reasons` 需要「早到等待」事实
+            if s.get("arrive"):
+                item["arrive"] = s.get("arrive")
             item["photo"] = photo_of(s.get("id") or "")
             c = (coords or {}).get(s.get("id"))
             if c and c[0] is not None and c[1] is not None:
@@ -199,6 +202,8 @@ def normalize_plan(raw: dict, city: str, city_note: str = "") -> dict:
         "mode": raw.get("mode"),
         # Agent-Proposal（Phase 1）："agent"（调用方提案）| "server"（服务端提案，缺省路径）
         "planSource": raw.get("plan_source"),
+        # 文案懒生成（Phase 3）："lazy"（reason/tips 待定稿补跑）| "full"（随规划生成）
+        "copyMode": raw.get("copy_mode") or "full",
         "candidates": raw.get("candidates"),
         "hotel": raw.get("hotel"),
         "invalidPoiIds": raw.get("invalid_poi_ids") or [],
