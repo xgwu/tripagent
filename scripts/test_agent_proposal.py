@@ -156,8 +156,8 @@ case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
 # ==================== 用例 D：MCP 工具面 ====================
 print("\n== 用例 D：MCP 工具面")
 srv = _load_mcp()
-case("D1 SERVER_VERSION = 0.5.7-m5（面板导出按钮摘除）",
-     srv.SERVER_VERSION == "0.5.7-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION = 0.5.8-m5（撤提案引导）",
+     srv.SERVER_VERSION == "0.5.8-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
 case("D2 schema 有 proposal（array，item 必填 day+stops）",
@@ -169,10 +169,10 @@ case("D4 required 仍只有 query（proposal 可选 = 共存不替换）",
      _plan_tool["inputSchema"].get("required") == ["query"])
 case("D5 plan_trip 仍不带 _meta（面板入口唯一，M6.3 领地）",
      "_meta" not in _plan_tool)
-case("D6 description 写明契约：先 find_pois / dry_run 校验 / 不传走旧路径",
+case("D6 description 仍写明 proposal 契约（来自 find_pois / dry_run / 留空走服务端）",
      "tripplanner_find_pois" in _plan_tool["description"]
      and "dry_run" in _plan_tool["description"]
-     and "不传 proposal" in _plan_tool["description"])
+     and "服务端自己提案" in _plan_tool["description"])
 case("D7 run_plan 支持 proposal/dry_run 并走 POST",
      "proposal" in inspect.signature(srv.run_plan).parameters
      and 'payload = {"proposal": proposal or []}' in
@@ -249,42 +249,37 @@ case("F4 摘要：agent → 「调用方 agent」", "提案来源=调用方 agen
 _sm2 = srv.plan_summary({"city": "杭州", "days": 2, "dayList": [], "latency_s": 1})
 case("F5 摘要：旧数据无字段 → 「-」不崩", "提案来源=-" in _sm2)
 
-# ==================== 用例 G：引导通道（instructions / description / prompts）====================
-# Phase 2.5（2026-10-11）：让任何宿主 agent 自动走提案路径 —— 三层引导：
-#   initialize.instructions（注入系统提示，零配置）+ PLAN_TOOL description 硬化 +
-#   prompts plan-trip 模板（显式入口）。
-print("\n== 用例 G：引导通道（自动走提案路径）")
+# ==================== 用例 G：引导通道已撤（默认走服务端提案）====================
+# 2026-10-11 回退（Kenny）：Phase 2.5 曾用三层引导（instructions 硬化 + PLAN_TOOL
+# description 硬化 + prompts plan-trip 模板）把宿主 agent 推向「agent 提案」路径，
+# **实测效果不佳** ⇒ 撤掉引导、回到「agent 只理解需求 + 调 plan_trip、服务端自己提案」。
+# 以下守卫**反向**钉住「没有引导」，防有人再把引导加回来。
+print("\n== 用例 G：引导通道已撤（默认走服务端提案）")
 _init = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {"protocolVersion": "2025-06-18", "capabilities": {}}})
 _init_res = _init["result"]
-case("G1 initialize 响应含 instructions 且点出提案工作流",
-     "instructions" in _init_res
-     and "find_pois" in _init_res["instructions"]
-     and "proposal" in _init_res["instructions"]
-     and "tripplanner_open_plan" in _init_res["instructions"])
-case("G2 capabilities 声明 prompts",
-     "prompts" in _init_res.get("capabilities", {}))
-_pl = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "prompts/list", "params": {}})
-_pnames = [p.get("name") for p in _pl["result"].get("prompts", [])]
-case("G3 prompts/list 提供 plan-trip 模板", "plan-trip" in _pnames)
-_pg = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "prompts/get",
-                  "params": {"name": "plan-trip",
-                             "arguments": {"query": "苏州2天园林"}}})
-_msgs = _pg["result"]["messages"]
-_ptext = _msgs[0]["content"]["text"] if _msgs else ""
-case("G4 prompts/get 返回消息且正文含完整工作流",
-     _msgs and _msgs[0]["role"] == "user"
-     and "find_pois" in _ptext and "proposal" in _ptext
-     and "dry_run" in _ptext and "open_plan" in _ptext)
-case("G5 prompts/get 未知名 → -32602",
-     srv.handle({"jsonrpc": "2.0", "id": 4, "method": "prompts/get",
-                 "params": {"name": "nope"}}).get("error", {}).get("code") == -32602)
+_instr = _init_res.get("instructions") or ""
+case("G1 instructions 仍是中性总纲（点出 open_plan 定稿节律）",
+     "tripplanner_open_plan" in _instr and "定稿" in _instr)
+case("G2 instructions 不再引导 agent 自拟提案（无提案话术/量化激励）",
+     "优先" not in _instr and "自己拟" not in _instr and "56%" not in _instr)
+case("G3 instructions 明说「服务端会自己完成点位提案」",
+     "服务端会自己完成" in _instr)
+case("G4 capabilities 不再声明 prompts",
+     "prompts" not in _init_res.get("capabilities", {}))
+case("G5 prompts/list → -32601（方法已移除）",
+     srv.handle({"jsonrpc": "2.0", "id": 2, "method": "prompts/list",
+                 "params": {}}).get("error", {}).get("code") == -32601)
+case("G6 prompts/get → -32601（方法已移除）",
+     srv.handle({"jsonrpc": "2.0", "id": 3, "method": "prompts/get",
+                 "params": {"name": "plan-trip"}}).get("error", {}).get("code") == -32601)
 _ptool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _pd = _ptool["description"]
-case("G6 PLAN_TOOL description：默认路径话术 + 量化激励 + 退回条件",
-     "默认应该走这条路" in _pd and "56%" in _pd
-     and "仅当" in _pd and "慢速默认路径" in _pd)
-case("G7 SERVER_VERSION = 0.5.7-m5", srv.SERVER_VERSION == "0.5.7-m5")
+case("G7 PLAN_TOOL 描述不再硬化（无「默认应该走这条路」/「56%」）",
+     "默认应该走这条路" not in _pd and "56%" not in _pd)
+case("G8 PLAN_TOOL 描述把 proposal 降为「可选 · 一般不需要传」",
+     "不需要传" in _pd)
+case("G9 SERVER_VERSION = 0.5.8-m5", srv.SERVER_VERSION == "0.5.8-m5")
 
 print("\n" + "=" * 56)
 if FAIL:

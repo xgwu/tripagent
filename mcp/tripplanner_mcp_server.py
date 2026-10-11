@@ -81,7 +81,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.7-m5"
+SERVER_VERSION = "0.5.8-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -211,21 +211,19 @@ MIN_DAYS, MAX_DAYS = 1, 7
 
 # ---------------------------------------------------------------------------
 # `initialize.instructions`（MCP 标准字段）—— 注入宿主系统提示的「用法总纲」。
-# Phase 2.5（2026-10-11）：让**任何**装了本 MCP 的宿主 agent 自动走提案路径，
-# 不依赖用户配置 skill / 系统提示。工具 description 里是同一套话的加细版。
+# 2026-10-11 回退（Kenny）：Phase 2.5 曾用三层引导（instructions + description 硬化
+# + prompts 模板）把宿主 agent 推向「agent 提案」路径，**实测效果不佳** ⇒ 撤掉引导，
+# **默认走服务端自己提案**：agent 只负责理解需求 + 调 plan_trip。此处改为中性总纲。
 # ---------------------------------------------------------------------------
 SERVER_INSTRUCTIONS = (
     "Trip Planner 行程规划服务使用要点：\n"
-    "1. 规划行程（tripplanner_plan_trip）时**优先走「提案模式」**："
-    "先用 tripplanner_find_pois 查该城市库内真实点位 → 你自己拟逐日清单 → "
-    "（拿不准时 dry_run=true 秒级校验）→ 把清单作为 proposal 参数传入。"
-    "带提案可省约 56% 等待时间、点位更贴合需求。\n"
-    "2. 只有当 find_pois 查不到该城市、或用户需求极端模糊时，才退回"
-    "「只传 query」的默认路径（服务端自己提案，较慢）。\n"
-    "3. 行程**定稿后**调一次 tripplanner_open_plan 出面板（唯一面板入口，"
-    "每个需求一次）；调整/重拍期间不要调。\n"
-    "4. 需求里的硬约束（不爬山、推车友好、时间收工点等）写进提案的 note 字段，"
-    "落地时会作为约束参与求解。"
+    "1. 直接调用 tripplanner_plan_trip 生成行程：把用户的完整需求原话传给 query 即可"
+    "（城市、天数、日期、住宿、偏好都能自动识别）；"
+    "**服务端会自己完成点位提案与排程** —— 你不需要自己挑点位，也不需要构造 proposal。\n"
+    "2. 行程**定稿后**调一次 tripplanner_open_plan 出面板（唯一面板入口，每个需求一次）；"
+    "调整、重拍期间不要调它。\n"
+    "3. 重拍 / 探索阶段可传 copy_mode=\"lazy\" 让行程更快出来（跳过逐日文案）；"
+    "用户满意、定稿那次用默认（full），open_plan 会自动为最终行程补全文案。"
 )
 
 
@@ -715,16 +713,9 @@ TOOLS = [
             "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**每个需求定稿后调一次**）："
             "同一需求内反复重拍时不要调它；用户在同一会话里提出**新需求**时，新行程定稿后"
             "**再调一次**，即为新方案弹出新面板。\n"
-            "🤝 **proposal（Agent 提案外包）—— 默认应该走这条路**：先调 "
-            "`tripplanner_find_pois` 查库内点位，再自己拟逐日清单作为 proposal 传入。"
-            "带提案 = 服务端跳过自己的提案 LLM **直接落地+求解，快约 56%、点位更贴需求**；"
-            "质量兜底不变（未落地的点云端自动修正/补强）。步骤：\n"
-            "  ① 拟清单**前先调 `tripplanner_find_pois`** 确认点位真实存在（库里没有的点排不进）；"
-            "  ② 拿不准可先 `dry_run=true` 校验（返回库内未命中项+候选替代，秒回、不规划）；\n"
-            "  ③ 每项 {\"day\":1,\"theme\":\"…\",\"stops\":[{\"id\":\"HZ001\"} 或 "
-            "{\"name\":\"西湖\"}]}，id 优先；备选放 alternates；\n"
-            "  ④ 用户硬约束（不爬山/推车友好/几点收工…）写进 stops[].note，落地时参与求解。\n"
-            "**仅当** find_pois 查不到该城市或需求极端模糊时，才不传 proposal 走慢速默认路径。"
+            "（可选）如你已自行确认过库内点位并想直接指定，可传 `proposal`"
+            "（点位须来自 `tripplanner_find_pois`）替代服务端提案；`dry_run=true` 可先校验清单。"
+            "一般情况下**不需要传** —— 留空即由服务端自己提案，无需你挑点位。"
         ),
         "inputSchema": {
             "type": "object",
@@ -740,9 +731,9 @@ TOOLS = [
                 "proposal": {
                     "type": "array",
                     "description": (
-                        "可选。Agent 拟好的逐日提案，替代服务端提案（省一次服务端 LLM）。"
-                        "点位必须来自 tripplanner_find_pois 的结果（id 优先，name 兜底）；"
-                        "建议先 dry_run=true 校验再正式提交。不传 = 服务端自己提案。"
+                        "可选（高级用法，一般不需要传）。仅当你已自行确认过库内点位、"
+                        "想直接指定时才传；点位必须来自 tripplanner_find_pois（id 优先，name 兜底），"
+                        "建议先 dry_run=true 校验。不传 = 服务端自己提案（默认、推荐）。"
                     ),
                     "items": {
                         "type": "object",
@@ -1300,11 +1291,11 @@ def handle(msg: dict):
             "capabilities": {
                 "tools": {"listChanged": False},
                 "resources": {"listChanged": False, "subscribe": False},
-                "prompts": {"listChanged": False},
             },
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-            # MCP 标准字段：支持的宿主会把它注入 LLM 系统提示 ⇒ 每个新装用户**零配置**
-            # 就能让 agent 知道提案工作流（Phase 2.5，2026-10-11）。
+            # MCP 标准字段（中性总纲）：支持的宿主会把它注入 LLM 系统提示 —— 只讲
+            # 「直接调 plan_trip、服务端自己提案」，**不再引导 agent 走提案路径**
+            # （2026-10-11 回退，见 SERVER_INSTRUCTIONS 注释）。
             "instructions": SERVER_INSTRUCTIONS,
         })
 
@@ -1327,50 +1318,9 @@ def handle(msg: dict):
     if method == "resources/templates/list":
         return ok(id_, {"resourceTemplates": []})
 
-    if method == "prompts/list":
-        # Phase 2.5（2026-10-11）：提供显式入口——支持 prompts 的宿主会把它列成
-        # 斜杠命令/模板，模板正文里写死提案工作流（与 instructions 同一套话）。
-        return ok(id_, {"prompts": [{
-            "name": "plan-trip",
-            "description": "规划行程（提案模式：find_pois → 拟逐日提案 → plan_trip 提交 → open_plan 出面板）",
-            "arguments": [
-                {"name": "query", "description": "用户的行程需求原话，如「杭州2天，带5岁孩子看西湖」",
-                 "required": True},
-                {"name": "city", "description": "可选。显式城市，如「杭州」"},
-                {"name": "days", "description": "可选。天数 1-7"},
-            ],
-        }]})
-
-    if method == "prompts/get":
-        name = params.get("name") or ""
-        if name != "plan-trip":
-            return fail(id_, -32602, f"Unknown prompt: {name}")
-        a = params.get("arguments") or {}
-        q = str(a.get("query") or "").strip() or "（用户需求待补充）"
-        city = str(a.get("city") or "").strip()
-        days = str(a.get("days") or "").strip()
-        head = f"帮我规划行程：{q}"
-        if city:
-            head += f"（城市：{city}"
-            if days:
-                head += f"，{days} 天"
-            head += "）"
-        text = (
-            f"{head}\n\n"
-            "请按以下工作流执行（Trip Planner 提案模式，更快且点位更贴合需求）：\n"
-            "1. 调用 `tripplanner_find_pois` 查该城市的库内真实点位（可按关键词多查几轮）；\n"
-            "2. 基于查询结果自己拟逐日点位清单（每天点数量力而行，注意主题分区与步行距离，"
-            "把用户的硬约束写进每个点的 note）；\n"
-            "3. 拿不准时先 `tripplanner_plan_trip` 传 `dry_run=true` 秒级校验；\n"
-            "4. 正式调用 `tripplanner_plan_trip`，把清单作为 `proposal` 参数传入；\n"
-            "5. 行程定稿后调用 `tripplanner_open_plan` **一次**展示面板。\n"
-            "若 find_pois 查不到该城市，改用只传 query 的默认路径即可。"
-        )
-        return ok(id_, {"description": "Trip Planner 提案模式行程规划",
-                        "messages": [{
-                            "role": "user",
-                            "content": {"type": "text", "text": text},
-                        }]})
+    # 2026-10-11 回退：不再提供 prompts（曾用 plan-trip 模板引导 agent 走提案路径，
+    # 实测效果不佳 ⇒ 撤掉）。capabilities 已不声明 prompts ⇒ 宿主不会列出/调用；
+    # 万一被显式调用，落到末尾的 -32601 fallback（Method not found）。
 
     if method == "resources/read":
         uri = params.get("uri") or ""

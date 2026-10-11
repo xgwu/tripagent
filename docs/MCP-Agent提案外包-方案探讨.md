@@ -1,5 +1,11 @@
 # MCP「提案外包」架构探讨（Agent-Proposal）
 
+> ⚠️ **状态更新（2026-10-11 晚，Kenny 实测）**：本文探讨的「让宿主 agent 自动走提案
+> 路径」那一步（Phase 2.5：`instructions` 硬化 + `plan_trip` description 硬化 + `prompts`
+> 模板）**实测效果不佳 ⇒ 已全部回退**。`proposal` / `dry_run` 能力**保留为可选高级用法**，
+> 但**默认走服务端提案**（agent 只理解需求 + 调 `plan_trip`）。权威现状见
+> `mcp/README.md` 里程碑「Phase 2.5 / 回退」与 `## 🤝 Agent 提案外包工作流` 章首注记。
+
 > 探讨稿 · 2026-10-11 · 起因：能否把「理解用户需求 + 生成景点提案」交给**调用方 agent** 来做，
 > MCP 只负责「用算法验证 POI 真实存在」+「做合理的线路规划」，从而省掉不必要的 LLM 调用？
 
