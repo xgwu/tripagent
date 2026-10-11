@@ -81,7 +81,7 @@ import sys
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.4-m5"
+SERVER_VERSION = "0.5.5-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -208,6 +208,25 @@ PANEL_OPEN_HINT = (
 
 # 面板上「天数」的合理区间；query_days 里有同名常量，这里取值保持一致
 MIN_DAYS, MAX_DAYS = 1, 7
+
+# ---------------------------------------------------------------------------
+# `initialize.instructions`（MCP 标准字段）—— 注入宿主系统提示的「用法总纲」。
+# Phase 2.5（2026-10-11）：让**任何**装了本 MCP 的宿主 agent 自动走提案路径，
+# 不依赖用户配置 skill / 系统提示。工具 description 里是同一套话的加细版。
+# ---------------------------------------------------------------------------
+SERVER_INSTRUCTIONS = (
+    "Trip Planner 行程规划服务使用要点：\n"
+    "1. 规划行程（tripplanner_plan_trip）时**优先走「提案模式」**："
+    "先用 tripplanner_find_pois 查该城市库内真实点位 → 你自己拟逐日清单 → "
+    "（拿不准时 dry_run=true 秒级校验）→ 把清单作为 proposal 参数传入。"
+    "带提案可省约 56% 等待时间、点位更贴合需求。\n"
+    "2. 只有当 find_pois 查不到该城市、或用户需求极端模糊时，才退回"
+    "「只传 query」的默认路径（服务端自己提案，较慢）。\n"
+    "3. 行程**定稿后**调一次 tripplanner_open_plan 出面板（唯一面板入口，"
+    "每个需求一次）；调整/重拍期间不要调。\n"
+    "4. 需求里的硬约束（不爬山、推车友好、时间收工点等）写进提案的 note 字段，"
+    "落地时会作为约束参与求解。"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -694,14 +713,16 @@ TOOLS = [
             "行程定稿后如需展示面板，调用 `tripplanner_open_plan`（**每个需求定稿后调一次**）："
             "同一需求内反复重拍时不要调它；用户在同一会话里提出**新需求**时，新行程定稿后"
             "**再调一次**，即为新方案弹出新面板。\n"
-            "🤝 可选 `proposal`（Agent 提案外包）：你已对需求理解充分时，可自己拟逐日点位清单"
-            "交给云端直接落地+求解（服务端跳过自己的提案 LLM，**更快更省**）。要求：\n"
+            "🤝 **proposal（Agent 提案外包）—— 默认应该走这条路**：先调 "
+            "`tripplanner_find_pois` 查库内点位，再自己拟逐日清单作为 proposal 传入。"
+            "带提案 = 服务端跳过自己的提案 LLM **直接落地+求解，快约 56%、点位更贴需求**；"
+            "质量兜底不变（未落地的点云端自动修正/补强）。步骤：\n"
             "  ① 拟清单**前先调 `tripplanner_find_pois`** 确认点位真实存在（库里没有的点排不进）；"
             "  ② 拿不准可先 `dry_run=true` 校验（返回库内未命中项+候选替代，秒回、不规划）；\n"
             "  ③ 每项 {\"day\":1,\"theme\":\"…\",\"stops\":[{\"id\":\"HZ001\"} 或 "
             "{\"name\":\"西湖\"}]}，id 优先；备选放 alternates；\n"
-            "  ④ 未落地的点云端仍会自动修正/补强；质量兜底仍在服务端。\n"
-            "**不传 proposal ⇒ 服务端照旧自己提案**（默认行为，随时可用）。"
+            "  ④ 用户硬约束（不爬山/推车友好/几点收工…）写进 stops[].note，落地时参与求解。\n"
+            "**仅当** find_pois 查不到该城市或需求极端模糊时，才不传 proposal 走慢速默认路径。"
         ),
         "inputSchema": {
             "type": "object",
@@ -1255,8 +1276,12 @@ def handle(msg: dict):
             "capabilities": {
                 "tools": {"listChanged": False},
                 "resources": {"listChanged": False, "subscribe": False},
+                "prompts": {"listChanged": False},
             },
             "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+            # MCP 标准字段：支持的宿主会把它注入 LLM 系统提示 ⇒ 每个新装用户**零配置**
+            # 就能让 agent 知道提案工作流（Phase 2.5，2026-10-11）。
+            "instructions": SERVER_INSTRUCTIONS,
         })
 
     if method in ("notifications/initialized", "initialized"):
@@ -1279,7 +1304,49 @@ def handle(msg: dict):
         return ok(id_, {"resourceTemplates": []})
 
     if method == "prompts/list":
-        return ok(id_, {"prompts": []})
+        # Phase 2.5（2026-10-11）：提供显式入口——支持 prompts 的宿主会把它列成
+        # 斜杠命令/模板，模板正文里写死提案工作流（与 instructions 同一套话）。
+        return ok(id_, {"prompts": [{
+            "name": "plan-trip",
+            "description": "规划行程（提案模式：find_pois → 拟逐日提案 → plan_trip 提交 → open_plan 出面板）",
+            "arguments": [
+                {"name": "query", "description": "用户的行程需求原话，如「杭州2天，带5岁孩子看西湖」",
+                 "required": True},
+                {"name": "city", "description": "可选。显式城市，如「杭州」"},
+                {"name": "days", "description": "可选。天数 1-7"},
+            ],
+        }]})
+
+    if method == "prompts/get":
+        name = params.get("name") or ""
+        if name != "plan-trip":
+            return fail(id_, -32602, f"Unknown prompt: {name}")
+        a = params.get("arguments") or {}
+        q = str(a.get("query") or "").strip() or "（用户需求待补充）"
+        city = str(a.get("city") or "").strip()
+        days = str(a.get("days") or "").strip()
+        head = f"帮我规划行程：{q}"
+        if city:
+            head += f"（城市：{city}"
+            if days:
+                head += f"，{days} 天"
+            head += "）"
+        text = (
+            f"{head}\n\n"
+            "请按以下工作流执行（Trip Planner 提案模式，更快且点位更贴合需求）：\n"
+            "1. 调用 `tripplanner_find_pois` 查该城市的库内真实点位（可按关键词多查几轮）；\n"
+            "2. 基于查询结果自己拟逐日点位清单（每天点数量力而行，注意主题分区与步行距离，"
+            "把用户的硬约束写进每个点的 note）；\n"
+            "3. 拿不准时先 `tripplanner_plan_trip` 传 `dry_run=true` 秒级校验；\n"
+            "4. 正式调用 `tripplanner_plan_trip`，把清单作为 `proposal` 参数传入；\n"
+            "5. 行程定稿后调用 `tripplanner_open_plan` **一次**展示面板。\n"
+            "若 find_pois 查不到该城市，改用只传 query 的默认路径即可。"
+        )
+        return ok(id_, {"description": "Trip Planner 提案模式行程规划",
+                        "messages": [{
+                            "role": "user",
+                            "content": {"type": "text", "text": text},
+                        }]})
 
     if method == "resources/read":
         uri = params.get("uri") or ""

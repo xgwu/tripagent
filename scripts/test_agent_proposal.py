@@ -156,8 +156,8 @@ case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
 # ==================== 用例 D：MCP 工具面 ====================
 print("\n== 用例 D：MCP 工具面")
 srv = _load_mcp()
-case("D1 SERVER_VERSION 已 +1（= 0.5.4-m5）",
-     srv.SERVER_VERSION == "0.5.4-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION = 0.5.5-m5（Phase 2.5 引导通道）",
+     srv.SERVER_VERSION == "0.5.5-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
 case("D2 schema 有 proposal（array，item 必填 day+stops）",
@@ -248,6 +248,43 @@ _sm = srv.plan_summary({"city": "杭州", "days": 2, "dayList": [], "latency_s":
 case("F4 摘要：agent → 「调用方 agent」", "提案来源=调用方 agent" in _sm)
 _sm2 = srv.plan_summary({"city": "杭州", "days": 2, "dayList": [], "latency_s": 1})
 case("F5 摘要：旧数据无字段 → 「-」不崩", "提案来源=-" in _sm2)
+
+# ==================== 用例 G：引导通道（instructions / description / prompts）====================
+# Phase 2.5（2026-10-11）：让任何宿主 agent 自动走提案路径 —— 三层引导：
+#   initialize.instructions（注入系统提示，零配置）+ PLAN_TOOL description 硬化 +
+#   prompts plan-trip 模板（显式入口）。
+print("\n== 用例 G：引导通道（自动走提案路径）")
+_init = srv.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": {"protocolVersion": "2025-06-18", "capabilities": {}}})
+_init_res = _init["result"]
+case("G1 initialize 响应含 instructions 且点出提案工作流",
+     "instructions" in _init_res
+     and "find_pois" in _init_res["instructions"]
+     and "proposal" in _init_res["instructions"]
+     and "tripplanner_open_plan" in _init_res["instructions"])
+case("G2 capabilities 声明 prompts",
+     "prompts" in _init_res.get("capabilities", {}))
+_pl = srv.handle({"jsonrpc": "2.0", "id": 2, "method": "prompts/list", "params": {}})
+_pnames = [p.get("name") for p in _pl["result"].get("prompts", [])]
+case("G3 prompts/list 提供 plan-trip 模板", "plan-trip" in _pnames)
+_pg = srv.handle({"jsonrpc": "2.0", "id": 3, "method": "prompts/get",
+                  "params": {"name": "plan-trip",
+                             "arguments": {"query": "苏州2天园林"}}})
+_msgs = _pg["result"]["messages"]
+_ptext = _msgs[0]["content"]["text"] if _msgs else ""
+case("G4 prompts/get 返回消息且正文含完整工作流",
+     _msgs and _msgs[0]["role"] == "user"
+     and "find_pois" in _ptext and "proposal" in _ptext
+     and "dry_run" in _ptext and "open_plan" in _ptext)
+case("G5 prompts/get 未知名 → -32602",
+     srv.handle({"jsonrpc": "2.0", "id": 4, "method": "prompts/get",
+                 "params": {"name": "nope"}}).get("error", {}).get("code") == -32602)
+_ptool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
+_pd = _ptool["description"]
+case("G6 PLAN_TOOL description：默认路径话术 + 量化激励 + 退回条件",
+     "默认应该走这条路" in _pd and "56%" in _pd
+     and "仅当" in _pd and "慢速默认路径" in _pd)
+case("G7 SERVER_VERSION 已 +1（= 0.5.5-m5）", srv.SERVER_VERSION == "0.5.5-m5")
 
 print("\n" + "=" * 56)
 if FAIL:
