@@ -156,8 +156,8 @@ case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
 # ==================== 用例 D：MCP 工具面 ====================
 print("\n== 用例 D：MCP 工具面")
 srv = _load_mcp()
-case("D1 SERVER_VERSION = 0.5.6-m5（Phase 3 懒文案）",
-     srv.SERVER_VERSION == "0.5.6-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION = 0.5.7-m5（面板导出按钮摘除）",
+     srv.SERVER_VERSION == "0.5.7-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
 case("D2 schema 有 proposal（array，item 必填 day+stops）",
@@ -238,7 +238,7 @@ case("F1 面板徽标：planSource=agent → 「Agent 提案」",
      'String(plan.planSource || "") === "agent"' in _html
      and "Agent 提案</span>" in _html
      and "modeBadge + srcBadge + violBadge" in _html)
-case("F2 PANEL_VERSION 已 +1（= m20）", 'PANEL_VERSION = "m20"' in
+case("F2 PANEL_VERSION 已 +1（= m21）", 'PANEL_VERSION = "m21"' in
      open(os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py"),
           encoding="utf-8").read())
 case("F3 plan_summary 文本带「提案来源=」", "提案来源=" in
@@ -284,7 +284,7 @@ _pd = _ptool["description"]
 case("G6 PLAN_TOOL description：默认路径话术 + 量化激励 + 退回条件",
      "默认应该走这条路" in _pd and "56%" in _pd
      and "仅当" in _pd and "慢速默认路径" in _pd)
-case("G7 SERVER_VERSION = 0.5.6-m5", srv.SERVER_VERSION == "0.5.6-m5")
+case("G7 SERVER_VERSION = 0.5.7-m5", srv.SERVER_VERSION == "0.5.7-m5")
 
 print("\n" + "=" * 56)
 if FAIL:

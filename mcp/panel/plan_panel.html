@@ -97,7 +97,6 @@
 <div id="alert" class="alert"></div>
 
 <div class="toolbar" id="toolbar" style="display:none">
-  <button class="primary" id="btnExport" onclick="exportMd()">⬇ 导出 Markdown</button>
   <span class="badge b-idle" id="chan">通道未探测</span>
   <span class="hint" id="toolHint"></span>
 </div>
@@ -343,7 +342,7 @@
       if (badge){ badge.textContent = "线上后端"; badge.className = "badge b-blue"; }
     } else if (apiMode === "down"){
       text = "⚠ 线上后端不可达：" + (apiErr || "连接失败")
-        + (REMOTE_BASE ? "　→ 换点 / 拖拽 / 导出暂不可用" : "　（未注入后端地址）");
+        + (REMOTE_BASE ? "　→ 换点 / 拖拽暂不可用" : "　（未注入后端地址）");
       if (badge){ badge.textContent = "后端不可用"; badge.className = "badge b-bad"; }
     } else if (apiMode === "host"){
       text = "⚠ 线上后端不可用：" + apiErr + "　→ 面板交互暂不可用";
@@ -1305,81 +1304,6 @@
     });
     box.addEventListener("dragend", clearDrag);
   })();
-
-  // ---------------- M2：导出 Markdown ----------------
-  window.exportMd = function(){
-    var hint = document.getElementById("toolHint");
-    trace("export.click", "format=markdown");
-    if (!LAST){
-      hint.textContent = "还没有行程可导出";
-      showAlert("⚠ 面板还没有行程数据，导出暂不可用。请点「重新拉取行程」，"
-        + "或直接对助手说一句需求重新生成行程。");
-      return;
-    }
-    hint.textContent = "导出中…";
-    // M3：把**当前渲染的行程**一并带上 —— 线上后端无状态，必须自带内容，
-    // 才能保证导出的一定是用户眼前这份（而非云端会话里的另一份）。
-    apiCall("/api/export", "tripplanner_export", { format: "markdown", plan: LAST })
-      .then(function(sc){
-        if (!sc || !sc.ok){
-          var m = (sc && sc.error) || "未知原因";
-          hint.textContent = "导出失败：" + m;
-          showAlert("⚠ 导出失败：" + m);
-          return;
-        }
-        clearAlert();
-        trace("export.ok", (sc.filename || "") + " " + (sc.text || "").length + "字");
-        deliver(sc.filename || "TripPlanner.md", sc.text || "");
-      })["catch"](function(e){ hint.textContent = "导出失败：" + e.message; });
-  };
-
-  function deliver(filename, text){
-    var hint = document.getElementById("toolHint");
-    // 正路：宿主 ui/download-file。
-    // 为什么不用 <a download>：面板 iframe 的 sandbox 是
-    // "allow-scripts allow-same-origin allow-forms"，**没有 allow-downloads**
-    // （2026-10-09 从 app.asar loadResource() 取证）⇒ 浏览器会拦掉下载。
-    if (hostCaps && hostCaps.downloadFile){
-      request("ui/download-file", {
-        contents: [{ uri: "file:///" + filename, mimeType: "text/markdown", text: text }]
-      }).then(function(){
-        hint.textContent = "✅ 已通过宿主下载：" + filename;
-      }).catch(function(e){
-        log("!", "ui/download-file 失败：" + e.message);
-        copyFallback(text, hint, filename);
-      });
-      return;
-    }
-    copyFallback(text, hint, filename);
-  }
-
-  function copyFallback(text, hint, filename){
-    if (navigator.clipboard && navigator.clipboard.writeText){
-      navigator.clipboard.writeText(text).then(function(){
-        hint.textContent = "✅ 宿主不支持直接下载，Markdown 已复制到剪贴板（" + text.length + " 字）";
-      }).catch(function(){
-        showText(text, hint, filename);
-      });
-    } else {
-      showText(text, hint, filename);
-    }
-  }
-
-  function showText(text, hint, filename){
-    hint.textContent = "无法自动下载/复制（" + filename + "），请手动复制下方内容：";
-    var box = document.getElementById("exportBox");
-    if (!box){
-      box = document.createElement("textarea");
-      box.id = "exportBox";
-      box.style.cssText = "width:100%;height:170px;margin-top:8px;font-family:ui-monospace,"
-        + "Consolas,monospace;font-size:11px;border:1px solid #e3e6ea;border-radius:8px;padding:8px";
-      document.getElementById("toolbar").parentNode.insertBefore(
-        box, document.getElementById("content"));
-    }
-    box.value = text;
-    box.focus();
-    box.select();
-  }
 
   // ---------------- 数据获取 ----------------
   // 通道 1（主）：云端 `GET /api/plan?shape=mcp&session=<sid>` —— 回**本会话当前行程**。

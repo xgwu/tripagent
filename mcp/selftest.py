@@ -212,11 +212,11 @@ def phase_protocol():
         # ---- M2 面板能力 ----
         check("面板含 M2 换点入口（replace_poi）", "tripplanner_replace_poi" in html)
         check("面板含 M2 挪时段入口（move_poi）", "tripplanner_move_poi" in html)
-        check("面板含 M2 导出入口（export）", "tripplanner_export" in html)
+        # 2026-10-11 Kenny：导出 markdown 没啥用 ⇒ 摘掉**面板入口**（工具仍保留）。
+        check("面板已无「导出 Markdown」入口（export 按钮已摘）",
+              "btnExport" not in html and "exportMd" not in html)
         check("面板含拖拽排序（draggable）", "draggable" in html)
         check("面板含地图加载逻辑（webapi.amap.com）", "webapi.amap.com" in html)
-        # 面板 iframe 的 sandbox 没有 allow-downloads ⇒ 导出必须走宿主能力
-        check("面板走宿主下载能力（ui/download-file）", "ui/download-file" in html)
         check("resources/read 已把 key 占位符替换掉", "__AMAP_JS_KEY__" not in html)
         # key 安全：磁盘上的 panel 文件必须是占位符，真实 key 只在 read 时注入。
         # 注意**只断言占位符存在** —— 面板的提示文案里会提到 `amap_js_key`
@@ -231,9 +231,9 @@ def phase_protocol():
         # ---- M5：后端**全走线上**（本地 HTTP 服务已下线）----
         # 背景：宿主 tools/call 通道实测不通（面板 ping 10s 超时）；M2 起的本地
         # HTTP 兜底也在 M5 撤掉 —— 因为 MCP App 要打包分享，规划必须在云端做。
-        check("面板含后端 HTTP 客户端（probeApi + 五个端点）",
+        check("面板含后端 HTTP 客户端（probeApi + 四个端点）",
               all(k in html for k in ("probeApi", "/api/health", "/api/plan",
-                                      "/api/replace", "/api/move", "/api/export")))
+                                      "/api/replace", "/api/move")))
         check("面板保留宿主通道为兜底（tools/call 仍在）", "tools/call" in html)
         check("panel 文件用线上后端占位符（真实地址/凭据不入库）",
               "__REMOTE_API_BASE__" in raw_panel and "__REMOTE_API_AUTH__" in raw_panel

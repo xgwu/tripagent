@@ -242,7 +242,7 @@ case("D10 摘要标注 lazy 模式与下一步", "文案懒生成" in _sm and "o
 _sm2 = srv.plan_summary({"city": "苏州", "days": 1, "dayList": [], "latency_s": 1})
 case("D11 无 copyMode 旧数据摘要不受影响", "文案懒生成" not in _sm2)
 
-case("D12 SERVER_VERSION = 0.5.6-m5", srv.SERVER_VERSION == "0.5.6-m5")
+case("D12 SERVER_VERSION = 0.5.7-m5", srv.SERVER_VERSION == "0.5.7-m5")
 
 # ========== G 组：换点/挪时段后自动补当天文案（2026-10-11 报障） ==========
 # 报障「点击更换 POI 点位后，当天文案在面板上消失了」——keep_day_meta 刻意只保

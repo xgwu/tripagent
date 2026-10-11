@@ -59,10 +59,10 @@ def main() -> int:
 
     # 3) 关键锚点（面板与 server 的工具名 / 占位符必须对得上）
     for anchor in ("__AMAP_JS_KEY__", "tripplanner_replace_poi", "tripplanner_move_poi",
-                   "tripplanner_export", "tripplanner_get_plan", "tripplanner_panel_ready",
-                   "ui/download-file", "draggable", "webapi.amap.com",
+                   "tripplanner_get_plan", "tripplanner_panel_ready",
+                   "draggable", "webapi.amap.com",
                    # M2.1：本地 HTTP API（宿主 tools/call 通道已实测不通）
-                   "/api/health", "/api/plan", "/api/replace", "/api/move", "/api/export",
+                   "/api/health", "/api/plan", "/api/replace", "/api/move",
                    "probeApi",
                    # M2.2：可观测性（失败必须看得见，否则又回到「点了没反应」）
                    "showAlert", "unhandledrejection", "/api/log", "ensureApi",
@@ -105,9 +105,12 @@ def main() -> int:
                            html))
         and "本地" not in re.search(r'var\s+BACKENDS[\s\S]{0,220}', html).group(0),
         "BACKENDS 应为空数组 + 仅 push 线上")
-    # 导出必须把当前行程带给后端（线上无状态，不带就没有内容可导）
-    chk("导出把当前行程传给后端（plan: LAST）",
-        re.search(r'apiCall\(\s*"/api/export"[^)]*plan:\s*LAST', html, re.S) is not None)
+    # 面板「导出 Markdown」按钮已移除（2026-10-11 Kenny：导出 markdown 没啥用）。
+    # 只摘**面板入口**；`tripplanner_export` 工具与云端 `/api/export` 仍保留 ——
+    # agent 若有需要仍可自行调用导出。这里钉住「按钮不再回来」防复发。
+    chk("面板已无「导出 Markdown」按钮",
+        "btnExport" not in html and "exportMd" not in html
+        and 'id="exportBox"' not in html)
     # 「拉行程」走 shape=mcp + session（云端无状态，靠 session 认领「本会话当前行程」）
     chk("拉行程带 shape=mcp + session",
         re.search(r'"/api/plan\?shape=mcp"', html) is not None
