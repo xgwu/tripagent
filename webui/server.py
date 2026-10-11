@@ -64,7 +64,7 @@ CFG: dict = {}
 #   `tripplanner_find_pois` 的后端：让**调用方 agent** 在写提案前能查到「库内真实有哪些点」，
 #   而不是凭世界知识编名字（见 docs/MCP-Agent提案外包-方案探讨.md §5）。
 #   拆在云端而不是客户端读库，因为 M5 起 MCP 是**瘦客户端**（分享包里没有 data/）。
-WEBUI_VERSION = "m11"
+WEBUI_VERSION = "m12"
 
 # ---- 路径规划缓存（P1-1：高德骑行/步行实际路网） ----
 ROUTE_CACHE_PATH = os.path.join(ROOT, "data", "route_cache.json")
@@ -1582,6 +1582,30 @@ def _session_get(sid: str):
         return plan
 
 
+def _regen_one_day_copy(cname: str, query: str, nd: dict):
+    """换点 / 挪时段后对受影响天补跑文案（LLM 单天 ~1-1.5s）。
+
+    为什么必须有（2026-10-11 报障「换点后当天文案消失」）：
+      `keep_day_meta` 只沿用 theme（2026-10-10 决策：旧 reason/tips 逐点点名，
+      换掉一个点后就是过期信息，宁可没有）⇒ 换点/挪时段后 reason/tips 必然为空、
+      面板出现空洞。正解不是沿用旧文案，而是**按新时间轴重写**——与 compose 阶段
+      同一套 `_regen_reasons`（only_days 单天口径），「文案对齐最终时间轴」铁律不变。
+    lazy 行程不补：copyMode=lazy 本来就没有文案，open_plan 定稿时统一补。
+    失败 fail-open 返回 None（维持空文案现状，不拖垮换点交互）。
+    """
+    try:
+        from src import m2_planner as _m2
+        c = poi_db.load_city(cname)
+        all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, c) for p in c["pois"])}
+        regen, okr = _m2._regen_reasons(
+            c, query or "", {"days": [nd]}, all_pois, only_days=[nd.get("day")])
+        if okr:
+            return regen.get(nd.get("day"))
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
 def _session_apply(sess: str, plan, day) -> None:
     """把「改动后的一天」写回会话里的整份行程。
 
@@ -2295,6 +2319,16 @@ class Handler(BaseHTTPRequestHandler):
                 # 与 /api/move 保持同一处理（两处必须对称）。
                 data["day"] = plan_view.normalize_day(
                     data["day"], plan_view.poi_coords(cname))
+                # 换点后 reason/tips 已被刻意清空（keep_day_meta 只保 theme，旧文案
+                # 逐点点名已过期）⇒ 按新时间轴补写当天文案。lazy 行程跳过
+                # （open_plan 定稿统一补）；失败 fail-open = 空文案现状。
+                _plan_in = payload.get("plan")
+                if not (isinstance(_plan_in, dict) and _plan_in.get("copyMode") == "lazy"):
+                    entry = _regen_one_day_copy(
+                        cname, payload.get("query") or "", data["day"])
+                    if entry:
+                        data["day"].update(
+                            {k: v for k, v in entry.items() if v})
                 # M5：会话表同步（面板带了整份 plan 才能复现 apply_day）
                 _session_apply(payload.get("session") or "", payload.get("plan"),
                                data["day"])
@@ -2334,6 +2368,16 @@ class Handler(BaseHTTPRequestHandler):
                 if data.get("ok"):  # 归一化：补照片 / 坐标，面板无需再自己拼
                     data["day"] = plan_view.normalize_day(
                         data["day"], plan_view.poi_coords(cname))
+                    # 与 /api/replace 对称：挪时段后顺序变了，旧 reason 的「依次
+                    # 游览 A→B→C」同样过期 ⇒ 按新顺序补写当天文案（lazy 跳过）。
+                    _plan_in = payload.get("plan")
+                    if not (isinstance(_plan_in, dict)
+                            and _plan_in.get("copyMode") == "lazy"):
+                        entry = _regen_one_day_copy(
+                            cname, payload.get("query") or "", data["day"])
+                        if entry:
+                            data["day"].update(
+                                {k: v for k, v in entry.items() if v})
                     # M5：会话表同步（面板带了整份 plan 才能复现 apply_day）
                     _session_apply(payload.get("session") or "", payload.get("plan"),
                                    data["day"])

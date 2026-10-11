@@ -143,7 +143,7 @@ case("C7 POST /api/copy 端点存在", '"/api/copy"' in _sv and "文案生成失
 case("C8 幂等分支（full 原样返回）", '"regenerated": False' in _sv)
 case("C9 补完置 full + 会话回写",
      'plan["copyMode"] = "full"' in _sv and "_session_put(sess, plan)" in _sv)
-case("C10 WEBUI_VERSION = m11", 'WEBUI_VERSION = "m11"' in _sv)
+case("C10 WEBUI_VERSION = m12", 'WEBUI_VERSION = "m12"' in _sv)
 
 print("\n== 用例 D：MCP 工具契约与行为")
 _spec = importlib.util.spec_from_file_location(
@@ -243,6 +243,45 @@ _sm2 = srv.plan_summary({"city": "苏州", "days": 1, "dayList": [], "latency_s"
 case("D11 无 copyMode 旧数据摘要不受影响", "文案懒生成" not in _sm2)
 
 case("D12 SERVER_VERSION = 0.5.6-m5", srv.SERVER_VERSION == "0.5.6-m5")
+
+# ========== G 组：换点/挪时段后自动补当天文案（2026-10-11 报障） ==========
+# 报障「点击更换 POI 点位后，当天文案在面板上消失了」——keep_day_meta 刻意只保
+# theme（旧 reason/tips 逐点点名已过期），正解是按新时间轴重写而非清空了事。
+_sv_txt = open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
+case("G1 _regen_one_day_copy 定义（复用 _regen_reasons 单天口径）",
+     "def _regen_one_day_copy(" in _sv_txt
+     and 'only_days=[nd.get("day")]' in _sv_txt)
+case("G2 /api/replace 接线（full 才补，lazy 跳过）",
+     _sv_txt.count('_plan_in.get("copyMode") == "lazy"') >= 2
+     and "entry = _regen_one_day_copy(" in _sv_txt)
+case("G3 /api/move 对称接线（挪时段后旧「依次游览」同样过期）",
+     _sv_txt.count("entry = _regen_one_day_copy(") == 2)
+case("G4 fail-open：异常吞掉返回 None 不拖垮换点",
+     "except Exception:  # noqa: BLE001\n        pass\n    return None" in _sv_txt)
+case("G5 WEBUI_VERSION = m12", 'WEBUI_VERSION = "m12"' in _sv_txt)
+# 行为级：_regen_one_day_copy 用归一化 day 真跑（打桩 LLM）
+_ws = importlib.util.spec_from_file_location(
+    "_webui_lazy_g", os.path.join(ROOT, "webui", "server.py"))
+wsv = importlib.util.module_from_spec(_ws)
+_ws.loader.exec_module(wsv)
+import src.llm_client as _llcg  # noqa: E402
+_orig_chat_g = _llcg.chat
+_llcg.chat = lambda messages, **kw: json.dumps(
+    {"days": [{"day": 1, "theme": "新主题", "reason": "新文案",
+               "tips": ["新提示"]}]}, ensure_ascii=False)
+try:
+    _nd = plan_view.normalize_day(
+        {"day": 1, "weekday": "周一", "finish": "17:00", "travel_km": 0,
+         "travel_h": 0,
+         "timeline": [{"type": "poi", "id": "SZ001", "name": "拙政园",
+                       "start": "09:00", "end": "11:00", "arrive": "08:50"}]},
+        plan_view.poi_coords("苏州"))
+    _entry = wsv._regen_one_day_copy("苏州", "苏州园林", _nd)
+    case("G6 行为级：归一化 day 输入 → 返回新文案 entry",
+         isinstance(_entry, dict) and _entry.get("reason") == "新文案",
+         json.dumps(_entry, ensure_ascii=False)[:120] if _entry else "None")
+finally:
+    _llcg.chat = _orig_chat_g
 
 print("\n" + "=" * 56)
 if FAIL:
