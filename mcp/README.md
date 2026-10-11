@@ -120,10 +120,10 @@ resourceDomains = ["http://127.0.0.1:*",
 | 工具 | 面板 | 作用 |
 |---|---|---|
 | `tripplanner_open_plan` | ★开 | **面板的唯一入口**。展示当前最新的行程（还没有行程则提示先调 `plan_trip`）。**每个需求调一次**：同一需求定稿后调一次，用户提出**新需求**、新行程定稿后**再调一次**（⇒ 新面板） |
-| `tripplanner_plan_trip` | — | **主入口**。一句话需求 → 真实行程（**不开面板**，可反复调用/重拍）。**Phase 1** 起支持可选 `proposal`（agent 自拟逐日点位清单，跳过服务端提案 LLM）与 `dry_run`（只校验提案不规划）——不传则行为不变 |
+| `tripplanner_plan_trip` | — | **主入口**。一句话需求 → 真实行程（**不开面板**，可反复调用/重拍）。可选 `copy_mode="lazy"` 跳过逐日文案生成（重拍更快）。**点位提案一律由服务端自己做**——agent 只理解需求 + 调它（原 Phase 1 的 `proposal` / `dry_run` 对外参数已于 2026-10-11 **移除**） |
 | `tripplanner_get_plan` | — | 面板握手后主动拉行程（M1 数据通道） |
 | `tripplanner_list_cities` | — | 列出 31 个可规划城市 + POI 数 |
-| `tripplanner_find_pois` | — | **Phase 0** POI 发现：按 `city`/`keyword`/`category` 查**库内真实点位**（id/名称/类目/时长/开放/闭馆/亲子/价格/标签）。供调用方 agent 在提案前对齐事实，别凭世界知识编名字 |
+| `tripplanner_find_pois` | — | **Phase 0** POI 发现：按 `city`/`keyword`/`category` 查**库内真实点位**（id/名称/类目/时长/开放/闭馆/亲子/价格/标签）。只读工具，用来回答「这个城市库内有哪些点」，**不是**规划前置步骤 |
 | `tripplanner_panel_ready` | — | 面板自报 `appInstanceId`（A 方案，诊断用） |
 | `tripplanner_ping` | — | 连通性对照组 |
 | `tripplanner_replace_poi` | — | **M2** 换点（面板「🔁」按钮） |
@@ -1740,17 +1740,30 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 
 ---
 
-## 🤝 Agent 提案外包工作流（**可选高级用法**；默认不走这条）
+## 🤝 Agent 提案外包 —— **已退役**（2026-10-11）
 
-> ⚠️ **2026-10-11 回退（Kenny 实测）**：Phase 2.5 曾用三层引导（`instructions` 硬化 +
-> `plan_trip` description 硬化 + `prompts` 模板）把宿主 agent **推**向此路径，**实测效果
-> 不佳** ⇒ 引导已**全部撤回**。**默认行为 = 只传 query、由服务端自己提案**（agent 只负责
-> 理解需求 + 调 `plan_trip`）。本工作流仍**完全可用**（`proposal` / `dry_run` 参数保留），
-> 但仅作**可选能力**：当调用方已自行确认过库内点位、确实想直接指定时才用。
+> ⚠️ **对外参数已移除**（`SERVER_VERSION` 0.5.9-m5）：`tripplanner_plan_trip` **不再接受**
+> `proposal` / `dry_run`。**默认且唯一的行为 = agent 只理解需求 + 调 `plan_trip`，
+> 点位提案由服务端自己做。**
 
-> 面向**调用方 agent**（WorkBuddy / 任意 MCP 客户端）的操作手册。
-> 契约唯一权威 = `tripplanner_plan_trip` 的 inputSchema + description（§5 教训：
-> agent 只读工具定义）；本节是**参考实现**（工作流 + 示例 + 反例）。
+**为什么退役**（三步演进，每步都有实测）：
+
+1. **Phase 2.5 —— 引导不好使**：曾用三层引导（`instructions` 硬化 + `plan_trip`
+   description 硬化 + `prompts` 模板）把宿主 agent **推**向提案路径，实测效果不佳
+   ⇒ 引导全部撤回（提交 `e361571`）。
+2. **撤引导不够 —— 缓存绕不过**：宿主按 `appDefinitionSignature` **缓存工具定义**，且
+   `listTools` 可能超时（2026-10-11 实测两次 `-32001 timeout`）⇒ 只要 schema 里还有
+   `proposal`，agent 就照旧缓存的引导走提案（面板因此同时显示「M7 经验提案」+「Agent 提案」；
+   取证：`find_pois` 被调 + 云端 `planSource=agent`）。
+3. **彻底移除 —— 从 schema 拿掉**：agent 由此**无从**传提案，无论宿主缓存新旧定义、
+   `listTools` 是否超时。守卫已**反向**钉住（`test_agent_proposal.py` D/E/G 组）。
+
+**内核与云端能力保留**（服务端提案走同一条 `proposal_planner.plan`）：
+`validate_proposal` / `agent_proposal` 注入点 / 云端 `/api/plan` 的 proposal 解析全部保留
+（直连 API 仍可用，MCP 层无入口）；将来若要恢复，只需在 MCP 层加回参数。
+`tripplanner_find_pois` 也保留（只读的「查库内有哪些点」工具，与提案路径无关）。
+
+> 📦 **以下小节为退役前的能力说明，仅存档备查**；`proposal` / `dry_run` 参数已不可用。
 
 ### 标准工作流（四步）
 
@@ -1827,6 +1840,7 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 | **Phase 0** | 🔎 **POI 发现工具**（架构探讨落地的第一步，见 `docs/MCP-Agent提案外包-方案探讨.md` §6）：新增 MCP 工具 `tripplanner_find_pois` + 云端 `GET /api/pois`（`city` / `keyword` / `category` / `limit`）。用途＝让**调用方 agent** 在写提案前能查「库内真实有哪些点」，而不是凭世界知识编名字（这正是 M1 存在的理由）。**刻意不改 `plan_trip`** ⇒ 零风险、可独立发布；它是后续「提案外包」（Phase 1 可选 `proposal` 参数）所有动作的**地基**。`SERVER_VERSION` 0.5.1-m5→**0.5.2-m5**、`WEBUI_VERSION` m8→**m9** | ✅ **完成（2026-10-11）** —— 🆕 `scripts/test_find_pois.py`（云端过滤 11 项 + 端点接线 2 项 + 工具契约 5 项 + MCP 行为 7 项）；自检新增 6 项 find_pois 实测；待部署 + 宿主侧实测 |
 | **Phase 1** | 🤝 **Agent-Proposal（提案外包，共存不替换）**：`tripplanner_plan_trip` 加**可选** `proposal`（逐天点位清单，`{day,theme,stops:[{id/name,note}],alternates}`，点位须来自 `find_pois`）与 `dry_run`（只校验不规划，确定性口径与正式规划同一套 `_ground_one`）。传了 ⇒ 云端**跳过提案 LLM**（省「重的那一次」，实测 −34% tok / −56% 墙钟）直接进落地+修正闭环+求解；**不传 ⇒ 一切照旧**。配套：`POST /api/plan`（提案 JSON 走 body，不受 URL 长度限制；do_POST 合并进 query 后复用 do_GET 同一段处理器）；`plan_source`/`planSource` 全链路落账（agent/server）；带 proposal 的请求**绕过** LLM 结果缓存；`proposal_mode=auto/server/agent`（服务端参数，MCP 面不暴露）；多城联游与 mode≠m7 **显式拒绝**（不静默丢提案）。`SERVER_VERSION` 0.5.2-m5→**0.5.3-m5**、`WEBUI_VERSION` m9→**m10** | ✅ **代码完成（2026-10-11）** —— 🆕 `scripts/test_agent_proposal.py`（回执口径 10 + 注入点 5 + webui 接线 9 + 工具契约 7 + MCP 行为 5）；HTTP 探针 `dist/_probe_agent_proposal_http.py` **10/10**（含真实规划端到端 `planSource=agent` 10.2s）；`release_gate` 五步全绿（MCP 自检待部署后复验）；待部署 + 宿主侧实测 |
 | **Phase 2.5 / 回退** | 🧭 **实验 + 撤回**：曾加三层引导（`instructions` 硬化 + `plan_trip` description 硬化 + `prompts` plan-trip 模板）让**任意**宿主 agent 自动走提案路径，不依赖用户配置 skill；**同日实测效果不佳** ⇒ **全部撤回**，回到「agent 只理解需求 + 调 `plan_trip`、服务端自己提案」 | ↩️ **已回退（2026-10-11）** —— `proposal` / `dry_run` 参数**保留为可选高级用法**（工具数 10 不变）；`SERVER_VERSION` 0.5.7-m5→**0.5.8-m5**；`test_agent_proposal` **G 组反向钉住「无引导」**（instructions 无提案话术 / capabilities 无 prompts / `prompts/*` 返 -32601 / description 无「默认走这条路」） |
+| **Phase 1 退役** | 🚫 **移除 `plan_trip` 的 `proposal` / `dry_run` 对外参数**（2026-10-11 Kenny「彻底移除」）：撤引导（`e361571`）**不足以杜绝** —— 宿主按 `appDefinitionSignature` **缓存工具定义**、`listTools` 又可能超时（实测两次 `-32001`）⇒ 只要 schema 里还留着 `proposal`，agent 就照旧缓存的引导走提案（复现：面板同时显示「M7 经验提案」+「Agent 提案」；取证＝`find_pois` 被调用 + 云端 `planSource=agent`）。**修法**：从 `PLAN_TOOL.inputSchema` / description / `run_plan` 形参与 POST 分支 / handler 的 `dry_run` 回执整段移除；`instructions` 早已是中性总纲。内核与云端能力**保留**（服务端提案走同一条 `proposal_planner.plan`；云端 `/api/plan` 的 proposal 解析留着，MCP 层无入口）。`SERVER_VERSION` 0.5.8-m5→**0.5.9-m5**（PANEL m21 / WEBUI m13 不动） | ✅ **完成（2026-10-11）** —— `test_agent_proposal.py` 改为**双向钉住**：A/B/C 组钉内核与云端能力仍在，D/E/G 组**反向**钉「schema 无 proposal/dry_run / 硬传也被无视（仍走 GET、payload 为空）/ description 与 instructions 无任何提案话术」；`test_lazy_copy` 47/47、`run_tests` 28/28、`release_gate --mcp` 全绿。**待部署 + push** |
 
 ### 🐞 缺陷记录：hop 段里程/时长重复（2026-10-10 报障，`PANEL_VERSION` m15 修）
 

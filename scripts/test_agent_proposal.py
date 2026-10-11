@@ -1,19 +1,25 @@
 # -*- coding: utf-8 -*-
-"""Phase 1 守卫：Agent-Proposal —— `plan_trip` 可选 `proposal` / `dry_run` 校验回执。
+"""Agent-Proposal 守卫（Phase 1 内核能力保留 / 对外入口已退役）。
 
-见 docs/MCP-Agent提案外包-方案探讨.md §6：调用方 agent 可自己拟逐日点位清单，
-云端跳过自己的提案 LLM（省「重的那一次」），直接进入落地+修正闭环+求解。
-**共存不替换**：不传 proposal ⇒ 一切照旧（服务端自己提案）。
+⚠️ 2026-10-11 Kenny：「彻底移除」——`plan_trip` 的 `proposal` / `dry_run`
+**对外参数已删除**（SERVER 0.5.9-m5）。原因：撤引导（e361571）不足以杜绝 —— 宿主
+按 `appDefinitionSignature` 缓存工具定义，`listTools` 又可能超时，只要 schema 里还有
+proposal，agent 就有机会走提案（实测复发）。现在 = **agent 只理解需求 + 调 plan_trip**，
+提案一律由服务端自己做。
 
-本文件钉住四条：
-  A. `proposal_planner.validate_proposal`：dry_run 校验回执（确定性口径与正式规划
-     同一套 `_ground_one`）—— 命中 / 未命中+候选 / 跨天重复 / 天号越界 / 超员 / 空天；
+内核与云端能力**保留**（服务端提案走同一条 `proposal_planner.plan`；未来若要恢复只需
+在 MCP 层加回参数）：
+  A. `proposal_planner.validate_proposal`：校验回执（确定性口径与正式规划同一套
+     `_ground_one`）—— 命中 / 未命中+候选 / 跨天重复 / 天号越界 / 超员 / 空天；
   B. `plan()` 注入点：`agent_proposal` 参数存在、A 阶段跳过、`plan_source` 全路径落账；
-  C. webui `/api/plan` 接线：POST body 合并（提案 JSON 可能远超 URL 长度）、
-     dry_run 短路、`use_prop` 绕过 LLM 结果缓存、`planSource` 随归一化下发；
-  D. MCP 工具面：schema 有 proposal/dry_run、契约写在 description、
-     `plan_trip` 仍**不带** `_meta`（面板入口唯一，test_panel_single_open 的领地）、
-     proposal 走 POST payload、dry_run 回执文本可读。
+  C. webui `/api/plan` 接线：POST body 合并、`use_prop` 绕过 LLM 结果缓存、
+     `planSource` 随归一化下发。
+**对外入口已退役（反向钉住，防复发）**：
+  D. MCP 工具面：schema **无** proposal/dry_run、description 无提案话术、
+     `plan_trip` 仍**不带** `_meta`（面板入口唯一，test_panel_single_open 的领地）；
+  E. MCP 行为：**硬传** proposal/dry_run 也被无视（仍走 GET、payload 为空）；
+  F. 观测：面板徽标 / plan_summary「提案来源=」；G. 无引导（无 instructions 硬化、
+     无 prompts 能力）。
 
 用法：python scripts/test_agent_proposal.py
 """
@@ -153,45 +159,48 @@ case("C8 多城联游显式拒绝 proposal（不静默忽略）",
 case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
      "proposal 仅支持 mode=m7" in _sv and "提案规划内核不可用" in _sv)
 
-# ==================== 用例 D：MCP 工具面 ====================
-print("\n== 用例 D：MCP 工具面")
+# ==================== 用例 D：MCP 工具面（proposal/dry_run 对外已退役）====================
+# 2026-10-11 Kenny：「彻底移除」—— 宿主可能持缓存的旧工具定义、listTools 也可能超时，
+# 只要对外 schema 里还有 proposal，agent 就有机会走提案。故从 schema 直接拿掉。
+print("\n== 用例 D：MCP 工具面（proposal/dry_run 对外已退役）")
 srv = _load_mcp()
-case("D1 SERVER_VERSION = 0.5.8-m5（撤提案引导）",
-     srv.SERVER_VERSION == "0.5.8-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION = 0.5.9-m5（移除 proposal/dry_run）",
+     srv.SERVER_VERSION == "0.5.9-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
-case("D2 schema 有 proposal（array，item 必填 day+stops）",
-     _props.get("proposal", {}).get("type") == "array"
-     and _props["proposal"]["items"].get("required") == ["day", "stops"])
-case("D3 schema 有 dry_run（boolean）",
-     _props.get("dry_run", {}).get("type") == "boolean")
-case("D4 required 仍只有 query（proposal 可选 = 共存不替换）",
-     _plan_tool["inputSchema"].get("required") == ["query"])
-case("D5 plan_trip 仍不带 _meta（面板入口唯一，M6.3 领地）",
+case("D2 schema 已无 proposal（agent 无从传提案）", "proposal" not in _props)
+case("D3 schema 已无 dry_run", "dry_run" not in _props)
+case("D4 schema 保留 copy_mode（lazy 快路径仍在）",
+     _props.get("copy_mode", {}).get("enum") == ["full", "lazy"])
+case("D5 required 仍只有 query", _plan_tool["inputSchema"].get("required") == ["query"])
+case("D6 plan_trip 仍不带 _meta（面板入口唯一，M6.3 领地）",
      "_meta" not in _plan_tool)
-case("D6 description 仍写明 proposal 契约（来自 find_pois / dry_run / 留空走服务端）",
-     "tripplanner_find_pois" in _plan_tool["description"]
-     and "dry_run" in _plan_tool["description"]
-     and "服务端自己提案" in _plan_tool["description"])
-case("D7 run_plan 支持 proposal/dry_run 并走 POST",
-     "proposal" in inspect.signature(srv.run_plan).parameters
-     and 'payload = {"proposal": proposal or []}' in
+case("D7 description 已无 proposal/dry_run 话术（仍保留 copy_mode 引导）",
+     "proposal" not in _plan_tool["description"]
+     and "dry_run" not in _plan_tool["description"]
+     and "copy_mode" in _plan_tool["description"])
+case("D8 run_plan 签名已无 proposal/dry_run",
+     "proposal" not in inspect.signature(srv.run_plan).parameters
+     and "dry_run" not in inspect.signature(srv.run_plan).parameters)
+case("D9 源码里不再出现 proposal 走 POST 的 payload 构造（彻底清理）",
+     'payload = {"proposal": proposal or []}' not in
      open(os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py"),
           encoding="utf-8").read())
 
-# ---- MCP 行为（打桩远端，不打网络）----
-print("\n== 用例 E：MCP 行为（打桩远端）")
+# ---- MCP 行为（打桩远端，不打网络）：硬传 proposal/dry_run 也必须被无视 ----
+print("\n== 用例 E：MCP 行为 —— 硬传 proposal/dry_run 也不生效（打桩远端）")
 _captured = {}
 
 
 def _fake_remote(path, params=None, payload=None, method="GET", timeout=180.0):
-    _captured["path"], _captured["payload"], _captured["method"] = path, payload, method
-    return {"ok": True, "dry_run": True, "validation": {
-        "ok": False, "days": 2, "n_stops": 3, "n_matched": 2, "grounding_rate": 0.667,
-        "unmatched": [{"name": "不存在的假景点XYZ", "day": 2,
-                       "candidates": [{"id": _real[0]["id"], "name": _real[0]["name"]}]}],
-        "warnings": ["Day 2 排了 8 个点（建议 ≤5，超出的更可能被里程/时间约束剔除）"],
-        "note": "匹配口径与正式规划一致"}}
+    _captured["path"], _captured["params"] = path, params
+    _captured["payload"], _captured["method"] = payload, method
+    return {"ok": True, "plan": {
+        "city": "杭州", "days": 2, "mode": "m7_proposal", "planSource": "server",
+        "latency_s": 1.0, "totalTravelKm": 0.0, "totalViolations": 0,
+        "generatedAt": "2026-10-11 13:40:00", "query": "杭州2天",
+        "dayList": [{"day": 1, "weekday": "周一", "theme": "西湖", "reason": "r",
+                     "tips": "t", "finish": "18:00", "timeline": []}]}}
 
 
 srv.remote_request = _fake_remote
@@ -205,28 +214,19 @@ def _call(args):
 
 
 _prop = [{"day": 1, "stops": [{"id": "HZ001"}]},
-         {"day": 2, "stops": [{"name": "西湖"}, {"name": "不存在的假景点XYZ"}]}]
+         {"day": 2, "stops": [{"name": "西湖"}]}]
 res = _call({"query": "杭州2天", "proposal": _prop, "dry_run": True})
 sc = res.get("structuredContent") or {}
-txt = "\n".join(c.get("text", "") for c in (res.get("content") or []))
-case("E1 dry_run 走 POST 且 body 带 proposal",
-     _captured["method"] == "POST" and (_captured["payload"] or {}).get("proposal") == _prop
-     and (_captured["payload"] or {}).get("dry_run") == "1",
-     f"method={_captured['method']}")
-case("E2 回执结构化：ok=False + unmatched 透传",
-     sc.get("dry_run") and sc.get("ok") is False
-     and sc["validation"]["unmatched"][0]["name"] == "不存在的假景点XYZ")
-case("E3 回执文本：命中数 / ❌ 未命中+候选 / ⚠️ 告警 / 下一步指引",
-     "2/3" in txt and "不存在的假景点XYZ" in txt and "候选" in txt
-     and "≤5" in txt and "dry_run" in txt)
-case("E4 dry_run 不碰面板状态（opened_any 不变）",
-     srv.SESSION.opened_any is False)
-
-# 无 validation 字段的坏回执 → 不崩
-srv.remote_request = lambda path, **kw: {"ok": True}
-res = _call({"query": "杭州2天", "dry_run": True})
-case("E5 云端缺 validation 字段 → 优雅空回执不崩",
-     (res.get("structuredContent") or {}).get("validation") == {})
+case("E1 硬传 proposal/dry_run → 仍走 GET 且 payload 为空（参数已不被消费）",
+     _captured["method"] == "GET" and _captured["payload"] is None,
+     f"method={_captured['method']} payload={_captured['payload']}")
+case("E2 URL 参数里也不含 proposal/dry_run",
+     "proposal" not in (_captured["params"] or {})
+     and "dry_run" not in (_captured["params"] or {}))
+case("E3 正常返回行程（不再有 dry_run 回执分支）",
+     sc.get("ok") is True and bool(sc.get("plan")) and "dry_run" not in sc,
+     f"sc_keys={sorted(sc.keys())}")
+case("E4 不碰面板状态（opened_any 不变）", srv.SESSION.opened_any is False)
 
 # ==================== 用例 F：观测（徽标 / 摘要）====================
 # 报障（2026-10-11 Kenny）：宿主侧看不到 planSource=agent 徽标 —— planSource 只落账
@@ -277,9 +277,9 @@ _ptool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _pd = _ptool["description"]
 case("G7 PLAN_TOOL 描述不再硬化（无「默认应该走这条路」/「56%」）",
      "默认应该走这条路" not in _pd and "56%" not in _pd)
-case("G8 PLAN_TOOL 描述把 proposal 降为「可选 · 一般不需要传」",
-     "不需要传" in _pd)
-case("G9 SERVER_VERSION = 0.5.8-m5", srv.SERVER_VERSION == "0.5.8-m5")
+case("G8 PLAN_TOOL 描述已无任何提案话术（proposal/dry_run 全清）",
+     "proposal" not in _pd and "dry_run" not in _pd)
+case("G9 SERVER_VERSION = 0.5.9-m5", srv.SERVER_VERSION == "0.5.9-m5")
 
 print("\n" + "=" * 56)
 if FAIL:

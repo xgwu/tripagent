@@ -1,10 +1,16 @@
 # MCP「提案外包」架构探讨（Agent-Proposal）
 
-> ⚠️ **状态更新（2026-10-11 晚，Kenny 实测）**：本文探讨的「让宿主 agent 自动走提案
-> 路径」那一步（Phase 2.5：`instructions` 硬化 + `plan_trip` description 硬化 + `prompts`
-> 模板）**实测效果不佳 ⇒ 已全部回退**。`proposal` / `dry_run` 能力**保留为可选高级用法**，
-> 但**默认走服务端提案**（agent 只理解需求 + 调 `plan_trip`）。权威现状见
-> `mcp/README.md` 里程碑「Phase 2.5 / 回退」与 `## 🤝 Agent 提案外包工作流` 章首注记。
+> ⚠️ **状态更新（2026-10-11 晚，Kenny 拍板）**：本文探讨的「让宿主 agent 走提案路径」
+> **已整体退役**（含 Phase 2.5 引导与 Phase 1 的对外入口）：
+> 1. 三层引导（`instructions` 硬化 + `plan_trip` description 硬化 + `prompts` 模板）
+>    **实测效果不佳 ⇒ 全部撤回**（提交 `e361571`）；
+> 2. 撤回后**仍复发** —— 宿主按 `appDefinitionSignature` 缓存工具定义、`listTools` 又可能
+>    超时 ⇒ agent 照旧走提案（实测 `find_pois` 被调 + 云端 `planSource=agent`）；
+> 3. 故**彻底移除** `plan_trip` 的 `proposal` / `dry_run` 对外参数（`SERVER 0.5.9-m5`），
+>    agent 由此**无从**传提案。**现状 = agent 只理解需求 + 调 `plan_trip`，提案一律服务端自己做。**
+>
+> 内核与云端能力**保留**（服务端提案走同一条 `proposal_planner.plan`）。权威现状见
+> `mcp/README.md` 里程碑「Phase 1 退役」与 `## 🤝 Agent 提案外包 —— 已退役` 章首注记。
 
 > 探讨稿 · 2026-10-11 · 起因：能否把「理解用户需求 + 生成景点提案」交给**调用方 agent** 来做，
 > MCP 只负责「用算法验证 POI 真实存在」+「做合理的线路规划」，从而省掉不必要的 LLM 调用？
