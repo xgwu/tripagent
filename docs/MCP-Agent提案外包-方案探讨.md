@@ -254,6 +254,29 @@ A 阶段 LLM 与缓存，直接进 B 落地（未落地 gaps 仍走既有修正�
 
 ---
 
+## 11. Phase 2 实现记录（2026-10-11，已落地）
+
+**评测口径**（`scripts/eval_regression.py --agent-proposal`）：
+- 🆕 `AGENT_CASES`（4 个代表性城市：上海亲子 3 日 / 杭州骑行 / 苏州园林 / 黄果树——控制 B 阶段 LLM 成本）。
+- 🆕 `_draft_proposal()`：**确定性拟案器**模拟「理想 agent」——只用库内 POI（rating 降序 + id 升序，
+  亲子查询过滤 `family_ok=false`，必含招牌点置顶），不用 LLM ⇒ 可复现。
+- 断言七条：dry_run 全命中 / `planSource=agent` / 不落 M2 兜底 / 天数正确 / **0 违规** /
+  落地率 ≥80% / **提案保留率 ≥40%**（观察性「整批丢弃」守卫——修正闭环会合法重排/替换
+  提案：杭州 Day2 整日重组、黄果树夜游点→大瀑布，单例保留率天然波动 50~100%，
+  首版 80%/60% 均假红；「提案被消费」另有 planSource=agent 硬断言兜底）。
+  装填策略两轮迭代：固定切片（撑爆当日容量，保留率 50~62%）→ 时长预算贪心（6.5h/天、≤4 点）
+  → 加 **area 多样性**（同片区全局 ≤2 点；主题盲拟案曾把西湖沿线堆 6 点 ⇒ 整日重排假红）。
+- 门禁同 `--llm`（B 落地/修正走真实 LLM，缺 key 显式退出码 2）。
+
+**Skill 文档**（双落点）：
+- `mcp/README.md` 🆕「🤝 Agent 提案外包工作流」一节——面向任意 MCP 客户端：四步工作流、
+  proposal 契约、成本收益表、硬约束与反模式（含「stops 必须带 name」这种 dry_run 口径细节）。
+- 用户级 Skill `~/.workbuddy/skills/trip-agent-proposal/SKILL.md`——WorkBuddy 强化通道
+  （§5 结论：skill 只能当强化通道，主通道仍是工具 schema/description，已由 Phase 1 完成）。
+- 探针 `scripts/_probe_agent_proposal_eval.py`——拟案器 + dry_run 离线验证（零成本，4/4 全命中）。
+
+---
+
 ## 附：实测脚本（证据）
 
 - `dist/_probe_llm_calls.py` —— 单次规划的 LLM 调用分类计数 + token。

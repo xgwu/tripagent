@@ -1739,6 +1739,60 @@ openHostApp.created        appUrl=http://127.0.0.1:54994/mcp-apps/<appInstanceId
 
 ---
 
+## 🤝 Agent 提案外包工作流（Agent-Proposal，Phase 1 契约 + Phase 2 Skill）
+
+> 面向**调用方 agent**（WorkBuddy / 任意 MCP 客户端）的操作手册。
+> 契约唯一权威 = `tripplanner_plan_trip` 的 inputSchema + description（§5 教训：
+> agent 只读工具定义）；本节是**强化通道**（工作流 + 示例 + 反例）。
+
+### 标准工作流（四步）
+
+```
+① find_pois   —— 对齐库内事实（名字/id/类别/时长/闭日）。禁止凭世界知识编名字。
+② 拟案        —— 按用户需求拟逐日点位清单（id 优先；每天 ≤5 点）。
+③ dry_run     —— plan_trip(proposal=…, dry_run=true) 校验：未命中项 + 候选替代，秒回零成本。
+④ 正式提交    —— plan_trip(proposal=…)（同参数去掉 dry_run）；返回 planSource=agent。
+```
+
+### proposal 契约（MCP 面为**数组**，内核吃 `{"days":[…]}`，服务端已宽容归一化）
+
+```json
+[
+  { "day": 1, "theme": "主题", "reason": "思路",
+    "stops": [ { "id": "HZ001", "name": "断桥残雪·白堤", "note": "为什么去" } ] }
+]
+```
+
+- **`id` 优先**（`find_pois` 返回的库内 id），`name` 兜底（dry_run 校验按 name 匹配口径）。
+- 拟案全部来自 `find_pois` ⇒ dry_run 必然全命中；混入编造名字 → unmatched + 候选 → 自纠正后重提。
+- **不传 proposal ⇒ 服务端照旧自己提案**（默认行为，随时可用，共存不替换）。
+
+### 为什么值得走这条道（实测，2026-10-11）
+
+| 口径 | 服务端提案（现状） | Agent 提案 |
+|---|---|---|
+| A 提案 LLM | 1 次（串行头部，最重） | **0 次** |
+| 墙钟延迟 | 基准 | **−56%** |
+| 服务端 token | 基准 | **−34%**（省的是「重的那一次」） |
+| 需求理解 | 服务端 LLM（通用规则） | 调用方（已带完整对话上下文） |
+
+### 硬约束与反模式
+
+- 🔴 **`plan_trip` 不带面板**，`open_plan` 是面板唯一入口（每需求定稿后调一次）。
+- 🔴 proposal 只支持**单城 m7**；多城 / mode≠m7 显式 400（不静默）。
+- 🔴 别在 stops 里只给 `id` 不给 `name`——dry_run 的确定性匹配按 name 口径（id 是规划落地优先键）。
+- ⚠️ 提案每次都可能不同 ⇒ 带 proposal 的请求**绕过 LLM 结果缓存**（与旧路径不同，同参重跑不保证一致）。
+- ⚠️ 未落地的 gaps 仍走服务端修正闭环（确定性 gate + LLM 辅助匹配）——agent 提案不是免检通道。
+
+### 评测口径（Phase 2）
+
+`python scripts/eval_regression.py --agent-proposal` —— 确定性拟案器模拟「理想 agent」
+（find_pois 对齐 → 拟案 → dry_run → 提交），走真实全链路断言：
+`planSource=agent`、不落 M2 兜底、天数正确、**0 违规**、落地率 ≥80%、提案保留率 ≥80%。
+（B 阶段落地/修正走真实 LLM，需 API key；4 个代表性城市控制成本。）
+
+---
+
 ## 里程碑
 
 | 阶段 | 内容 | 状态 |
