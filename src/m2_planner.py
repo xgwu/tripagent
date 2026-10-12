@@ -678,9 +678,17 @@ def compose(city: dict, query: str, days: int, day_map: dict, themes: dict,
             except Exception:  # noqa: 进度上报失败不拖垮规划
                 pass
 
-    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
+    # 骑行/徒步主题：先解析通行口径，再建 all_pois —— 骑行场景 dur 用打卡口径
+    # （第 1 层，2026-10-12）。顺序不能反：mode 决定 parse 出的 dur。
+    #
+    # ⚠️ 单日主题（“其中一天骑行”）**不缩 dur**：mode 是按天的（mode_map），而 dur 烘在
+    # all_pois 这一个 dict 里、无按天分叉 ⇒ 全局缩会把非骑行日的园林也缩成 1h
+    # （口径污染）。此时保持景区口径，由「载重（=Σdur+腿）」按真实时长判定、
+    # 宁可保守（该场景点少但不会错标时长）。
+    t_mode = sequencer.travel_mode(query)
+    _scoped = sequencer.theme_scoped(query)
+    all_pois = poi_db.parse_all(city, None if _scoped else t_mode)
     cands = retrieval.recall(city, query)
-    t_mode = sequencer.travel_mode(query)  # 骑行/徒步主题 → 求解器通行矩阵同步切换口径
     # 单日主题（“其中一天骑行”）：仅承载天用主题通行口径，其余天保持车驾
     theme_day = sequencer.scoped_theme_day(day_map, all_pois, query)
     mode_map = ({d: (t_mode if d == theme_day else None) for d in day_map}

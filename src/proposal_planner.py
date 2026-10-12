@@ -1101,7 +1101,13 @@ def plan(city: dict, query: str, days: int = 2, use_llm: bool = True,
     # Agent-Proposal（Phase 1，docs/MCP-Agent提案外包-方案探讨.md §6）：调用方 agent
     # 已给出逐日提案 ⇒ 跳过 A 阶段的服务端 LLM 调用与缓存（省的是「重的那一次」），
     # 提案直接进入 B 落地；未落地 gaps 仍走既有修正闭环。共存不替换：不传 = 原路径。
-    all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
+    # 骑行/徒步主题：all_pois 的 dur 用打卡口径（第 1 层，2026-10-12）——与
+    # m2_planner.compose 内部构建口径一致（都经 poi_db.parse_all + 同样的
+    # scoped 判定），否则容量预检会「按景区时长算装不下、求解器按打卡时长算其实装得下」
+    # 而误剔（口径漂移老坑）。单日主题不缩（理由同 compose：dur 无按天分叉）。
+    _t_mode_p = sequencer.travel_mode(query or "")
+    all_pois = poi_db.parse_all(
+        city, None if sequencer.theme_scoped(query or "") else _t_mode_p)
     hint = _library_hint(all_pois)
     agent_days = (agent_proposal or {}).get("days") or []
     source = "agent" if agent_days else "server"

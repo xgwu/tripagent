@@ -162,7 +162,40 @@ def hhmm_to_h(s: str) -> float:
     return int(h) + int(m) / 60.0
 
 
-def parse_poi(p: dict, city: dict) -> dict:
+# ---- 骑行场景「停留时长」模型（2026-10-12 第 1 层）----
+# `duration_h` 是景区适玩时长（石公山 1.5h / 明月湾 2h / 西山岛 4h）—— 那是「进去
+# 好好逛」的口径。骑行游的「点」本质是**快速打卡/补给站**（停车、拍照、喝水、补给），
+# 不是逛 2 小时的景区。实测：7 个环太湖景区口径点停留合计 714min > 630min 日预算，
+# 直接爆 ⇒ 50km 骑行日只塞得进 1-2 点（宿主 agent 6 轮重拍均被洗到 2 点）。
+#
+# 按类目差异化（不是一刀切）：自然/观景/打卡类「路过看」占比高、文化/历史/博物馆类
+# 骑行者也常真进去 ⇒ 系数不同。下限 0.3h(18min) 保停车拍照，上限 1.2h 防止
+# 「全天大点」（迪士尼 8h）被缩成 2h 后仍被当普通点排进去。
+CYCLE_DUR_FACTOR = {
+    "nature": 0.2, "view": 0.2, "photo": 0.2,      # 自然/观景/打卡：快看慢走
+    "culture": 0.4, "history": 0.4, "art": 0.4,    # 文化/历史/艺术：常真进去
+    "religion": 0.3, "food": 0.5, "shopping": 0.5,  # 寺庙/补给/购物：停留居中
+    "nightlife": 0.5, "family": 0.5,
+}
+CYCLE_DUR_DEFAULT = 0.3    # 未列类目
+CYCLE_DUR_MIN_H = 0.3      # 下限 18min
+CYCLE_DUR_MAX_H = 1.2      # 上限 1.2h
+
+
+def cycle_duration_h(p: dict) -> float:
+    """骑行场景下该点的建议停留时长（小时）。
+
+    全程大点（duration_h ≥ 8，迪士尼类）**不缩** —— 骑行日遇到它应当整天留给它
+    （`sequencer.is_full_day` 仍按原始 duration_h 判定独占日）。
+    """
+    raw = float(p.get("duration_h") or 0)
+    if raw >= 8.0:
+        return raw
+    f = CYCLE_DUR_FACTOR.get(p.get("category") or "", CYCLE_DUR_DEFAULT)
+    return round(min(CYCLE_DUR_MAX_H, max(CYCLE_DUR_MIN_H, raw * f)), 2)
+
+
+def parse_poi(p: dict, city: dict, mode: str | None = None) -> dict:
     """给 POI 补充数值化字段。
 
     跨零点营业归一化：闭店时刻「不晚于」开门时刻（18:00-02:00 宵夜街、10:00-06:00
@@ -174,6 +207,11 @@ def parse_poi(p: dict, city: dict) -> dict:
     即该 POI 永远排不进任何行程（2026-09-15 实测 GZ069 宝业路宵夜街 / NJ021 1912
     街区两个 nightlife 点自入库起从未落地过）。归一化后 02:00 → 26.0，与 day_end
     上限共同决定它只能排在当天收尾时段，符合真实语义。
+
+    mode（2026-10-12 第 1 层）：出行方式。`mode="cycling"` 时 `dur` 改用骑行打卡口径
+    （`cycle_duration_h`，景区时长 × 类目系数），而 **`duration_h` 原始值保留不动**
+    —— `sequencer.is_full_day`（全天大点独占日）与 `retrieval` 给 LLM 的菜单仍读
+    原始 `duration_h`，保持口径不漂移。其余 mode / None 时 `dur == duration_h`（不变）。
     """
     q = dict(p)
     q["open_h"] = hhmm_to_h(p["open"])
@@ -181,6 +219,17 @@ def parse_poi(p: dict, city: dict) -> dict:
     if close_h <= q["open_h"]:
         close_h += 24.0
     q["close_h"] = close_h
-    q["dur"] = float(p["duration_h"])
+    q["dur"] = cycle_duration_h(p) if mode == "cycling" else float(p["duration_h"])
     q["dist_center_km"] = haversine_km(p["lat"], p["lng"], city["center"]["lat"], city["center"]["lng"])
     return q
+
+
+def parse_all(city: dict, mode: str | None = None) -> dict:
+    """把一个城市库解析成 {id: parsed_poi}。
+
+    **全项目唯一**的 all_pois 构建口径（2026-10-12）。此前 m2_planner / proposal_planner
+    各自手写 `{p["id"]: parse_poi(p, city) for p in city["pois"]}` —— 加 mode 参数时
+    两处必须同步，否则「求解器按骑行时长算、预检按景区时长算」必然漂移（本项目老坑：
+    两套口径必然漂移）。故收编为一个函数，需要 mode 时统一走这里。
+    """
+    return {p["id"]: parse_poi(p, city, mode) for p in city["pois"]}
