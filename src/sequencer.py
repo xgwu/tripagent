@@ -102,7 +102,14 @@ def is_full_day(p: dict) -> bool:
 # 转移段的天**——跨城联游把 intercity 里程计入当天 travel_km 后，该预算才成为
 # 「一天最多开多远」的硬闸，超预算触发 _cap_km_repair 剔远点。
 THEME_PROFILES = [
-    ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 15.0),
+    # 骑行 60km/天（**直线口径**，`travel_km` 是 haversine 累加）：
+    # ⚠️ 2026-10-12 第 4 层。原值 15.0 是按"市内骑行"尺度设的，对**环湖/环岛**骑行
+    # 日过严——实测 6 点环太湖线直线里程 82km、7 点 45km，恒超 15km ⇒ 每次都触发
+    # `_cap_km_repair` **剔远点**，与"骑行就是骑远"直接矛盾（越骑越骑不出城）。
+    # 60km 依据：12km/h × 4h 纯骑 = 直线 34km、× 5h = 43km；环太湖典型环线 45-82km
+    # 直线（含 20-30km 长腿）。取 60 让"一天环一个湖"可达，同时仍是硬闸
+    # （>60km 直线 ≈ 84km 路网 ≈ 7h 纯骑，超出舒适日里程）。
+    ("cycling", re.compile(r"骑行|骑车|单车|自行车|cycling|bike", re.IGNORECASE), 60.0),
     ("hiking", re.compile(r"徒步|暴走|city\s*walk|遛弯", re.IGNORECASE), 8.0),
     ("driving", re.compile(r"自驾|自己开车|开车去|租车|驾车|road\s*trip|driving",
                            re.IGNORECASE), 400.0),
@@ -130,8 +137,13 @@ def theme_km_cap(query: str | None) -> float | None:
 
 
 def cycle_km_cap(query: str | None) -> float | None:
-    """兼容保留：等价于 theme_km_cap（骑行命中即 15km，否则 None）。"""
-    return 15.0 if query and _CYCLE_RE.search(query) else None
+    """兼容保留：等价于 theme_km_cap（骑行命中即 60km/天，否则 None）。
+
+    ⚠️ 全项目已无调用方（2026-10-12 核对），实际口径一律走 theme_km_cap。
+    保留只为对外兼容，值须与 THEME_PROFILES 的 cycling 项保持一致（60.0，
+    第 4 层：原 15.0 对环湖骑行过严，恒触发剔远点）。
+    """
+    return 60.0 if query and _CYCLE_RE.search(query) else None
 
 
 def travel_mode(query: str | None) -> str | None:
@@ -522,8 +534,8 @@ def _fmt(h: float) -> str:
 
 def _hop_label(km: float, th: float, mode: str | None = None) -> str:
     """通行段标签（随出行方式切换）：
-    默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / 1.2~8km 骑行 / >8km 车程；
-    徒步：<3km 步行，否则车程；自驾：<1.2km 步行，否则自驾（时长口径同默认）。"""
+    默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / ≤CYCLE_MAX_KM(25km) 骑行 /
+    超过则车程；徒步：<3km 步行，否则车程；自驾：<1.2km 步行，否则自驾（时长口径同默认）。"""
     if mode == "cycling":
         mode_s = "步行" if km < poi_db.HOP_WALK_KM else \
             ("骑行" if km <= poi_db.CYCLE_MAX_KM else "车程")

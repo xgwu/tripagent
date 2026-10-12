@@ -55,7 +55,7 @@ case("1c 每日里程预算 400km",
      f"cap={sequencer.theme_km_cap('自驾贵州 5 天')}")
 case("1d 骑行/徒步优先于自驾（更严格者胜）",
      sequencer.detect_theme("骑行自驾都行") == "cycling"
-     and sequencer.theme_km_cap("骑行自驾都行") == 15.0)
+     and sequencer.theme_km_cap("骑行自驾都行") == 60.0)
 case("1e travel_mode 透出 driving",
      sequencer.travel_mode("自驾贵州") == "driving")
 case("1f hop 标签写「自驾」而非「车程」",
