@@ -186,20 +186,32 @@ def solve_day(candidates: list, day_ids: list, city: dict, all_pois: dict,
             lo = hi
         tdim.CumulVar(idx).SetRange(lo, hi)
         # M3-2：best_time 软时间窗（偏差每分钟罚 soft_w，与硬约束的营业窗口叠加）
+        #
+        # ⚠️ 2026-10-12 修复（真 bug）：软窗「封顶」此前靠**收窄硬可行域**实现
+        # （`lo = max(lo, sl_m - SOFT_CAP_MIN)`），但营业窗低于封顶线时走
+        # `if lo > hi: lo = hi` 分支，硬窗被钳成单点，而 SetCumulVarSoftLowerBound
+        # 的**罚分仍按全量偏差计** ⇒ 「下午早关门却标 evening」的点被双杀。
+        # 实测 SZ067 明月湾古村（08:30-16:30, evening, 2h）：被迫早到 150min ⇒
+        # 软罚 150×5=750，与本点利润 855 同量级 ⇒ 求解器理性弃点（对照：同片区
+        # 石公山标 afternoon 则正常排入）。soft_w=0 时该点立即回归、调 SOFT_CAP_MIN
+        # 完全无效 —— 坐实「封顶没落在罚分上」。
+        # 修法：软边界须与营业窗有交集才设；越界＝该点在此营业窗下本就满足不了
+        # 建议时段（如下午就关门），按营业窗正常安排、不加时段罚。
         if soft_w > 0:
             sl, su = SLOT_WINDOWS.get(nodes[node].get("best_time", "any"), (None, None))
             if sl is not None:
                 sl_m = min(horizon, max(0, to_min(sl)))
-                tdim.SetCumulVarSoftLowerBound(idx, sl_m, int(soft_w))
-                # 罚分封顶（下侧）：早到偏差超过 SOFT_CAP_MIN 分钟不再允许
-                lo = max(lo, sl_m - SOFT_CAP_MIN)
+                if sl_m - SOFT_CAP_MIN <= hi:   # 封顶区与营业窗有交集才设下界
+                    tdim.SetCumulVarSoftLowerBound(idx, sl_m, int(soft_w))
+                    lo = max(lo, sl_m - SOFT_CAP_MIN)
             if su is not None:
                 su_m = min(horizon, max(0, to_min(su)))
-                tdim.SetCumulVarSoftUpperBound(idx, su_m, int(soft_w))
-                # 罚分封顶（上侧）：晚到偏差超过 SOFT_CAP_MIN 分钟不再允许——
-                # morning 点要么贴近其时段安排，要么干脆不排（弃利润），
-                # 而不是拖着整条线到深夜、把傍晚空间白扔
-                hi = min(hi, su_m + SOFT_CAP_MIN)
+                if su_m + SOFT_CAP_MIN >= lo:   # 封顶区与营业窗有交集才设上界
+                    tdim.SetCumulVarSoftUpperBound(idx, su_m, int(soft_w))
+                    # 罚分封顶（上侧）：晚到偏差超过 SOFT_CAP_MIN 分钟不再允许——
+                    # morning 点要么贴近其时段安排，要么干脆不排（弃利润），
+                    # 而不是拖着整条线到深夜、把傍晚空间白扔
+                    hi = min(hi, su_m + SOFT_CAP_MIN)
             if lo > hi:          # 软窗封顶与营业窗冲突 → 营业窗优先（能开就行）
                 lo = hi
     # 终点：不晚于当日结束（depot 即终点）

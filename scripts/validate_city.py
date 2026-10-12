@@ -102,6 +102,21 @@ def validate_city(cname: str) -> tuple[int, int]:
             warns.append(f"{where} tags 为空")
         if len(p.get("note", "")) < 8:
             warns.append(f"{where} note 过短（入库前应完成三源核实并在 note 留痕）")
+        # evening 标注自相矛盾检查（2026-10-12）：best_time=evening 的语义是
+        # 「晚间去最好」，但若该点最晚到达（close - duration）早于 17:00，它根本
+        # 进不了晚间窗 —— 标注与营业时间矛盾，且会触发求解器软窗罚分被误弃
+        # （实测 SZ067 明月湾古村）。真夜间点（nightlife 类目 / 晚开门）豁免。
+        if p.get("best_time") == "evening" and _hhmm_ok(o) and _hhmm_ok(c):
+            ch2 = _hhmm_h(c)
+            if ch2 <= _hhmm_h(o):
+                ch2 += 24
+            latest_arrive = ch2 - float(dh)
+            _night_only = (p.get("category") == "nightlife"
+                           or _hhmm_h(o) >= 16.5)
+            if latest_arrive < 17.0 and not _night_only:
+                errs.append(f"{where} best_time=evening 但最晚到达 "
+                            f"{latest_arrive:.1f}h（<17:00）—— 进不了晚间窗，"
+                            f"应改 afternoon/morning 或改营业时间")
     print(f"=== {cname}: {len(pois)} POI")
     for w in warns:
         print(f"  ⚠️  {w}")
