@@ -12,6 +12,8 @@ __pycache__/
 output/
 data/shares/
 nohup.out
+# 需求缺口日志（gap_log.py 运行时累积，含用户 query 原文）——不入库
+data/poi_gap_log.jsonl
 
 # dist/：本地探针与临时产物（含 remote.json = **明文口令**，绝不入库）。
 # 2026-10-10：MCP 已远端化（/mcp），本地打包（exe / mac 源码包）退役 ⇒ 不再产出 exe/zip；
