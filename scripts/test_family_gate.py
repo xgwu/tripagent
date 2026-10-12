@@ -82,8 +82,9 @@ for b in blocked:
     print(f"     {b[0]} {b[1]} {b[2]}（{b[3]}）")
 # 口径：原 12 城 722 点（573 + 西安 54 + 重庆 48 + 长沙 47）
 #      + 贵州 19 个目的地（2026-09-17 方案B 开城）471 点
-BASE_CITIES, GZ_DESTS = 722, 471
-case(f"3a 全库点位数与口径一致（{BASE_CITIES}[原12城] + {GZ_DESTS}[贵州19目的地]"
+#      + 苏州二期扩容 12 点（2026-10-12：环秀山庄等 5 园林 + 7 博物馆/湿地）
+BASE_CITIES, GZ_DESTS = 734, 471
+case(f"3a 全库点位数与口径一致（{BASE_CITIES}[原12城+苏州12] + {GZ_DESTS}[贵州19目的地]"
      f" = {BASE_CITIES + GZ_DESTS}）",
      n_total == BASE_CITIES + GZ_DESTS, f"实测 {n_total}")
 case("3b family_ok=false 恰为 18 个（新增点位应显式评估该字段）",
