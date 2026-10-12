@@ -16,6 +16,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src import poi_db, proposal_planner, sequencer, m2_planner, toptw  # noqa: E402
 
 city = poi_db.load_city("上海")
+# ⚠️ 2026-10-12 第 1 层后：all_pois 用**景区口径**（无 mode）。
+# 原因：A1/A2 测的是「容量预检」机制，fixture 依赖「dur ≥ 3-4h 的半日大点」构造
+# 容量临界；而骑行口径下所有点 dur 被缩到 ≤1.2h（打卡口径），构造不出该临界。
+# 容量预检机制本身与出行方式无关，故 A1/A2 改用非骑行 query + mode=None。
+# B/B2（骑行补强池）只读 category/dist_center_km/tags，不读 dur，用景区口径 all_pois 无碍。
 all_pois = {p["id"]: p for p in (poi_db.parse_poi(p, city) for p in city["pois"])}
 
 # ---- helper 口径 ----
@@ -85,14 +90,14 @@ big_durs = sorted([p for p in all_pois.values()
 day2_ids = []
 for p in big_durs:
     cand = day2_ids + [p["id"]]
-    load_cand = m2_planner._day_load(cand, all_pois, "cycling")
+    load_cand = m2_planner._day_load(cand, all_pois, None)
     if load_cand <= h and load_cand + float(urban["dur"]) * 60 + 60.0 > h:
         day2_ids = cand  # 加入后 urban 放不下 → 正是我们要的临界
         break
     if load_cand <= h - float(urban["dur"]) * 60 - 60.0:
         day2_ids = cand  # 还有余量，继续装
 assert day2_ids, "fixture Day2 构造失败"
-base_load_a1 = m2_planner._day_load(day2_ids, all_pois, "cycling")
+base_load_a1 = m2_planner._day_load(day2_ids, all_pois, None)
 assert base_load_a1 + float(urban["dur"]) * 60 > h, \
     f"fixture 不构成容量约束：{base_load_a1:.0f}+{urban['dur'] * 60:.0f} ≤ {h}"
 dm_a1 = {
@@ -101,7 +106,7 @@ dm_a1 = {
 }
 moves = proposal_planner._far_big_point_regroup(
     dict(dm_a1), all_pois, family=False, city=city,
-    query="上海2日骑行，喜欢历史文化")
+    query="上海2日，喜欢历史文化")
 moved_urban = [m for m in moves if m["id"] == "SH009" and m["to"] == 2]
 assert not moved_urban, f"容量预检失效：urban 被挪入爆容量天 {moved_urban}"
 print(f"A1 ✅ Day2 负载 {base_load_a1:.0f}min +武康路({urban['dur']}h) 超限 → 未挪（moves={len(moves)}）")
@@ -110,7 +115,7 @@ print(f"A1 ✅ Day2 负载 {base_load_a1:.0f}min +武康路({urban['dur']}h) 超
 dm_a1_free = {1: ["SH038", "SH009"], 2: ["SH036"]}  # 邮政博物馆 dur 小
 moves_free = proposal_planner._far_big_point_regroup(
     dict(dm_a1_free), all_pois, family=False, city=city,
-    query="上海2日骑行，喜欢历史文化")
+    query="上海2日，喜欢历史文化")
 assert any(m["id"] == "SH009" for m in moves_free), \
     f"预检误伤：空闲天也没接住错配点 {moves_free}"
 print(f"A1 对照 ✅ 空闲天正常挪入武康路（moves={len(moves_free)}）")
@@ -121,7 +126,7 @@ print(f"A1 对照 ✅ 空闲天正常挪入武康路（moves={len(moves_free)}�
 day2_a2 = []
 for p in big_durs:
     trial = day2_a2 + [p["id"]]
-    if m2_planner._day_load(trial, all_pois, "cycling") <= h:
+    if m2_planner._day_load(trial, all_pois, None) <= h:
         day2_a2 = trial
     if len(day2_a2) >= 4:
         break
@@ -129,12 +134,12 @@ dm_a2 = {
     1: ["SH009", "SH012"],
     2: list(day2_a2),
 }
-base_load = m2_planner._day_load(day2_a2, all_pois, "cycling")
+base_load = m2_planner._day_load(day2_a2, all_pois, None)
 small_dur = min(float(all_pois[i]["dur"]) for i in ("SH009", "SH012"))
 assert base_load + small_dur * 60 > h, \
     f"fixture 不构成容量约束：{base_load:.0f}+{small_dur * 60:.0f} ≤ {h}"
 rebalanced, n_moves = m2_planner._crossday_rebalance(
-    dict(dm_a2), city, all_pois, None, None, "上海2日骑行，喜欢历史文化")
+    dict(dm_a2), city, all_pois, None, None, "上海2日，喜欢历史文化")
 moved_in = [i for i in rebalanced[2] if i not in day2_a2]
 assert not moved_in, f"容量预检失效：Day2 被挪入 {moved_in}"
 print(f"A2 ✅ Day2 负载 {base_load:.0f}min → rebalance 不挪入（moves={n_moves}）")

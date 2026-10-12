@@ -43,7 +43,8 @@ def case(name, cond, detail=""):
 
 
 # ---- A：常量锚点 ----
-case("A1 CYCLE_MAX_KM = 25.0（第 2 层）", poi_db.CYCLE_MAX_KM == 25.0,
+case("A1 CYCLE_MAX_KM = 60.0（第 2 层：荒谬安全阀，非骑行判据）",
+     poi_db.CYCLE_MAX_KM == 60.0,
      f"={poi_db.CYCLE_MAX_KM}")
 case("A2 骑行里程预算 = 60.0km/天（第 4 层）",
      sequencer.theme_km_cap("苏州2天骑行") == 60.0,
@@ -79,11 +80,11 @@ case(f"B2 22.8km 长腿不再回落驾车（实测 {th_min('SZ042', 'SZ064'):.0f
      abs(th_min("SZ042", "SZ064") - expect_c) < 1.0)
 
 # ---- C：超长腿仍回落车驾 ----
-# 构造 >25km 两点
+# 构造 >60km 两点（荒谬跨城腿）
 a = {"id": "X1", "lat": 31.0, "lng": 120.0, "open_h": 9.0, "close_h": 17.0, "dur": 1.0}
-b = {"id": "X2", "lat": 31.5, "lng": 120.5, "open_h": 9.0, "close_h": 17.0, "dur": 1.0}
+b = {"id": "X2", "lat": 32.0, "lng": 121.0, "open_h": 9.0, "close_h": 17.0, "dur": 1.0}
 km_far = poi_db.haversine_km(a["lat"], a["lng"], b["lat"], b["lng"])
-case("C1 >25km 直线仍回落车驾口径（拦荒谬串联）",
+case("C1 >60km 直线仍回落车驾口径（拦荒谬跨城腿）",
      km_far > poi_db.CYCLE_MAX_KM
      and poi_db.travel_hours(a, b, "cycling") <= km_far * poi_db.CIRCUITY / poi_db.SPEED_KMH + 1e-6,
      f"直线 {km_far:.1f}km")
@@ -105,6 +106,23 @@ km_short = poi_db.haversine_km(cyc["SZ067"]["lat"], cyc["SZ067"]["lng"],
 case(f"E1 短腿（{km_short:.1f}km <8）口径不变（仍骑行 12km/h）",
      abs(th_min("SZ067", "SZ068")
          - km_short * poi_db.CIRCUITY / poi_db.CYCLE_KMH * 60) < 1.0)
+
+# ---- E2：骑行日 hop 标签不得出现「车程」（Kenny 实测报障的正面守卫）----
+# 用环太湖真实长腿（27km 级）验证：骑行主题下所有腿都应标「骑行」或「步行」
+_seq = sequencer.order_day([cyc[i] for i in ["SZ042", "SZ064", "SZ067", "SZ068",
+                                              "SZ069", "SZ070", "SZ073"]],
+                           city=city, mode="cycling")
+_bad = []
+for _a, _b in zip(_seq, _seq[1:]):
+    _km = poi_db.haversine_km(_a["lat"], _a["lng"], _b["lat"], _b["lng"])
+    _lab = sequencer._hop_label(_km, poi_db.travel_hours(_a, _b, "cycling"), "cycling")
+    if _lab.split()[0] == "车程":
+        _bad.append(f"{_a['name']}→{_b['name']} {_km:.1f}km")
+case("E2 骑行日 hop 标签无「车程」（环太湖 27km 级长腿仍标骑行）",
+     not _bad, f"误标车程腿={_bad}" if _bad else f"共 {len(_seq)-1} 腿全为骑行/步行")
+case("E3 骑行日长腿时间按骑行口径（27km 级 ≥100min，非驾车的 ~47min）",
+     th_min("SZ073", "SZ067") >= 60.0,
+     f"铜观音寺↔明月湾 {th_min('SZ073', 'SZ067'):.0f}min")
 
 # ---- F：其他 mode 不受影响 ----
 case("F1 mode=None（车驾）口径不变（SPEED_KMH 18）",
