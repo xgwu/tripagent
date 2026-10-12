@@ -59,8 +59,8 @@ def _load_mcp():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     # 隔离副作用：不落盘、不写诊断日志、不打网络。
-    mod._plan_state_read = lambda: None
-    mod._plan_state_write = lambda value: None
+    mod._plan_state_read = lambda *a, **k: None
+    mod._plan_state_write = lambda *a, **k: None
     mod.dbg = lambda *a, **k: None
     mod.log = lambda *a, **k: None
     return mod

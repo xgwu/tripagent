@@ -77,7 +77,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import sys
+import threading
 import time
 
 SERVER_NAME = "tripplanner"
@@ -360,26 +362,40 @@ def remote_config_path() -> str:
 
 
 def session_id() -> str:
-    """面板 ↔ 云端之间那把「当前行程」的钥匙：生成一次后落盘，跨进程/重启稳定。
+    """当前会话的 id —— 「这份行程属于谁」的唯一真相。
 
-    与「宿主**按需 spawn** 本进程（每次 pid 都不同）」这条已知事实同一套理由：
-    若每次随机，面板手里的那份立刻过期；落盘才能让「谁在用这份行程」跨进程一致。
-    （M2.1 的本地 HTTP token 当年也是为此落盘，那套已随 `local_api.py` 一起下线。）
+    🔴 2026-10-12 P0 安全修复：**此前从全局单文件 `mcp_session_id.txt` 读**，
+    云端多用户共用同一个文件 ⇒ 一把钥匙开所有人的柜子（Kenny 实测跨用户串行程：
+    A 规划贵州 → B 规划杭州 → A 面板显示杭州）。现改为**从 `SESSION.sid` 取**：
+    云端 `/mcp` 按 `Mcp-Session-Id` 隔离会话，每个 `_Session` 自带 sid ⇒ 天然隔离。
+
+    ⚠️ **不做模块级缓存**（`_SESSION_ID_CACHE` 已废弃）：云端是单进程多会话，
+    `SESSION` 会被 `mcp_endpoint._handle_one` 逐请求换掉（`m.SESSION = sess`）⇒
+    任何模块级缓存都会「把第一个会话的 sid 粘给所有会话」，正是本次漏洞的同类错误。
+    每次调用都从 `SESSION` 现取，开销可忽略（仅属性读 + 字符串）。
+
+    落盘（`mcp_session_id.txt`）仅在 **stdio 单用户模式**下作为兜底保留 ——
+    该模式宿主按需 spawn 进程、内存不跨进程，故首次仍生成并落盘。
+    远端 http 模式（当前主线）下云端是单进程长驻，`SESSION.sid` 恒有值，不再落盘，
+    也就不再有任何跨用户共享点。
+
+    环境变量 `TRIPPLANNER_SESSION_ID` 可覆盖（自检用它做**用例间**隔离；
+    它在每用例显式设置，不受缓存污染影响）。
     """
-    global _SESSION_ID_CACHE
-    if _SESSION_ID_CACHE:
-        return _SESSION_ID_CACHE
-    # 允许环境变量覆盖（自检用它做**会话隔离**：多个用例共用一台云端时不互相串行程）
+    # ① 会话对象自带 sid（远端 http 模式：由 mcp_endpoint 按 Mcp-Session-Id 注入）
+    sess_sid = getattr(SESSION, "sid", "") or ""
+    if sess_sid:
+        return sess_sid
+    # ② 环境变量覆盖（自检/多用例隔离）
     env_sid = (os.environ.get("TRIPPLANNER_SESSION_ID") or "").strip()
     if env_sid:
-        _SESSION_ID_CACHE = env_sid
         return env_sid
+    # ③ stdio 单用户兜底：落盘一次，跨「按需 spawn 的新进程」稳定
     path = os.path.join(state_dir(), "mcp_session_id.txt")
     try:
         with open(path, encoding="utf-8") as f:
             v = f.read().strip()
         if v:
-            _SESSION_ID_CACHE = v
             return v
     except Exception:
         pass
@@ -394,7 +410,6 @@ def session_id() -> str:
         dbg("session_id.created", sid=v)
     except Exception as e:
         dbg("session_id.write.fail", err=str(e))
-    _SESSION_ID_CACHE = v
     return v
 
 
@@ -515,7 +530,19 @@ def state_dir() -> str:
     return os.path.join(project_root(), "output")
 
 
-def plan_state_path() -> str:
+def plan_state_path(sid: str = "") -> str:
+    """当前行程的落盘路径 —— **按会话隔离**（见文件头 P0 安全修复）。
+
+    🔴 2026-10-12 P0 修复（Kenny 实测「贵州5日 → 面板显示杭州2日」）：
+    原先是**全局单文件** `mcp_last_plan.json` —— 云端单进程多用户下，
+    任何会话写一次就覆盖所有人 ⇒ **跨用户行程数据泄露**。
+    故落盘按 sids 分文件（`mcp_last_plan_<sid>.json`）。
+    sid 为空（stdio 单用户 / 测试）回退旧单文件名，保持兼容。
+    """
+    if sid:
+        safe = re.sub(r"[^0-9a-zA-Z_-]", "", str(sid))[:40]
+        if safe:
+            return os.path.join(state_dir(), f"mcp_last_plan_{safe}.json")
     return os.path.join(state_dir(), "mcp_last_plan.json")
 
 
@@ -539,51 +566,52 @@ def dbg(event: str, **kw) -> None:
         pass
 
 
-def _plan_state_read():
+def _plan_state_read(sid: str = ""):
     try:
-        with open(plan_state_path(), encoding="utf-8") as f:
+        with open(plan_state_path(sid), encoding="utf-8") as f:
             data = json.load(f)
         if isinstance(data, dict) and data.get("city"):
-            dbg("last_plan.read.hit", city=data.get("city"), days=data.get("days"))
+            dbg("last_plan.read.hit", sid=sid[:8], city=data.get("city"),
+                days=data.get("days"))
             return data
-        dbg("last_plan.read.miss", reason="empty-or-bad")
+        dbg("last_plan.read.miss", sid=sid[:8], reason="empty-or-bad")
         return None
     except FileNotFoundError:
-        dbg("last_plan.read.miss", reason="no-file")
+        dbg("last_plan.read.miss", sid=sid[:8], reason="no-file")
         return None
     except Exception as e:
         log("last_plan 读盘失败", err=str(e))
-        dbg("last_plan.read.miss", reason=str(e))
+        dbg("last_plan.read.miss", sid=sid[:8], reason=str(e))
         return None
 
 
-def _plan_state_write(value) -> None:
+def _plan_state_write(value, sid: str = "") -> None:
     if value is None:
         return
     try:
-        path = plan_state_path()
+        path = plan_state_path(sid)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(value, f, ensure_ascii=False)
         os.replace(tmp, path)          # 原子替换，避免面板读到半截 JSON
-        dbg("last_plan.write.ok", city=value.get("city"),
+        dbg("last_plan.write.ok", sid=sid[:8], city=value.get("city"),
             days=value.get("days"), bytes=os.path.getsize(path))
     except Exception as e:
         log("last_plan 落盘失败", err=str(e))
-        dbg("last_plan.write.fail", err=str(e))
+        dbg("last_plan.write.fail", sid=sid[:8], err=str(e))
 
 
 def read_plan_state():
-    """当前行程 —— **始终读磁盘**。
+    """当前行程 —— 读**本会话**的落盘副本。
 
-    ⚠️ 为什么不用内存缓存（2026-10-09，自检阶段六抓到）：本函数的主要调用方之一是
-    **常驻**的 `mcp/local_api.py`。它的进程内存跨请求永不失效，而行程是 **MCP server
-    进程**（另一个进程，宿主按需 spawn）写进磁盘的。若这里内存优先，就会出现
-    「助手刚生成新行程 → 面板读到的还是上一份旧行程」，且完全不报错。
-    磁盘是跨进程的唯一真相，所以读一律走磁盘；写仍是「落盘 + 同步本进程缓存」。
+    ⚠️ 历史（2026-10-09）：本函数曾「始终读磁盘」，因为 stdio 模式下宿主按需 spawn
+    进程、跨进程只能靠磁盘。**该理由已随远端 http 模式退役**（云端单进程长驻），
+    但读磁盘仍保留为「进程重启/多 worker」的兜底 —— 关键是**按会话分文件**，
+    不再有全局共享点（见 §P0 安全修复）。
     """
-    val = _plan_state_read()
+    sid = getattr(SESSION, "sid", "") or ""
+    val = _plan_state_read(sid)
     if val is not None:
         SESSION._last_plan = val
         SESSION._plan_loaded = True
@@ -591,7 +619,7 @@ def read_plan_state():
 
 
 def write_plan_state(value) -> None:
-    """写回当前行程（落盘 + 同步本进程缓存）。"""
+    """写回当前行程（落盘到本会话文件 + 同步本进程缓存）。"""
     SESSION.last_plan = value
 
 
@@ -628,25 +656,33 @@ PANEL_VERSION_PLACEHOLDER = "__PANEL_VERSION__"
 class _Session:
     """一次「会话」的状态。
 
-    ⚠️ **持久性分两类**（2026-10-09 修正）：
+    🔴 2026-10-12 新增 `sid`（P0 安全修复）：会话 id 由**会话对象自身**携带，
+    落盘路径 / 面板注入 / 云端会话键全部从它派生 ⇒ 不再有任何全局共享状态。
+    此前 `sid` 来自**全局单文件** `mcp_session_id.txt`（`session_id()`），
+    导致云端多用户共用一把钥匙 ⇒ 「A 规划贵州 → B 规划杭州 → A 面板显示杭州」
+    （Kenny 实测，跨用户行程泄露）。
+
+    ⚠️ **持久性分两类**（2026-10-09 修正，2026-10-12 复核）：
       - **进程级**：`opened_any` / `instances` / `panel_opens` —— 只做诊断，生命周期短，
         放内存即可。
-      - **必须落盘**：`last_plan` —— 「一次调用写、另一次调用读」，而宿主
-        按需 spawn 进程（pidSpawned 每次都不同）⇒ 纯内存必空。见 `_plan_state_*`。
+      - **落盘兜底**：`last_plan` —— 远端 http 模式下云端是**单进程长驻**，内存本已够用；
+        落盘仅为「进程重启 / 多 worker」兜底，且**必须按 sid 分文件**（见 `_plan_state_*`）。
 
     ⚠️ M6.6（2026-10-10）：**本类不再参与「要不要开面板」的判定**。曾经的
     `should_open_panel()` 一旦 `opened_any=True` 就永不再开 ⇒ 把同一会话的**第二个需求**
     也一并封死了（服务端拦不住宿主，那种"封锁"只拦住了模型自己）。面板节律已改由
     `open_plan` 的**工具描述**约定（每个需求定稿后调一次）。这里只留诊断计数：
 
+    sid          —— 本会话的 id（**唯一真相**，取代全局 session_id 文件）。
     opened_any   —— 本会话是否展示过面板（`resources/read` 会回，供诊断）。
     instances    —— 面板自报的 appInstanceId 集合（由 `panel_ready` 登记）。
     panel_opens  —— `open_plan` 被调用的次数（>1 既可能是「用户提了新需求」，
                     也可能是「同一需求内重复调」；服务端不判、也不拦）。
-    last_plan    —— 最近一次规划结果，面板 get_plan 拉取（内存优先、磁盘兜底）。
+    last_plan    —— 最近一次规划结果，面板 get_plan 拉取（内存优先、本会话磁盘兜底）。
     """
 
-    def __init__(self) -> None:
+    def __init__(self, sid: str = "") -> None:
+        self.sid = sid or ""
         self.opened_any = False
         self.instances: set[str] = set()
         self.panel_opens: int = 0
@@ -656,18 +692,19 @@ class _Session:
 
     @property
     def last_plan(self):
-        """内存未命中就回磁盘读一次 —— 跨进程取数靠它。"""
+        """内存未命中就回**本会话**磁盘文件读一次（跨进程/重启兜底）。"""
         if not self._plan_loaded:
             self._plan_loaded = True
-            self._last_plan = _plan_state_read()
-            dbg("last_plan.property.load", pid=self.pid, hit=self._last_plan is not None)
+            self._last_plan = _plan_state_read(self.sid)
+            dbg("last_plan.property.load", sid=self.sid[:8], pid=self.pid,
+                hit=self._last_plan is not None)
         return self._last_plan
 
     @last_plan.setter
     def last_plan(self, value):
         self._last_plan = value
         self._plan_loaded = True
-        _plan_state_write(value)
+        _plan_state_write(value, self.sid)
 
     def register_panel(self, instance_id: str | None, label: str = "") -> dict:
         iid = (instance_id or "").strip()
@@ -696,7 +733,58 @@ class _Session:
         return self.panel_opens
 
 
-SESSION = _Session()
+class _SessionProxy:
+    """`SESSION` 的**线程局部**代理（P0 安全修复，2026-10-12）。
+
+    背景：`SESSION` 原先是**模块级全局单例**，`mcp_endpoint._handle_one` 每请求
+    `m.SESSION = sess` 覆盖它 —— 这是「串数据」的结构性根因：
+      · 任何一处忘记先赋值，就会脏读**上一个会话**的状态；
+      · 多线程（`ThreadingHTTPServer`）下若并发进入，A 会话可能读到 B 的 SESSION。
+
+    做法：把真实 `_Session` 存进 `threading.local()`。`mcp_endpoint` 用
+    `m.SESSION.bind(sess)` 绑定（替代原先的 `m.SESSION = sess`）；
+    `handle()` 内部所有 `SESSION.xxx` 读取只看到本线程的会话。
+    ⇒ 模块级不再有任何可变共享状态，跨会话/跨用户串数据的结构基础被移除。
+
+    `get()` 兜底：线程内尚未绑定 → 返回一个**临时空会话**（而非全局单例）：
+    宁可「这个线程还没行程」，也绝不「读到别的会话的行程」。
+    """
+
+    def __init__(self) -> None:
+        self._tls = threading.local()
+
+    def bind(self, sess: "_Session") -> None:
+        """把本线程的 SESSION 绑定到指定会话（`mcp_endpoint` 每请求调用）。"""
+        self._tls.sess = sess
+
+    def get(self) -> "_Session":
+        s = getattr(self._tls, "sess", None)
+        if s is None:
+            s = _Session()          # 本线程尚未绑定 → 给个空会话，绝不复用他会话
+            self._tls.sess = s
+        return s
+
+    def __getattr__(self, name):
+        # 未显式定义的属性一律透传给**本线程**的会话（handle 里的 SESSION.xxx）
+        return getattr(self.get(), name)
+
+    def __setattr__(self, name, value):
+        """🔴 关键：**禁止**在 proxy 自身落属性。
+
+        若缺少本方法，`SESSION.last_plan = plan` 这类赋值会在 proxy **实例**上
+        创建 `last_plan` 属性（`__getattr__` 只在「属性不存在」时触发）⇒
+        之后 `SESSION.last_plan` 直接读到 proxy 上那份、**再也不看会话** ⇒
+        状态写进了一个所有线程共享的地方 —— 正是要消灭的串数据形态
+        （实测：`test_panel_single_open` 的 C 用例因此失败，`panel_opens` 恒 0）。
+        故除了 `_tls` 自身，一切赋值透传给**本线程**的会话对象。
+        """
+        if name == "_tls":
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.get(), name, value)
+
+
+SESSION = _SessionProxy()
 
 TOOLS = [
     {

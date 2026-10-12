@@ -48,14 +48,20 @@ def _load():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     # 隔离副作用：不落盘、不写诊断日志、不打网络。
-    mod._plan_state_read = lambda: None
-    mod._plan_state_write = lambda value: None
+    # ⚠️ 2026-10-12：`_plan_state_read/write` 加了 `sid` 参数（P0 会话隔离）⇒ 用 *a/**k 接住。
+    mod._plan_state_read = lambda *a, **k: None
+    mod._plan_state_write = lambda *a, **k: None
     mod.dbg = lambda *a, **k: None
     mod.log = lambda *a, **k: None
     return mod
 
 
 srv = _load()
+
+# ⚠️ 2026-10-12 P0：`SESSION` 已是**线程局部代理**，不绑定就每次拿到新的空会话 ⇒
+#   测试里对 `srv.SESSION.opened_any` 的读写在「未绑定」时自相矛盾。显式绑一个会话。
+_TEST_SESS = srv._Session("test-panel-single-open")
+srv.SESSION.bind(_TEST_SESS)
 
 
 def _reset():

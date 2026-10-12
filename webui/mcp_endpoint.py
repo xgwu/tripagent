@@ -113,7 +113,7 @@ def _new_session() -> tuple:
     m = _load()
     sid = uuid.uuid4().hex
     with _sess_lock:
-        _sessions[sid] = m._Session()
+        _sessions[sid] = m._Session(sid)   # 🔴 P0：sid 注入会话对象（隔离的唯一真相）
         if len(_sessions) > MAX_SESSIONS:
             for k in list(_sessions.keys())[: len(_sessions) - MAX_SESSIONS // 2]:
                 if k != sid:
@@ -160,8 +160,11 @@ def _handle_one(msg, sid_hint: str | None, out: dict):
     if method == "initialize" or sid != (sid_hint or ""):
         out["session_id"] = sid
 
-    with _exec_lock:  # 见模块 docstring 的「已知取舍」
-        m.SESSION = sess
+    with _exec_lock:
+        # 🔴 P0（2026-10-12）：`SESSION` 已改为**线程局部代理**（`_SessionProxy`），
+        #   用 `bind()` 绑定本请求的会话；`handle()` 内所有 `SESSION.xxx` 只看到它。
+        #   替代原先的 `m.SESSION = sess`（模块级全局赋值 = 跨会话串数据的结构根因）。
+        m.SESSION.bind(sess)
         return m.handle(msg)
 
 

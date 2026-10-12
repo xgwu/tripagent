@@ -151,6 +151,9 @@ _spec = importlib.util.spec_from_file_location(
     "_tp_server_lazy", os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py"))
 srv = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(srv)
+# ⚠️ 2026-10-12 P0：SESSION 已是线程局部代理 —— 不绑定则每次 get() 都拿到新的空会话，
+#   本用例的 `srv.SESSION.last_plan = ...` 读写会不一致。显式绑定一个会话。
+srv.SESSION.bind(srv._Session("test-lazy-copy"))
 
 _ptool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _cm = _ptool["inputSchema"]["properties"].get("copy_mode") or {}
