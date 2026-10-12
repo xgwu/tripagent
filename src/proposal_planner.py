@@ -598,6 +598,7 @@ FAR_BIG_MIN_H = 4.0        # 半日型大点时长下限（8h+ 全天型另有�
 FAR_BIG_SPREAD_KM = 10.0   # 大点与同天其他点的最大允许直线距离
 FAR_REGROUP_PASSES = 2     # 最多整理轮数（防跨天震荡）
 FAMILY_SOLO_H = 5.0        # family：5h+ 远郊点建议独占日（开放窗口 ~7h，同天再排点必溢出）
+CYCLE_LOOP_KM = 20.0       # 环湖/环岛骑行薄天的补强邻域半径（距当日已有点，非距市中心）
 
 # 贯穿性湖偏好检测（与 m2_planner._LAKE_PREF_RE 口径一致：query 含「湖」字）
 _LAKE_PREF_RE = re.compile(r"湖")
@@ -944,11 +945,26 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                     # 防「主选剔掉 → 补强又按评分捞回来」的闭环空转。
                     rest = [p for p in rest if poi_db.is_family_ok(p)]
                 if sequencer.travel_mode(query or "") == "cycling":
-                    # 骑行口径补强过滤（报障 14）：骑行合理半径 ≤12km，远郊点
-                    # 往返 1.5h+ 与骑行矛盾——薄天宁少勿远（天文馆 70km 案例）。
-                    # 慢节奏档另有 15km 过滤，取更严交集。
-                    rest = [p for p in rest
-                            if float(p.get("dist_center_km") or 0) <= 12.0]
+                    # 骑行口径补强过滤（报障 14 + 2026-10-12 第 3 层）：
+                    # ① 「市内骑行」场景——骑行合理半径 ≤12km，远郊点往返 1.5h+ 与骑行
+                    #    矛盾，薄天宁少勿远（天文馆 70km 案例）⇒ 距市中心 ≤12km；
+                    # ② 「环湖/环岛骑行」场景——当日主选本就是远郊湖点（距市中心 >12km），
+                    #    此时按「距市中心」过滤会把环太湖/环西山所有点全滤掉，只剩市区
+                    #    61 点 ⇒ 薄天被补进拙政园/平江路，**骑行日被改造成市区游**（实测：
+                    #    明月湾薄天补强池里 6 个环太湖点全被滤、市区点全保留）。
+                    #    故当当天已有点全在远郊时，改用**当天环线邻域 ≤20km** 口径
+                    #    （骑行日的点天然围绕当日环线聚集，而非围绕市中心）。
+                    day_pts_c = [all_pois[pid] for pid in day_map.get(d, [])
+                                 if pid in all_pois]
+                    far_loop = bool(day_pts_c) and all(
+                        p.get("dist_center_km", 0) > FAR_BIG_KM for p in day_pts_c)
+                    if far_loop:
+                        rest = [p for p in rest if min(
+                            (poi_db.haversine_km(p["lat"], p["lng"], q["lat"], q["lng"])
+                             for q in day_pts_c), default=1e9) <= CYCLE_LOOP_KM]
+                    else:
+                        rest = [p for p in rest
+                                if float(p.get("dist_center_km") or 0) <= 12.0]
                 if m2_planner.SLOW_PACE_RE.search(query or ""):
                     # 慢节奏补强池过滤：① 真夜间点（nightlife/晚开门——会在稀疏时间轴
                     # 上等待开场拉出数小时空档，2026-09-14 报障 6 圆融天幕街；
@@ -962,13 +978,20 @@ def _post_ground_fixups(day_map: dict, themes: dict, grounding: dict, city: dict
                             and float(p.get("dist_center_km") or 0) <= 15.0]
                 if not rest:
                     break
-                # 当天已有点的 10km 邻域优先——防止补点再造跨片区混排
+                # 当天已有点的邻域优先——防止补点再造跨片区混排
                 #（远郊大点日尤其重要：补进远处点会让里程守门再次剔掉大点）
+                # 环湖/环岛骑行日：邻域半径与上面的补强池口径一致用 CYCLE_LOOP_KM
+                #（20km）——若仍按 10km，环湖环线上相距 10-20km 的湖点会被二次滤掉，
+                # 上面放宽到 20km 就白做了。
                 day_pts = [all_pois[pid] for pid in day_map.get(d, []) if pid in all_pois]
+                _near_km = 10.0
+                if (sequencer.travel_mode(query or "") == "cycling" and day_pts
+                        and all(p.get("dist_center_km", 0) > FAR_BIG_KM for p in day_pts)):
+                    _near_km = CYCLE_LOOP_KM
                 near = [p for p in rest
                         if day_pts and min(poi_db.haversine_km(p["lat"], p["lng"],
                                                                q["lat"], q["lng"])
-                                           for q in day_pts) <= 10.0]
+                                           for q in day_pts) <= _near_km]
                 # 湖偏好：补点池优先湖线点（邻域内的湖点 → 任意湖点 → 原池），
                 # 防止剔点后的薄天被市区点填满、湖主题消失
                 pool = near or rest

@@ -30,18 +30,40 @@ assert abs(load - (dur_sum + leg)) < 1e-6, f"_day_load 口径错误: {load} vs {
 print(f"helper ✅ horizon={h}min  Day[SH001,SH003] 骑行负载={load:.0f}min")
 
 # ---- B: 骑行补强过滤 ----
-# 构造：Day1 只剩 1 个点（<MIN_STOPS=2 触发补强），骑行 query → 补进点必须 dist≤12km
-dm = {1: ["SH038"]}  # 天文馆自身 70km（占位，补强不看它）
+# 构造：Day1 只剩 1 个**市区**点（<MIN_STOPS 触发补强），骑行 query → 补进点必须 dist≤12km
+# （报障 14 原意图：市区骑行日不得补入远郊点，如天文馆 70km/海昌 39km）
+# ⚠️ 2026-10-12 更新：此前 fixture 用 SH038（天文馆，53km）当「凭空占位」，注释写
+# 「补强不看它」；但第 3 层修复后补强**会看当天点**——当天点全在远郊即判定为
+# 环湖/环岛场景，改按「当日环线邻域」补强。故原 fixture 的语义已过期（它构造的
+# 其实是环湖场景）。此处改用**市区薄天**（这才是报障 14 的真实场景），
+# 环湖场景的守卫另见 test_cycling_topup_scope.py。
+dm = {1: ["SH009"]}  # 武康路·安福路：市区点（4km）
 themes = {1: {"theme": "", "reason": ""}}
 g = {"grounding_rate": 1.0, "gaps": []}
 dm2, _t, _g = proposal_planner._post_ground_fixups(
     dict(dm), dict(themes), dict(g), city, all_pois, 1,
     "上海2日骑行，喜欢历史文化", None)
-new_ids = [i for i in dm2[1] if i != "SH038"]
+new_ids = [i for i in dm2[1] if i != "SH009"]
 assert len(dm2[1]) >= 2, f"骑行薄天应被补强: {dm2[1]}"
 far = [i for i in new_ids if float(all_pois[i].get("dist_center_km") or 0) > 12.0]
 assert not far, f"骑行口径补进远郊点: {[all_pois[i]['name'] for i in far]}"
-print(f"B ✅ 骑行补强 2 点全部 ≤12km（补入 {[all_pois[i]['name'] for i in new_ids]}）")
+print(f"B ✅ 市区骑行薄天补强 {[all_pois[i]['name'] for i in new_ids]} 全部 ≤12km（报障 14 守住）")
+
+# ---- B2: 环湖场景（第 3 层，2026-10-12）----
+# 当天点全在远郊（如天文馆 53km）⇒ 判定为环湖/环岛骑行，补强应按「当日邻域」
+# 补进环湖点，而不是按距市中心过滤（后者会把环湖点全滤掉、只剩市区点）。
+dm_loop = {1: ["SH038"]}
+dm2l, _tl, _gl = proposal_planner._post_ground_fixups(
+    dict(dm_loop), dict(themes), dict(g), city, all_pois, 1,
+    "上海2日骑行，环湖", None)
+loop_new = [i for i in dm2l[1] if i != "SH038"]
+loop_ok = [i for i in loop_new
+           if poi_db.haversine_km(all_pois[i]["lat"], all_pois[i]["lng"],
+                                  all_pois["SH038"]["lat"], all_pois["SH038"]["lng"])
+           <= proposal_planner.CYCLE_LOOP_KM]
+assert loop_new and len(loop_ok) == len(loop_new), \
+    f"环湖补强应按当日邻域取点: {[(i, all_pois[i]['name']) for i in loop_new]}"
+print(f"B2 ✅ 环湖场景补强按当日邻域取点：{[all_pois[i]['name'] for i in loop_new]}")
 
 # ---- A1: regroup 容量预检 ----
 # 构造：Day1 = 远郊大点（天文馆 4h/70km，触发 big 判定）+ 市区错配点（武康路）；
