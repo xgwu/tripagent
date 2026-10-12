@@ -534,11 +534,12 @@ def _fmt(h: float) -> str:
 
 def _hop_label(km: float, th: float, mode: str | None = None) -> str:
     """通行段标签（随出行方式切换）：
-    默认：<1.2km 步行，否则车程；骑行：<1.2km 步行 / ≤CYCLE_MAX_KM(25km) 骑行 /
-    超过则车程；徒步：<3km 步行，否则车程；自驾：<1.2km 步行，否则自驾（时长口径同默认）。"""
+    默认：<1.2km 步行，否则车程；骑行：**一律「骑行」**（≤CYCLE_MAX_KM(60km)，超则车程）；
+    徒步：<3km 步行，否则车程；自驾：<1.2km 步行，否则自驾（时长口径同默认）。
+    ⚠️ 2026-10-12：骑行分支**取消「步行」**——骑行日「有车就骑」，短腿也骑车，
+    标签与 travel_hours 的骑行口径一致（原先 1.18km 腿标「步行 16 分钟」而实骑 8 分钟）。"""
     if mode == "cycling":
-        mode_s = "步行" if km < poi_db.HOP_WALK_KM else \
-            ("骑行" if km <= poi_db.CYCLE_MAX_KM else "车程")
+        mode_s = "骑行" if km <= poi_db.CYCLE_MAX_KM else "车程"
     elif mode == "hiking":
         mode_s = "步行" if km < poi_db.WALK_MODE_MAX_KM else "车程"
     elif mode == "driving":

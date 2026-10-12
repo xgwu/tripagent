@@ -107,8 +107,8 @@ case(f"E1 短腿（{km_short:.1f}km <8）口径不变（仍骑行 12km/h）",
      abs(th_min("SZ067", "SZ068")
          - km_short * poi_db.CIRCUITY / poi_db.CYCLE_KMH * 60) < 1.0)
 
-# ---- E2：骑行日 hop 标签不得出现「车程」（Kenny 实测报障的正面守卫）----
-# 用环太湖真实长腿（27km 级）验证：骑行主题下所有腿都应标「骑行」或「步行」
+# ---- E2：骑行日 hop 标签不得出现「车程」/「步行」（Kenny 实测报障的正面守卫）----
+# 2026-10-12 追加「步行」：骑行日「有车就骑」，短腿也骑车，不得标步行（口径一致）。
 _seq = sequencer.order_day([cyc[i] for i in ["SZ042", "SZ064", "SZ067", "SZ068",
                                               "SZ069", "SZ070", "SZ073"]],
                            city=city, mode="cycling")
@@ -116,13 +116,30 @@ _bad = []
 for _a, _b in zip(_seq, _seq[1:]):
     _km = poi_db.haversine_km(_a["lat"], _a["lng"], _b["lat"], _b["lng"])
     _lab = sequencer._hop_label(_km, poi_db.travel_hours(_a, _b, "cycling"), "cycling")
-    if _lab.split()[0] == "车程":
-        _bad.append(f"{_a['name']}→{_b['name']} {_km:.1f}km")
-case("E2 骑行日 hop 标签无「车程」（环太湖 27km 级长腿仍标骑行）",
-     not _bad, f"误标车程腿={_bad}" if _bad else f"共 {len(_seq)-1} 腿全为骑行/步行")
+    if _lab.split()[0] in ("车程", "步行"):
+        _bad.append(f"{_a['name']}→{_b['name']} {_km:.1f}km [{_lab.split()[0]}]")
+case("E2 骑行日 hop 标签无「车程」/「步行」（环湖 27km 级长腿仍标骑行）",
+     not _bad, f"误标={_bad}" if _bad else f"共 {len(_seq)-1} 腿全为骑行")
 case("E3 骑行日长腿时间按骑行口径（27km 级 ≥100min，非驾车的 ~47min）",
      th_min("SZ073", "SZ067") >= 60.0,
      f"铜观音寺↔明月湾 {th_min('SZ073', 'SZ067'):.0f}min")
+
+# ---- E4：骑行短腿按骑行口径（不再按步行 4.5km/h）----
+# 1.18km 腿：旧口径按步行 = 1.18/4.5*60 ≈ 16min；骑行应为 1.18*1.4/12*60 ≈ 8min
+a1 = {"id": "W1", "lat": 31.0, "lng": 120.0, "open_h": 9.0, "close_h": 17.0, "dur": 0.5}
+b1 = {"id": "W2", "lat": 31.0 + 1.18 / 111.0, "lng": 120.0,
+      "open_h": 9.0, "close_h": 17.0, "dur": 0.5}
+_km1 = poi_db.haversine_km(a1["lat"], a1["lng"], b1["lat"], b1["lng"])
+_th1 = poi_db.travel_hours(a1, b1, "cycling") * 60
+case(f"E4 骑行短腿({_km1:.2f}km)按骑行口径（≈8min，非按步行的 ~16min）",
+     _th1 < 12.0, f"实测 {_th1:.1f}min")
+case("E5 骑行短腿标签为「骑行」不是「步行」",
+     sequencer._hop_label(_km1, _th1 / 60, "cycling").startswith("骑行"),
+     sequencer._hop_label(_km1, _th1 / 60, "cycling"))
+case("E6 徒步模式短腿仍标「步行」（未误伤徒步）",
+     sequencer._hop_label(1.0, 0.2, "hiking").startswith("步行"))
+case("E7 默认（车驾）短腿仍标「步行」（未误伤默认）",
+     sequencer._hop_label(1.0, 0.2, None).startswith("步行"))
 
 # ---- F：其他 mode 不受影响 ----
 case("F1 mode=None（车驾）口径不变（SPEED_KMH 18）",

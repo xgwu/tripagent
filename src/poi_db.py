@@ -149,15 +149,17 @@ def travel_hours(p1: dict, p2: dict, mode: str | None = None) -> float:
     """两 POI 间通行时间（小时）。L1 缓存优先（OSRM 路网），L3 直线兜底。
 
     mode：出行方式（None=车驾混合 | "cycling"=骑行 | "hiking"=徒步）。
-    骑行：<1.2km 按步行，1.2~CYCLE_MAX_KM(25km) 按骑行速度（路网距离 = 直线×绕路系数），
-    超过则回退车驾口径（2026-10-12 第 2 层：原阈值 8km 会让环湖长腿低估 3 倍）；
-    徒步：<3km 按步行，超过仍按车驾。
+    骑行：**一律按骑行速度**（路网距离 = 直线×绕路系数），≤CYCLE_MAX_KM(60km)；
+    超过则回退车驾口径（2026-10-12：该阈值是「物理荒谬安全阀」，**不是骑行判据**）。
+    ⚠️ 2026-10-12 修正（Kenny 实测）：骑行分支**取消 <1.2km 的步行特判**。
+    骑行主题日用户就是要骑车——「有车就骑」，哪怕 500m 也骑车（省力省时）。
+    原先 <1.2km 按步行 4.5km/h 计：1.18km 腿算 16min，而骑行只需 8min（**时间虚高一倍**），
+    且标签写「步行」（与「骑行日不该出现车程」同一类口径不一致）。全库 181 对 <1.2km。
+    徒步：<3km 按步行，超过仍按车驾（徒步是走路，短腿本就走，无此问题）。
     距离口径与既有 L3 模型一致，不引入新缓存。
     """
     km = haversine_km(p1["lat"], p1["lng"], p2["lat"], p2["lng"])
     if mode == "cycling":
-        if km < HOP_WALK_KM:
-            return max(MIN_SLOW_TRAVEL_H, km / WALK_KMH)
         if km <= CYCLE_MAX_KM:
             return max(MIN_SLOW_TRAVEL_H, km * CIRCUITY / CYCLE_KMH)
     elif mode == "hiking":
