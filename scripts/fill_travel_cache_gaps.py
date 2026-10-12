@@ -21,17 +21,26 @@ MIN_MIN = 15
 
 
 def detect_indent(path: str):
+    """探测 JSON 缩进，返回 (ok, indent)。
+
+    ⚠️ 不能用 `None` 兼作哨兵 —— `build_travel_cache.py` 写的是**紧凑格式**
+    （`json.dump(..., ensure_ascii=False)`，无 indent），而 `None` 恰是紧凑格式的合法值，
+    直接返回 `None` 会被上层误判为「探测失败」而拒绝写回（2026-10-12 踩坑）。
+    """
     raw = open(path, encoding="utf-8").read()
-    for cand in (None, 0, 1, 2, 4):
-        if json.dumps(json.loads(raw), ensure_ascii=False, indent=cand).strip() == raw.strip():
-            return cand, raw
-    return None, raw
+    for cand in (None, 1, 2, 4):
+        try:
+            if json.dumps(json.loads(raw), ensure_ascii=False, indent=cand).strip() == raw.strip():
+                return True, cand
+        except Exception:
+            continue
+    return False, None
 
 
 def main(city: str):
     path = os.path.join(DATA_DIR, "travel_cache.json")
-    indent, _ = detect_indent(path)
-    assert indent is not None, "travel_cache.json 格式无法探测，拒绝写回"
+    ok, indent = detect_indent(path)
+    assert ok, "travel_cache.json 格式无法探测，拒绝写回"
     cache = json.load(open(path, encoding="utf-8"))
     minutes = cache["minutes"]
     pois = json.load(open(os.path.join(DATA_DIR, f"{city}_pois.json"), encoding="utf-8"))["pois"]
