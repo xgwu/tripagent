@@ -40,8 +40,11 @@ stdio、可由云主机提供 ⇒ 收包人**零安装**（既不装 exe 也不�
 详见 `tripplanner_mcp_server.py` 文件头的 M6.3 / M6.6 说明）。**会话隔离仍需保留**，
 但理由只剩「状态隔离」这一条。
 
-⚠️ 已知取舍（原型阶段）：`handle()` 读的是模块全局 `SESSION`，故「设置 SESSION + 调
-   handle」用一把 `_exec_lock` **串行**执行 —— 正确性优先。生产化应把 SESSION 传参化。
+⚠️ 并发模型（2026-10-12 更新）：早年 `handle()` 读**模块全局** `SESSION`，故用一把
+   `_exec_lock` **全串行**执行（「设 SESSION + 调 handle」不能被打断）。P0 修复把
+   `SESSION` 改成**线程局部代理**（`_SessionProxy` + `bind()`）后，串行的理由消失，
+   已改为**有界并发**：重工具过 `_gate`（Semaphore，默认 8 路），轻工具直放。
+   见下方「并发闸」注释。
 """
 from __future__ import annotations
 
@@ -66,7 +69,31 @@ _load_lock = threading.Lock()
 
 _sessions: dict = {}
 _sess_lock = threading.Lock()
-_exec_lock = threading.Lock()
+
+# ---------------------------------------------------------------------------
+# 🔴 并发闸（2026-10-12，P0 后续）—— 取代原先的 `_exec_lock`「全串行」
+#
+# 历史：`handle()` 曾读**模块全局** `SESSION`，故必须「设 SESSION + 调 handle」
+#   用 `_exec_lock` 串行（见文件头旧注）。P0 修复把 `SESSION` 改成线程局部代理后，
+#   **串行的理由消失** —— 但直接去锁会变成「无上限并发」：N 个用户同刻进来 = N 路 LLM，
+#   会刷爆上游（限流/成本失控）⇒ 用**有界并发闸**替代：允许 8 路同时跑、超出等待。
+#
+# 只闸「重工具」（触发服务端 LLM / 重排）：plan_trip / open_plan / replace / move / export。
+# 轻工具（ping / list_cities / panel_ready / get_plan）**直放**，保证面板刷新与握手手感。
+# 未知工具默认**受闸**（fail-safe：宁可等，不可无限耗资源）。
+# ---------------------------------------------------------------------------
+MAX_CONCURRENCY = max(1, int(os.environ.get("TRIPAGENT_MCP_CONCURRENCY") or 8))
+_gate = threading.Semaphore(MAX_CONCURRENCY)
+# 等闸超时：超过则回「系统繁忙」而不是无限排队（排队几十秒用户也等不到结果）
+GATE_WAIT_S = float(os.environ.get("TRIPAGENT_MCP_GATE_WAIT_S") or 180.0)
+
+# 轻工具白名单（不需要并发闸）—— 与 tripplanner_mcp_server 的工具名保持一致
+_LIGHT_TOOLS = {
+    "tripplanner_ping",
+    "tripplanner_list_cities",
+    "tripplanner_panel_ready",
+    "tripplanner_get_plan",
+}
 
 MAX_SESSIONS = 64  # 简单上限，防长期运行内存单调增长
 
@@ -145,6 +172,15 @@ def _error(id_, code: int, message: str, status: int = 200) -> dict:
     return {"status": status, "session_id": None, "body": body}
 
 
+def _needs_gate(msg) -> bool:
+    """该请求是否要过并发闸（重工具）。轻工具与协议方法直放。"""
+    method = (msg or {}).get("method")
+    if method != "tools/call":
+        return False                       # initialize / tools/list / ping 等协议方法不过闸
+    name = ((msg.get("params") or {}).get("name") or "")
+    return name not in _LIGHT_TOOLS         # 未知工具默认受闸（fail-safe）
+
+
 def _handle_one(msg, sid_hint: str | None, out: dict):
     """处理一条 JSON-RPC 消息，返回 response dict 或 None（notification）。"""
     if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0" or "method" not in msg:
@@ -160,12 +196,25 @@ def _handle_one(msg, sid_hint: str | None, out: dict):
     if method == "initialize" or sid != (sid_hint or ""):
         out["session_id"] = sid
 
-    with _exec_lock:
-        # 🔴 P0（2026-10-12）：`SESSION` 已改为**线程局部代理**（`_SessionProxy`），
-        #   用 `bind()` 绑定本请求的会话；`handle()` 内所有 `SESSION.xxx` 只看到它。
-        #   替代原先的 `m.SESSION = sess`（模块级全局赋值 = 跨会话串数据的结构根因）。
+    # 🔴 2026-10-12：`_exec_lock` 已删除（P0 修复后 SESSION 是线程局部的，串行不再必要）。
+    #   `bind()` 把本请求的会话绑到**本线程**；handle() 内 `SESSION.xxx` 只看到它，
+    #   多请求并发互不可见 ⇒ 可安全并行。
+    if not _needs_gate(msg):
         m.SESSION.bind(sess)
         return m.handle(msg)
+
+    # 重工具：过有界并发闸（8 路），超出等待；等不到则回友好错误（不无限排队）
+    if not _gate.acquire(timeout=GATE_WAIT_S):
+        log(f"并发闸超时（>{GATE_WAIT_S:.0f}s 未获槽位），已拒绝")
+        return {"jsonrpc": "2.0", "id": msg.get("id"),
+                "error": {"code": -32000,
+                          "message": f"系统繁忙：当前并发规划已达上限（{MAX_CONCURRENCY}），"
+                                     f"请稍后重试"}}
+    try:
+        m.SESSION.bind(sess)
+        return m.handle(msg)
+    finally:
+        _gate.release()
 
 
 def dispatch(body: bytes, sid_hint: str | None = None) -> dict:

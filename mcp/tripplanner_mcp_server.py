@@ -278,23 +278,29 @@ def amap_js_key() -> str:
     global _AMAP_KEY_CACHE
     if _AMAP_KEY_CACHE is not None:
         return _AMAP_KEY_CACHE
-    key = ""
-    try:
-        with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
-            key = str((json.load(f) or {}).get("amap_js_key") or "").strip()
-    except Exception as e:
-        log("本地 secrets.json 未取到 amap_js_key（改用云端）", err=str(e))
-    if not key:
+    with _CACHE_LOCK:                      # 并发首访只放一个进来（见 _CACHE_LOCK 注释）
+        if _AMAP_KEY_CACHE is not None:
+            return _AMAP_KEY_CACHE
+        key = ""
         try:
-            res = remote_request("/api/cities", timeout=6.0)
-            key = str((res or {}).get("amap_key") or "").strip()
-            dbg("amap_js_key.from_remote", ok=bool(key))
-        except Exception as e:  # noqa: BLE001 —— 面板开不了比地图缺失严重得多
-            dbg("amap_js_key.remote.fail", err=str(e))
-    if not key:
-        log("⚠️ 未取得 amap_js_key（面板地图将不可用，其余功能不受影响）")
-    _AMAP_KEY_CACHE = key
-    return key
+            with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
+                key = str((json.load(f) or {}).get("amap_js_key") or "").strip()
+        except Exception as e:
+            log("本地 secrets.json 未取到 amap_js_key（改用云端）", err=str(e))
+        if not key:
+            try:
+                res = remote_request("/api/cities", timeout=6.0)
+                key = str((res or {}).get("amap_key") or "").strip()
+                dbg("amap_js_key.from_remote", ok=bool(key))
+            except Exception as e:  # noqa: BLE001 —— 面板开不了比地图缺失严重得多
+                dbg("amap_js_key.remote.fail", err=str(e))
+                # ⚠️ 远端失败 ⇒ **不缓存空值**，下次请求重试（否则网络抖动会被钉成永久空键）
+                return ""
+        if not key:
+            log("⚠️ 未取得 amap_js_key（面板地图将不可用，其余功能不受影响）")
+            return ""                       # 本地+远端都明确没有 → 也不缓存（给未来配置机会）
+        _AMAP_KEY_CACHE = key
+        return key
 
 
 _REMOTE_AUTH_CACHE = None
@@ -314,24 +320,27 @@ def remote_basic_auth() -> str:
     global _REMOTE_AUTH_CACHE
     if _REMOTE_AUTH_CACHE is not None:
         return _REMOTE_AUTH_CACHE
-    val = ""
-    try:
-        with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
-            val = str((json.load(f) or {}).get("remote_basic_auth") or "").strip()
-    except Exception as e:
-        log("remote_basic_auth 读取失败（线上后端将不带凭据）", err=str(e))
-    if not val:
-        _REMOTE_AUTH_CACHE = ""
-    elif val[:6].lower() == "basic ":
-        _REMOTE_AUTH_CACHE = val
-    elif ":" in val:
-        import base64 as _b64
-        _REMOTE_AUTH_CACHE = "Basic " + _b64.b64encode(val.encode("utf-8")).decode("ascii")
-    else:
-        # 既不是成品头、又没有冒号 —— 无法组成 Basic，视为未配置（报错可见）
-        log("remote_basic_auth 格式无效（应为 user:pass）", chars=len(val))
-        _REMOTE_AUTH_CACHE = ""
-    return _REMOTE_AUTH_CACHE
+    with _CACHE_LOCK:                      # 并发首访只放一个（见 _CACHE_LOCK 注释）
+        if _REMOTE_AUTH_CACHE is not None:
+            return _REMOTE_AUTH_CACHE
+        val = ""
+        try:
+            with open(os.path.join(project_root(), "secrets.json"), encoding="utf-8") as f:
+                val = str((json.load(f) or {}).get("remote_basic_auth") or "").strip()
+        except Exception as e:
+            log("remote_basic_auth 读取失败（线上后端将不带凭据）", err=str(e))
+        if not val:
+            _REMOTE_AUTH_CACHE = ""
+        elif val[:6].lower() == "basic ":
+            _REMOTE_AUTH_CACHE = val
+        elif ":" in val:
+            import base64 as _b64
+            _REMOTE_AUTH_CACHE = "Basic " + _b64.b64encode(val.encode("utf-8")).decode("ascii")
+        else:
+            # 既不是成品头、又没有冒号 —— 无法组成 Basic，视为未配置（报错可见）
+            log("remote_basic_auth 格式无效（应为 user:pass）", chars=len(val))
+            _REMOTE_AUTH_CACHE = ""
+        return _REMOTE_AUTH_CACHE
 
 
 # ---------------------------------------------------------------------------
@@ -348,8 +357,8 @@ def remote_basic_auth() -> str:
 #     钥匙 —— 用落盘的 session_id，plan / move / replace / 拉行程 全程带着它。
 # ---------------------------------------------------------------------------
 REMOTE_JSON_NAME = "remote.json"          # 分享包自带：{"base": "...", "auth": "user:pass"}
-_SESSION_ID_CACHE = None
 _REMOTE_CFG_CACHE = None
+_CFG_LOCK = threading.Lock()   # remote_config 专用（内部调 remote_basic_auth，不可与 _CACHE_LOCK 共用）
 
 
 def remote_config_path() -> str:
@@ -424,28 +433,33 @@ def remote_config() -> dict:
     global _REMOTE_CFG_CACHE
     if _REMOTE_CFG_CACHE is not None:
         return _REMOTE_CFG_CACHE
-    base = (os.environ.get("TRIPPLANNER_REMOTE_BASE") or "").strip()
-    auth = (os.environ.get("TRIPPLANNER_REMOTE_AUTH") or "").strip()
-    try:
-        with open(remote_config_path(), encoding="utf-8") as f:
-            d = json.load(f) or {}
-        base = base or str(d.get("base") or d.get("url") or "").strip()
-        auth = auth or str(d.get("auth") or d.get("basic_auth") or "").strip()
-        log("remote.json 已加载", path=remote_config_path())
-    except FileNotFoundError:
-        pass
-    except Exception as e:  # noqa: BLE001 —— 配置坏了要看得见，不能静默退化成默认
-        log("remote.json 读取失败", err=str(e), path=remote_config_path())
-    base = (base or REMOTE_API_DEFAULT_BASE).rstrip("/")
-    if not auth:
-        auth = remote_basic_auth()
-    if auth and not auth[:6].lower().startswith("basic "):
-        import base64 as _b64
-        auth = "Basic " + _b64.b64encode(auth.encode("utf-8")).decode("ascii")
-    _REMOTE_CFG_CACHE = {"base": base, "auth": auth}
-    log("远端后端配置", base=base, has_auth=bool(auth),
-        src="remote.json" if os.path.exists(remote_config_path()) else "secrets/默认")
-    return _REMOTE_CFG_CACHE
+    # ⚠️ 用**独立**的锁：本函数内部会调 `remote_basic_auth()`（它用 `_CACHE_LOCK`）
+    #    若共用一把不可重入锁会自锁死。
+    with _CFG_LOCK:
+        if _REMOTE_CFG_CACHE is not None:
+            return _REMOTE_CFG_CACHE
+        base = (os.environ.get("TRIPPLANNER_REMOTE_BASE") or "").strip()
+        auth = (os.environ.get("TRIPPLANNER_REMOTE_AUTH") or "").strip()
+        try:
+            with open(remote_config_path(), encoding="utf-8") as f:
+                d = json.load(f) or {}
+            base = base or str(d.get("base") or d.get("url") or "").strip()
+            auth = auth or str(d.get("auth") or d.get("basic_auth") or "").strip()
+            log("remote.json 已加载", path=remote_config_path())
+        except FileNotFoundError:
+            pass
+        except Exception as e:  # noqa: BLE001 —— 配置坏了要看得见，不能静默退化成默认
+            log("remote.json 读取失败", err=str(e), path=remote_config_path())
+        base = (base or REMOTE_API_DEFAULT_BASE).rstrip("/")
+        if not auth:
+            auth = remote_basic_auth()
+        if auth and not auth[:6].lower().startswith("basic "):
+            import base64 as _b64
+            auth = "Basic " + _b64.b64encode(auth.encode("utf-8")).decode("ascii")
+        _REMOTE_CFG_CACHE = {"base": base, "auth": auth}
+        log("远端后端配置", base=base, has_auth=bool(auth),
+            src="remote.json" if os.path.exists(remote_config_path()) else "secrets/默认")
+        return _REMOTE_CFG_CACHE
 
 
 def remote_request(path: str, params: dict | None = None, payload: dict | None = None,
@@ -501,6 +515,12 @@ def remote_request(path: str, params: dict | None = None, payload: dict | None =
 
 
 _AMAP_KEY_CACHE = None
+# 🔴 2026-10-12 并发安全（MCP 去掉全串行锁后，多处惰性缓存会被并发首访）：
+#   这些缓存都是「读配置 → 幂等结果」，但仍需防两类并发问题：
+#     ① 多个线程同时首次读 → 重复读文件/重复打远端（浪费，但结果一致）；
+#     ② **失败结果被缓存**（如 amap key 取不到时缓存 `""`）→ 首访若恰逢网络抖动，
+#        后续所有请求都被这个空值污染（当日地图永久不可用）。故加锁 + 失败不缓存。
+_CACHE_LOCK = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
