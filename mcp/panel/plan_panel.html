@@ -188,8 +188,9 @@
   // 全程带着它，云端据此记住「本会话的当前行程」。
   var SESSION_ID = "__SESSION_ID__";
   if (!SESSION_ID || SESSION_ID.indexOf("__SESSION") === 0) SESSION_ID = "";
-  // 冷启动兜底：server 渲染时注入的当前行程（云端会话过期 / 首次加载时用）。
-  var PLAN_SEED = __PLAN_JSON__;
+  // 🔴 2026-10-13 **已移除行程种子**。面板 HTML 是宿主跨会话缓存的静态资源，
+  //   把「某一次的行程快照」刻进去 ⇒ 下个会话复用到的是别人的行程（见 loadPlan 注释）。
+  //   行程一律运行时按本会话 sid 索取；失败就明确显示「暂无行程」。
 
   var BACKENDS = [];
   if (REMOTE_BASE) BACKENDS.push({ name: "线上", base: REMOTE_BASE, token: "", auth: REMOTE_AUTH });
@@ -1308,53 +1309,97 @@
   // ---------------- 数据获取 ----------------
   // 通道 1（主）：云端 `GET /api/plan?shape=mcp&session=<sid>` —— 回**本会话当前行程**。
   //   云端刻意无状态，靠 session 记住「你这份行程」；plan / move / replace 都会更新它。
-  // 通道 2（兜底）：渲染时注入的 `PLAN_SEED`（server 从磁盘读到的当前行程）——
-  //   云端会话过期 / 后端不可达时，至少还有一份可渲染，不至于空白。
+  // 通道 2（已移除）：行程种子 `PLAN_SEED`。见上文「2026-10-13 已移除」。
   // 通道 3（补）：宿主把 bootstrap 的 tool-result 推下来时直接用它（M1 以来一直靠它）。
+  // 🔴🔴 **为什么不信任注入的 SESSION_ID**（2026-10-13 报障：规划武汉，面板出苏州）：
+  //   面板 HTML 是**宿主缓存的静态资源**（server log 实证 `resolver.resolve.cacheHit
+  //   … shared=true`，同一份跨会话复用）⇒ HTML 里注入的 SESSION_ID / 行程种子是
+  //   **烤死那一刻的值**，下个会话复用时就是"别人的钥匙"。
+  //   实测用它去问云端 ⇒ "会话已过期" ⇒ 面板回落到同批烤死的 PLAN_SEED
+  //   ⇒ **渲染出别人的行程**（苏州）。
+  //   ⇒ **刻进 HTML 的会话/行程数据天生陈旧**。修法：session 一律运行时索取。
+  //   宿主→server 的 tools/call 通道实测可用（ panel_ready 到过 344 次）。
   window.loadPlan = function(){
     document.getElementById("subLine").textContent = "正在读取行程…";
-    var path = "/api/plan?shape=mcp";
-    if (SESSION_ID) path += "&session=" + encodeURIComponent(SESSION_ID);
-    // 标 localOnly 只为「失败不刷红色横幅」（会话过期属预期内，落 PLAN_SEED 兜底即可）
-    return apiCall(path, "tripplanner_get_plan", {}, "GET", { localOnly: true })
-      .then(function(sc){
-        sc = sc || {};
-        var plan = sc.plan || null;
-        if (plan && plan.dayList){
-          render(plan);
-          document.getElementById("stage").textContent = "M5 · 已加载";
-          log("!", "行程加载成功 city=" + plan.city + " via=" + apiMode);
-          trace("plan.loaded", "city=" + plan.city + " via=" + apiMode);
-          return;
-        }
-        // 云端没给（会话过期 / 首次加载）⇒ 退到渲染时注入的那份
-        if (PLAN_SEED && PLAN_SEED.dayList){
-          render(PLAN_SEED);
-          document.getElementById("stage").textContent = "M5 · 已加载（本地副本）";
-          log("!", "云端无会话 → 用注入的 PLAN_SEED city=" + PLAN_SEED.city);
-          trace("plan.loaded", "city=" + PLAN_SEED.city + " via=seed");
-          return;
-        }
-        // ⚠️ 不要用空结果覆盖已渲染好的内容（否则用户看到一片空白，
-        //    而之前那次渲染其实是好的）。
-        if (renderedOnce){
-          setDiag("plan", "云端暂无行程，已保留上一次渲染结果；可点「重新拉取行程」再试");
-          log("!", "云端无行程，保留已有渲染（不清空）");
-        } else {
-          render(null);
-          setDiag("plan", "云端暂无行程且尚无任何渲染");
-          log("!", "云端暂无行程");
-        }
+    return ensureSessionId().then(function(){
+      var path = "/api/plan?shape=mcp";
+      if (SESSION_ID) path += "&session=" + encodeURIComponent(SESSION_ID);
+      // 标 localOnly 只为「失败不刷红色横幅」（会话过期属预期内）
+      return apiCall(path, "tripplanner_get_plan", {}, "GET", { localOnly: true });
+    }).then(function(sc){
+      sc = sc || {};
+      var plan = sc.plan || null;
+      if (plan && plan.dayList){
+        render(plan);
+        document.getElementById("stage").textContent = "M5 · 已加载";
+        log("!", "行程加载成功 city=" + plan.city + " via=" + apiMode);
+        trace("plan.loaded", "city=" + plan.city + " via=" + apiMode);
+        return;
+      }
+      // 🔴 云端明确说会话过期 ⇒ 注入的 SESSION_ID 是陈旧的 ⇒ 运行时重新索取一次再试
+      if (!SESSION_ID || (sc.error && /过期|expire/i.test(String(sc.error)))){
+        log("!", "会话不可用（" + (sc.error || "无 session") + "）⇒ 运行时重取会话");
+        SESSION_ID = "";                       // 丢弃陈旧值
+        _sidPromise = null;
+        return ensureSessionId().then(function(newSid){
+          if (!newSid || newSid === "") return null;
+          var p2 = "/api/plan?shape=mcp&session=" + encodeURIComponent(newSid);
+          return apiCall(p2, "tripplanner_get_plan", {}, "GET", { localOnly: true });
+        }).then(function(sc2){
+          var pl2 = (sc2 || {}).plan;
+          if (pl2 && pl2.dayList){
+            render(pl2);
+            document.getElementById("stage").textContent = "M5 · 已加载";
+            log("!", "重取会话后加载成功 city=" + pl2.city);
+            trace("plan.loaded", "city=" + pl2.city + " via=runtime-session");
+            return true;
+          }
+          return null;
+        });
+      }
+      return null;
+    }).then(function(okDone){
+      if (okDone) return;
+      // ⚠️ 不要用空结果覆盖已渲染好的内容（否则用户看到一片空白，
+      //    而之前那次渲染其实是好的）。
+      if (renderedOnce){
+        setDiag("plan", "云端暂无行程，已保留上一次渲染结果；可点「重新拉取行程」再试");
+        log("!", "云端无行程，保留已有渲染（不清空）");
+      } else {
+        render(null);
+        setDiag("plan", "云端暂无行程且尚无任何渲染");
+        log("!", "云端暂无行程");
+      }
+    }).catch(function(e){
+      document.getElementById("subLine").textContent = "读取失败：" + (e && e.message);
+      log("!", "拉行程失败：" + (e && e.message));
+    });
+  };
+
+  // 运行时索取 session：走宿主通道调 open_plan，**每次都针对当前 request 重新执行**
+  // ⇒ 天然新鲜，不会命中面版 HTML 缓存（这是它与注入值的本质区别）。
+  var _sidPromise = null;
+  function ensureSessionId(){
+    if (SESSION_ID) return Promise.resolve(SESSION_ID);
+    if (_sidPromise) return _sidPromise;
+    _sidPromise = request("tools/call", { name: "tripplanner_open_plan", arguments: {} })
+      .then(function(res){
+        var sc = (res && res.structuredContent) || {};
+        return sc.session || sc.sessionId || "";
+      })
+      .then(function(v){
+        SESSION_ID = v || "";
+        log("!", "runtime session = " + (SESSION_ID ? SESSION_ID.slice(0, 8) + "…" : "（未取到）"));
+        trace("session.runtime", SESSION_ID ? "ok " + SESSION_ID.slice(0, 8) : "none");
+        return SESSION_ID;
       })
       .catch(function(e){
-        document.getElementById("subLine").textContent = "读取失败：" + e.message;
-        if (!renderedOnce && PLAN_SEED && PLAN_SEED.dayList){
-          render(PLAN_SEED);
-          log("!", "拉取失败 → 用注入的 PLAN_SEED 渲染");
-        }
-        log("!", "拉行程失败：" + e.message);
+        _sidPromise = null;                    // 失败允许下次重试
+        log("!", "runtime 取会话失败：" + (e && e.message || e));
+        return "";
       });
-  };
+    return _sidPromise;
+  }
 
   // ---------------- 握手 ----------------
   window.probe = function(){
@@ -1499,7 +1544,7 @@
   trace("panel.boot", "v=__PANEL_VERSION__ base=" + (REMOTE_BASE || "none")
         + " auth=" + (REMOTE_AUTH ? "yes" : "no")
         + " session=" + (SESSION_ID ? SESSION_ID.slice(0, 6) : "none")
-        + " seed=" + ((PLAN_SEED && PLAN_SEED.dayList) ? "yes" : "no")
+        + " seed=removed(2026-10-13)"
         + " proto=" + location.protocol + " origin=" + location.origin);
   probeApi().then(function(okNow){
     trace("panel.apiProbe", okNow ? "ok" : "down");

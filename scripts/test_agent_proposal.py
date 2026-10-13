@@ -238,7 +238,9 @@ case("F1 面板徽标：planSource=agent → 「Agent 提案」",
      'String(plan.planSource || "") === "agent"' in _html
      and "Agent 提案</span>" in _html
      and "modeBadge + srcBadge + violBadge" in _html)
-case("F2 PANEL_VERSION 已 +1（= m21）", 'PANEL_VERSION = "m21"' in
+# ⚠️ 版本号随面板改动递增，本用例是「改了面板要记得 +1」的检查器，不是钉死某一版。
+#   2026-10-13 面板改到 m22（移除行程种子 + 会话改为运行时索取）⇒ 同步期望。
+case("F2 PANEL_VERSION 已 +1（= m22）", 'PANEL_VERSION = "m22"' in
      open(os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py"),
           encoding="utf-8").read())
 case("F3 plan_summary 文本带「提案来源=」", "提案来源=" in

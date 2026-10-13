@@ -74,7 +74,9 @@ def main() -> int:
                    # M5：线上后端 = 自建云主机（http+IP + nginx Basic 认证）
                    "__REMOTE_API_AUTH__", "REMOTE_AUTH", "Authorization",
                    # M5：会话（云端无状态 ⇒「我这份行程」靠 session 认领）
-                   "__SESSION_ID__", "SESSION_ID", "__PLAN_JSON__", "PLAN_SEED",
+                   # ⚠️ `__PLAN_JSON__`/`PLAN_SEED` 已随 2026-10-13 修复**整体移除**
+                   #    （行程快照烤进被缓存复用的 HTML ⇒ 渲染给别人），不再是锚点。
+                   "__SESSION_ID__", "SESSION_ID", "ensureSessionId",
                    # M4 诊断：上报宿主上下文（判定混合内容是否拦）
                    "panel.remoteProbe", "location.protocol",
                    # M6：面板高度上报（宿主据此把 iframe 撑到内容高度 ⇒ 面板内不再滚动）
@@ -620,8 +622,26 @@ def main() -> int:
     chk("SESSION_ID 初值是占位符（真实 id 只在服务端注入）",
         bool(msid) and msid.group(1) == "__SESSION_ID__",
         repr(msid.group(1)) if msid else "未找到 SESSION_ID 定义")
-    chk("行程种子 PLAN_SEED 由注入而来（__PLAN_JSON__）",
-        re.search(r'var\s+PLAN_SEED\s*=\s*__PLAN_JSON__\s*;', html) is not None)
+    # 🔴 2026-10-13（「规划武汉、面板出苏州」报障）：**行程种子已移除**。
+    #   面板 HTML 是宿主**跨会话缓存**的静态资源（实证 resolver.resolve.cacheHit
+    #   shared=true）⇒ 把行程快照刻进去，下个会话复用时就渲染出别人的行程。
+    #   反向钉住：面板里**不得**再有 __PLAN_JSON__ / PLAN_SEED 的注入或使用。
+    chk("已移除行程种子（__PLAN_JSON__ 不得再出现）",
+        "__PLAN_JSON__" not in html,
+        "PLAN_SEED 会把 A 的行程烤进被缓存复用的 HTML ⇒ 渲染给 B")
+    chk("已移除 PLAN_SEED 变量（不得读取它可能含谁的行程）",
+        re.search(r"var\s+PLAN_SEED\s*=", html) is None)
+    # 🔴 正面钉**本次修复**：session 必须运行时索取（经宿主 tools/call 调 open_plan），
+    #    不能只依赖注入到 HTML 里的那个（它同样会被缓存复用 ⇒ 陈旧/串号）。
+    chk("会话运行时索取：loadPlan 先 ensureSessionId()",
+        re.search(r"window\.loadPlan\s*=\s*function\s*\(\s*\)\s*\{[\s\S]{0,300}?ensureSessionId\(\)",
+                  html) is not None)
+    chk("ensureSessionId 走宿主通道 tools/call open_plan",
+        re.search(r'request\(\s*"tools/call"\s*,\s*\{\s*name:\s*"tripplanner_open_plan"',
+                  html) is not None)
+    chk("会话过期时去重取并重试（不被烤死值困住）",
+        re.search(r"/过期|expire/i", html) is not None
+        and re.search(r"SESSION_ID\s*=\s*\"\"", html) is not None)
     chk("panel 里没有本地 API 残留（本地服务已下线）",
         "__LOCAL_API_BASE__" not in html and "__LOCAL_API_TOKEN__" not in html
         # ⚠️ 用 \b 边界匹配：`__REMOTE_API_BASE__` 里也含子串 "API_BASE"，

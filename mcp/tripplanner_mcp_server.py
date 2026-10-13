@@ -118,7 +118,7 @@ PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m21"
+PANEL_VERSION = "m22"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -1096,14 +1096,16 @@ def read_panel() -> str:
         html = html.replace(SESSION_ID_PLACEHOLDER, session_id())
         log("panel 线上后端注入", base=cfg["base"], has_auth=bool(cfg["auth"]),
             session=session_id())
-    # M5：注入**当前行程** —— 冷启动 / 云端会话过期时的兜底渲染源。
-    #   ⚠️ JSON 里把 `<` 转义掉，防止行程文本里出现 `</script>` 之类把 HTML 提前截断。
-    if PLAN_JSON_PLACEHOLDER in html:
-        cur = read_plan_state()
-        blob = (json.dumps(cur, ensure_ascii=False).replace("<", "\\u003c")
-                if cur else "null")
-        html = html.replace(PLAN_JSON_PLACEHOLDER, blob)
-        log("panel 行程注入", has_plan=cur is not None)
+    # 🔴🔴 2026-10-13 **已移除**（「规划武汉、面板出苏州」报障）：
+    #   行程种子是把**某一次行程的快照**刻进面板 HTML。而宿主把面板 HTML 当
+    #   **静态资源跨会话缓存**（实证 `resolver.resolve.cacheHit shared=true`）
+    #   ⇒ 下一个会话复用这份 HTML 时，种子就是**上一个会话的行程**。
+    #   叠加「注入的 SESSION_ID 同样陈旧 → 云端判会话过期 → 面板只能用种子兜底」
+    #   这条链，结果是**渲染出别人的城市而毫无报错**。
+    #   ⇒ 台词：把「每次都不同的会话数据」烤进「会被缓存的静态资源」，生命周期
+    #   天然错配。种子带来的兜底价值（后端不可达时还能看）远小于它造成的串号风险。
+    #   去掉后：面板一律用**运行时索取**的本会话 sid 去问云端；失败就明确显示
+    #   「暂无行程」，而不是显示一份旧的别人的行程 —— 错得可见优于错得安静。
     return html
 
 
@@ -1569,6 +1571,15 @@ def handle(msg: dict):
                     "panelOpenCount": nth,
                     "hasPlan": SESSION.last_plan is not None,
                     "plan": SESSION.last_plan,
+                    # 🔴 2026-10-13（「规划武汉、面板出苏州」）：**本会话的 sid**。
+                    #   面板 HTML 是宿主**跨会话缓存**的静态资源（实测
+                    #   `resolver.resolve.cacheHit shared=true`）⇒ 里面注入的
+                    #   SESSION_ID 是烤死那一刻的值，下个会话复用就成了别人的钥匙
+                    #   ⇒ 拿它问云端只会「会话已过期」⇒ 面板回落到烤死的行程种子
+                    #   ⇒ 渲染出别人城市。修法＝**运行时索取**：面板启动/会话失效时
+                    #   经宿主 tools/call 调本工具（每次针对当前 request 重新执行，
+                    #   天然新鲜）拿到本会话 sid，再去云端 /api/plan 取自己的行程。
+                    "session": session_id(),
                 },
             })
 
