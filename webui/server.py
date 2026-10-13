@@ -2378,7 +2378,7 @@ class Handler(BaseHTTPRequestHandler):
         # 面板侧「本地优先、线上兜底」——本地常驻进程被宿主回收时，交互自动切到这里。
         # 入参**自包含**（day_ids / ordered_ids / plan 全由面板带上）⇒ 本服务无需保存
         # 任何会话状态，天然支持多用户 / 多面板并发。
-        if u.path in ("/api/move", "/api/export"):
+        if u.path in ("/api/move", "/api/export", "/api/remove"):
             try:
                 n = int(self.headers.get("Content-Length") or 0)
                 payload = json.loads(self.rfile.read(n).decode("utf-8")) if 0 < n <= 3_000_000 else None
@@ -2386,6 +2386,41 @@ class Handler(BaseHTTPRequestHandler):
                 payload = None
             if not isinstance(payload, dict):
                 return self._json({"ok": False, "error": "请求体格式错误"}, code=400)
+
+            if u.path == "/api/remove":  # 2026-10-13：主动减点（腾时间预算）
+                # 与 /api/move 同一实现（reorder_day 天然支持点集变小），
+                # 唯一差别：**不做「点集必须一致」的守门** —— 那正是本端点的目的。
+                day = payload.get("day")
+                ordered = [str(x) for x in (payload.get("ordered_ids") or [])]
+                day_ids = [str(x) for x in (payload.get("day_ids") or [])]
+                cname = _day_city(payload.get("city"), ordered or day_ids)
+                if not cname or not day or not ordered:
+                    return self._json({"ok": False,
+                                       "error": "参数缺失（city/day/ordered_ids）"}, code=400)
+                # 安全约束（比 move 松、但仍有底线）：新点集必须是原点集的**真子集**，
+                # 且至少少 1 个 —— 防止误用本端点**增点**或换点。
+                if day_ids and not (set(ordered) < set(day_ids)):
+                    return self._json({"ok": False, "error":
+                                       "减点要求新点集是当天点集的真子集（不做增点/换点）"})
+                code, data = poi_swap.reorder_day(
+                    cname, day, ordered,
+                    date0=payload.get("date0") or None,
+                    query=payload.get("query") or "",
+                    hotel_text=payload.get("hotel_text") or None)
+                if data.get("ok"):
+                    data["day"] = plan_view.normalize_day(
+                        data["day"], plan_view.poi_coords(cname))
+                    _plan_in = payload.get("plan")
+                    if not (isinstance(_plan_in, dict)
+                            and _plan_in.get("copyMode") == "lazy"):
+                        entry = _regen_one_day_copy(
+                            cname, payload.get("query") or "", data["day"])
+                        if entry:
+                            data["day"].update(
+                                {k: v for k, v in entry.items() if v})
+                    _session_apply(payload.get("session") or "", payload.get("plan"),
+                                   data["day"])
+                return self._json(data, code=code)
 
             if u.path == "/api/move":  # 挪时段：按给定新顺序重排某一天
                 day = payload.get("day")

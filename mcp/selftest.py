@@ -131,8 +131,8 @@ def phase_protocol():
         r = rpc(proc, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tools = ((r or {}).get("result") or {}).get("tools") or []
         names = [t["name"] for t in tools]
-        check("tools/list 返回 10 个工具（M1 六个 + M2 三个 + Phase 0 一个）",
-              len(tools) == 10, str(names))
+        check("tools/list 返回 11 个工具（M1 六个 + M2 三个 + 减点一个 + Phase 0 一个）",
+              len(tools) == 11, str(names))
         by = {t["name"]: t for t in tools}
 
         # 面板 URI 从 server **动态取** —— 按项目惯例「源码守卫锁 wiring，别硬编码版本号」，

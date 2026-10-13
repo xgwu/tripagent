@@ -83,7 +83,7 @@ import threading
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.5.9-m5"
+SERVER_VERSION = "0.6.0-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -118,7 +118,7 @@ PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m22"
+PANEL_VERSION = "m23"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 
@@ -181,6 +181,12 @@ GET_PLAN_TOOL = "tripplanner_get_plan"
 # M2：面板内的交互（换点 / 挪时段 / 导出）
 REPLACE_TOOL = "tripplanner_replace_poi"
 MOVE_TOOL = "tripplanner_move_poi"
+# 🔴 2026-10-13（宿主多轮审阅的第 2 条）：**减点原语**。
+#   背景：move_poi / replace_poi 都**要求点集不变**（守门「不改变当天景点数」）⇒
+#   当 agent 想把一个"装不下的点"放进来时，它唯一的出路是重拍整份行程（重算）。
+#   现有工具集缺一个「主动减点」的动作：去掉某天一个不重要的点，腾出时间预算，
+#   让被剔除的点能进来（实测：时长是唯一有效的腾挪维度，见 2026-10-13 调研）。
+REMOVE_TOOL = "tripplanner_remove_poi"
 EXPORT_TOOL = "tripplanner_export"
 # Phase 0（2026-10-11）：POI 发现 —— 见 TOOLS 里 FIND_POIS_TOOL 的 description
 FIND_POIS_TOOL = "tripplanner_find_pois"
@@ -1007,6 +1013,31 @@ TOOLS = [
         },
     },
     {
+        "name": REMOVE_TOOL,
+        "description": (
+            "【调减点】从某一天**去掉一个停留点**并重排该天（腾出时间预算）。\n"
+            "用途：当 plan_trip 回执里有「时间预算装不下」被剔除的点、而你希望保留它时，"
+            "用本工具先去掉当天一个较不重要的点腾出时长，再重新规划或换点。\n"
+            "注意：move_poi / replace_poi 都要求点集不变；**只有本工具能主动减点**。\n"
+            "传 day_ids（当天当前全部 id）+ poi_id（要去掉的那个）；返回重排后的当天。"
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "city": {"type": "string", "description": "城市名"},
+                "day": {"type": "integer", "description": "第几天（1 起）"},
+                "poi_id": {"type": "string", "description": "要去掉的点的 id"},
+                "day_ids": {"type": "array", "items": {"type": "string"},
+                            "description": "该天当前全部 POI id（去掉 poi_id 后重排）"},
+                "query": {"type": "string", "description": "原需求，用于主题/节奏口径"},
+                "date0": {"type": "string", "description": "起始日期 YYYY-MM-DD"},
+                "hotel_text": {"type": "string", "description": "住宿锚点"},
+            },
+            "required": ["city", "day", "poi_id", "day_ids"],
+            "additionalProperties": False,
+        },
+    },
+    {
         "name": EXPORT_TOOL,
         "description": (
             "【面板「导出」按钮调用】把当前行程导出为 Markdown 文本。\n"
@@ -1268,8 +1299,23 @@ def plan_summary(plan: dict) -> str:
                      f"｜收工 {d.get('finish')}")
         lines.append("   " + " → ".join(pois) if pois else "   （该日无点位）")
     if dropped:
-        names = "、".join(p.get("name") or "" for p in dropped[:3])
-        lines.append(f"剔除：{names}" + ("等" if len(dropped) > 3 else ""))
+        # 🔴 2026-10-13：**必须给出原因**（宿主多轮审阅的第 1 条）。此前只报名字，
+        #   agent 看不到「为什么这个点没进来」⇒ 反复重拍重算。
+        #   原因口径（内核填）：求解器弃点=「时间预算内装不下」；修复链=具体违规
+        #   （超出营业时间/闭店前玩不完/里程超预算/餐窗满…）。按原因分组，一眼可辨。
+        _by_reason = {}
+        for p in dropped:
+            _by_reason.setdefault((p.get("reason") or "未说明"), []).append(p)
+        for reason, items in _by_reason.items():
+            names = "、".join((p.get("name") or "?") for p in items[:6])
+            more = f" 等 {len(items)} 个" if len(items) > 6 else ""
+            lines.append(f"剔除 {len(items)} 个：{names}{more}")
+            lines.append(f"    原因：{reason}")
+        # 给宿主的**可操作提示**：装不下的点不是"被刁难"，而是当日已满。
+        if any("时间预算" in (p.get("reason") or "") for p in dropped):
+            lines.append("⚠️ 上列「时间预算装不下」的点：当日时长已排满，"
+                         "硬约束无法违反。若必须保留，请改用 tripplanner_remove_poi "
+                         "去掉当日一个点腾出时间，或把它改排到其他天。")
     return "\n".join(lines)
 
 
@@ -1693,6 +1739,59 @@ def handle(msg: dict):
                              "text": "顺序已更新。" if respected
                                      else "顺序已更新（部分受开放时间/餐窗约束微调）。"}],
                 "structuredContent": {"ok": True, "order_respected": respected,
+                                      "day": data.get("day"), "plan": plan,
+                                      "server": SERVER_NAME, "version": SERVER_VERSION},
+            })
+
+        # ---------------- 2026-10-13：减点（腾时间预算） ----------------
+        # 🔴 为什么要有它：move_poi / replace_poi 的守门都是「点集不变」——
+        #   agent 想让一个"时间预算装不下"的点进来时，**没有工具能主动减点**，
+        #   只能重拍整份行程（重算 20-60s）。本工具补上这个动作。
+        # 实现：复用 `poi_swap.reorder_day`（去掉 poi_id 后按剩余顺序重排该天）。
+        #   它不是"新算法"，而是把相同的重排能力**开一个允许减点的口子**；
+        #   硬约束仍在（去掉后仍可能被微调，`order_respected` 如实回报）。
+        if name == REMOVE_TOOL:
+            city = (args.get("city") or "").strip()
+            day = args.get("day")
+            poi_id = (args.get("poi_id") or "").strip()
+            day_ids = [str(x) for x in (args.get("day_ids") or [])]
+            if not (city and day and poi_id and day_ids):
+                return ok(id_, tool_error(
+                    "参数缺失（需要 city / day / poi_id / day_ids）"))
+            if poi_id not in day_ids:
+                return ok(id_, tool_error(f"待删点 {poi_id} 不在当天 day_ids 里"))
+            remain = [i for i in day_ids if i != poi_id]
+            if not remain:
+                return ok(id_, tool_error("当天只剩这一个点，删掉后该天为空，已拒绝"))
+            cur = SESSION.last_plan or {}
+            # 走云端 `/api/remove`（复用 reorder_day，但**不套** move 的「点集必须一致」
+            # 守门 —— 那守门正是减点的目的所在）。云端另加「真子集」底线防误用。
+            try:
+                data = remote_request("/api/remove", method="POST", payload={
+                    "city": city, "day": day, "ordered_ids": remain,
+                    "day_ids": day_ids,
+                    "date0": args.get("date0"), "query": args.get("query") or "",
+                    "hotel_text": args.get("hotel_text"),
+                    "session": session_id(), "plan": cur,
+                })
+            except RuntimeError as e:
+                return ok(id_, tool_error(str(e)))
+            if not data.get("ok"):
+                log("remove_poi 失败", city=city, day=day, err=data.get("error"))
+                return ok(id_, tool_error(data.get("error") or "减点失败"))
+            plan = _merge_day_into_plan(cur, data.get("day") or {})
+            SESSION.last_plan = plan
+            # 回执确认「真的少了那个点」（不能只靠请求成功）
+            still = [s.get("id") for s in ((data.get("day") or {}).get("timeline") or [])
+                     if s.get("type") == "poi"]
+            gone = poi_id not in still
+            log("remove_poi 成功", city=city, day=day, removed=poi_id, gone=gone)
+            return ok(id_, {
+                "content": [{"type": "text",
+                             "text": f"已从 Day{day} 去掉 1 个点"
+                                     f"（剩余 {len(still)} 个）。当天时间预算已释放，"
+                                     f"可继续 plan_trip / replace_poi / open_plan。"}],
+                "structuredContent": {"ok": True, "removed": poi_id, "removedOk": gone,
                                       "day": data.get("day"), "plan": plan,
                                       "server": SERVER_NAME, "version": SERVER_VERSION},
             })

@@ -189,9 +189,25 @@ def normalize_plan(raw: dict, city: str, city_note: str = "") -> dict:
     coords = poi_coords(city)
     days = [normalize_day(d, coords) for d in itin.get("days", [])]
 
+    # 「被剔除的点」= 修复链剔除（itinerary.dropped_pois）∪ 求解器弃点
+    # （raw.toptw_dropped / mains_dropped）。
+    # 🔴 2026-10-13（宿主多轮审阅需求的第 1 条）：此前只回传修复链那一份，
+    #   **求解器弃点（时间预算装不下，占弃点的大头）根本没到宿主手里** ⇒ agent
+    #   只看到「点数少了」而看不到「为什么」⇒ 只能反复重拍重算。
+    #   现把两处合并、**去重（按 id+day）**，并统一补上 `reason` 与 `day`，
+    #   让宿主能据此自己决策（减别的点 / 挪到别的天 / 单独成日）。
     dropped = []
-    for p in itin.get("dropped_pois", []) or []:
-        dropped.append({"name": p.get("name"), "reason": p.get("reason")})
+    _seen = set()
+    _src = list(itin.get("dropped_pois") or []) \
+        + list(raw.get("toptw_dropped") or []) \
+        + list(raw.get("mains_dropped") or [])
+    for p in _src:
+        key = (p.get("id") or p.get("name"), p.get("day"))
+        if key in _seen:
+            continue
+        _seen.add(key)
+        dropped.append({"name": p.get("name"), "id": p.get("id"),
+                        "day": p.get("day"), "reason": p.get("reason")})
 
     return {
         "city": city,

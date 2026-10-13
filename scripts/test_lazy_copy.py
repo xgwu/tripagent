@@ -246,7 +246,7 @@ case("D10 摘要标注 lazy 模式与下一步", "文案懒生成" in _sm and "o
 _sm2 = srv.plan_summary({"city": "苏州", "days": 1, "dayList": [], "latency_s": 1})
 case("D11 无 copyMode 旧数据摘要不受影响", "文案懒生成" not in _sm2)
 
-case("D12 SERVER_VERSION = 0.5.9-m5", srv.SERVER_VERSION == "0.5.9-m5")
+case("D12 SERVER_VERSION = 0.6.0-m5", srv.SERVER_VERSION == "0.6.0-m5")
 
 # ========== G 组：换点/挪时段后自动补当天文案（2026-10-11 报障） ==========
 # 报障「点击更换 POI 点位后，当天文案在面板上消失了」——keep_day_meta 刻意只保
@@ -258,8 +258,10 @@ case("G1 _regen_one_day_copy 定义（复用 _regen_reasons 单天口径）",
 case("G2 /api/replace 接线（full 才补，lazy 跳过）",
      _sv_txt.count('_plan_in.get("copyMode") == "lazy"') >= 2
      and "entry = _regen_one_day_copy(" in _sv_txt)
-case("G3 /api/move 对称接线（挪时段后旧「依次游览」同样过期）",
-     _sv_txt.count("entry = _regen_one_day_copy(") == 2)
+# ⚠️ 2026-10-13：新增 /api/remove（减点）后从 2 处变 3 处 —— 三个「改某天点集/顺序」
+# 的端点（replace / move / remove）**都**必须补当天文案，否则减点后旧 reason 过期。
+case("G3 三端点对称接线：/api/replace + /api/move + /api/remove（各 1 处）",
+     _sv_txt.count("entry = _regen_one_day_copy(") == 3)
 case("G4 fail-open：异常吞掉返回 None 不拖垮换点",
      "except Exception:  # noqa: BLE001\n        pass\n    return None" in _sv_txt)
 case("G5 WEBUI_VERSION = m13", 'WEBUI_VERSION = "m13"' in _sv_txt)
