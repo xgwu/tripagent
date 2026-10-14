@@ -21,7 +21,7 @@ from build_travel_cache import (  # noqa: E402
 
 DATA = os.path.join(ROOT, "data")
 CITIES = ["上海", "南京", "杭州", "武汉", "苏州", "成都", "北京", "广州", "盐城",
-          "西安", "重庆", "长沙", "贵阳", "黄果树", "兴义", "万峰林", "小七孔", "六盘水", "凯里", "镇远古城", "遵义", "西江千户苗寨", "赤水", "安顺", "铜仁", "梵净山", "中国天眼", "织金洞", "都匀", "肇兴侗寨", "百里杜鹃"]
+          "西安", "重庆", "长沙", "贵阳", "黄果树", "兴义", "万峰林", "小七孔", "六盘水", "凯里", "镇远古城", "遵义", "西江千户苗寨", "赤水", "安顺", "铜仁", "梵净山", "中国天眼", "织金洞", "都匀", "肇兴侗寨", "百里杜鹃", "喀纳斯"]
 NEW_IDS = {
     "上海": ["SH045", "SH046", "SH047", "SH048", "SH049", "SH050", "SH051", "SH052", "SH053", "SH054", "SH055", "SH056", "SH057", "SH058", "SH059", "SH060", "SH061", "SH062", "SH063", "SH064", "SH065", "SH066", "SH067", "SH068"],
     "南京": ["NJ029", "NJ030", "NJ031", "NJ032", "NJ033"],
@@ -51,7 +51,8 @@ NEW_IDS = {
     "织金洞": [],
     "都匀": [],
     "肇兴侗寨": [],
-    "百里杜鹃": []
+    "百里杜鹃": [],
+    "喀纳斯": []
 }
 OSRM_TABLE = "https://router.project-osrm.org/table/v1/driving/{coords}?annotations=duration"
 QPS = 0.15
@@ -83,7 +84,13 @@ def main():
     for city in CITIES:
         pois = json.load(io.open(os.path.join(DATA, f"{city}_pois.json"), encoding="utf-8"))["pois"]
         pos = {p["id"]: (p["lat"], p["lng"]) for p in pois}
-        new_ids = [i for i in NEW_IDS[city] if i in pos]
+        # ⚠️ 2026-10-14 修复：此前是 `NEW_IDS[city]`（**直接下标**）—— 但 CITIES 里
+        #   盐城/西安/重庆/长沙 从未登记进 NEW_IDS（历史遗漏，M16/M17 开城时漏补）
+        #   ⇒ 一旦 `--auto` 跑到它们就 `KeyError` 崩掉（**喀纳斯开城时才暴露**）。
+        #   改用 `.get(city, [])`：--auto 会按「缓存中无记录」自行检测新点，本就不依赖
+        #   这份手写名单（它只是 HISTORICAL 补充）。SOP 里那句「只加 CITIES 会 KeyError」
+        #   说的就是这个坑，现从根上消除。
+        new_ids = [i for i in NEW_IDS.get(city, []) if i in pos]
         if auto:
             auto_ids = [i for i in pos if i not in minutes]
             for i in auto_ids:
@@ -154,7 +161,7 @@ def main():
     for city in CITIES:
         pois = json.load(io.open(os.path.join(DATA, f"{city}_pois.json"), encoding="utf-8"))["pois"]
         ids = ([p["id"] for p in pois if p["id"] not in minutes] if auto
-               else [i for i in NEW_IDS[city]])
+               else [i for i in NEW_IDS.get(city, [])])
         for a in ids:
             row = minutes.get(a, {})
             for b in ids:
