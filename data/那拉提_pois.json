@@ -1,0 +1,268 @@
+{
+  "city": "那拉提",
+  "province": "新疆",
+  "center": {
+    "lat": 43.18,
+    "lng": 84.08
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "NL001",
+      "name": "那拉提风景区",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 43.2397,
+      "lng": 84.0238,
+      "duration_h": 6.0,
+      "open": "10:00",
+      "close": "18:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 8.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日10:00-18:00",
+      "closed_days": []
+    },
+    {
+      "id": "NL002",
+      "name": "新疆那拉提国家旅游度假区",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 43.2659,
+      "lng": 84.0252,
+      "duration_h": 2.5,
+      "open": "08:00",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 10.5km；坐标/评分/营业时间来自高德；opentime2=周一至周日 08:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "NL003",
+      "name": "那拉提空中草原",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 43.3015,
+      "lng": 84.0362,
+      "duration_h": 4.0,
+      "open": "08:30",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 14.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 08:30-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "NL004",
+      "name": "那拉提塔吾萨尼",
+      "category": "view",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 43.314,
+      "lng": 84.001,
+      "duration_h": 1.5,
+      "open": "08:30",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 16.2km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "NL005",
+      "name": "那拉提河谷草原",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 43.2925,
+      "lng": 84.229,
+      "duration_h": 4.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 17.4km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "NL006",
+      "name": "那拉提国家森林公园",
+      "category": "park",
+      "tags": [
+        "公园",
+        "公园",
+        "公园"
+      ],
+      "lat": 43.2917,
+      "lng": 84.2298,
+      "duration_h": 3.5,
+      "open": "08:30",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;公园广场;公园；距片区中心 17.4km；坐标/评分/营业时间来自高德；opentime2=4月-10月0日 08:30-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "NL007",
+      "name": "巴音布鲁克草原",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 43.03,
+      "lng": 84.15,
+      "duration_h": 5.0,
+      "open": "08:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 17.6km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "NL008",
+      "name": "巴音布鲁克天鹅湖",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 42.95,
+      "lng": 84.05,
+      "duration_h": 2.5,
+      "open": "08:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 25.7km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "NL009",
+      "name": "九曲十八弯",
+      "category": "view",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 42.9167,
+      "lng": 84.1167,
+      "duration_h": 2.0,
+      "open": "08:00",
+      "close": "20:00",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 29.4km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "NL010",
+      "name": "巴音布鲁克天鹅湖风景区巴润寺",
+      "category": "religion",
+      "tags": [
+        "寺庙道观",
+        "寺庙道观",
+        "寺庙道观"
+      ],
+      "lat": 42.8306,
+      "lng": 84.3643,
+      "duration_h": 1.0,
+      "open": "08:30",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;寺庙道观；距片区中心 45.2km；坐标/评分/营业时间来自高德；opentime2=周一至周日 08:30-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "NL011",
+      "name": "巩乃斯国家森林公园",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 43.35,
+      "lng": 84.65,
+      "duration_h": 3.0,
+      "open": "08:00",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 49.9km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    }
+  ]
+}

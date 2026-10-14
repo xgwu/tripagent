@@ -1,0 +1,532 @@
+{
+  "city": "伊犁",
+  "province": "新疆",
+  "center": {
+    "lat": 44.05,
+    "lng": 81.05
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "YL001",
+      "name": "伊犁将军府",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 43.994,
+      "lng": 80.9123,
+      "duration_h": 1.5,
+      "open": "10:30",
+      "close": "18:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 12.7km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:30-18:30 最晚进入18:30",
+      "closed_days": []
+    },
+    {
+      "id": "YL002",
+      "name": "惠远古城",
+      "category": "history",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 43.9933,
+      "lng": 80.9082,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 13.0km；坐标/评分/营业时间来自高德；opentime2=05-01至10-08 周一至周日 09:30-20:00；10-09至04-30 周一至周日 10:00-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "YL003",
+      "name": "惠远古城钟楼",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 43.9933,
+      "lng": 80.9082,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 13.0km；坐标/评分/营业时间来自高德；opentime2=10:00-19:30, 具体开放时间以现场公示为准",
+      "closed_days": []
+    },
+    {
+      "id": "YL004",
+      "name": "惠远古城数字演艺中心",
+      "category": "history",
+      "tags": [
+        "剧场",
+        "剧场",
+        "剧场"
+      ],
+      "lat": 43.9919,
+      "lng": 80.9092,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=体育休闲服务;影剧院;剧场；距片区中心 13.0km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YL005",
+      "name": "六星街",
+      "category": "culture",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 43.9328,
+      "lng": 81.3101,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=；距片区中心 24.6km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YL006",
+      "name": "人民公园",
+      "category": "park",
+      "tags": [
+        "公园",
+        "公园",
+        "公园"
+      ],
+      "lat": 43.9198,
+      "lng": 81.302,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;公园广场;公园；距片区中心 24.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL007",
+      "name": "喀赞其民俗旅游区",
+      "category": "culture",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 43.9053,
+      "lng": 81.2853,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 24.8km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YL008",
+      "name": "伊犁河旅游风景区",
+      "category": "nature",
+      "tags": [
+        "省级景点",
+        "省级景点",
+        "省级景点"
+      ],
+      "lat": 43.8923,
+      "lng": 81.2941,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;省级景点；距片区中心 26.2km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL009",
+      "name": "晃晃村薰衣草河谷",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 44.2825,
+      "lng": 80.9592,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "23:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 26.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-23:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL010",
+      "name": "薰衣草博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 44.1696,
+      "lng": 80.756,
+      "duration_h": 1.5,
+      "open": "08:30",
+      "close": "21:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 27.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 08:30-21:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL011",
+      "name": "汉人街",
+      "category": "culture",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 43.9119,
+      "lng": 81.3358,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=；距片区中心 27.5km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YL012",
+      "name": "伊犁老城文化旅游区",
+      "category": "culture",
+      "tags": [
+        "省级景点",
+        "省级景点",
+        "省级景点"
+      ],
+      "lat": 43.902,
+      "lng": 81.3325,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;省级景点；距片区中心 28.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00；内景点、区间车开放时间:10:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "YL013",
+      "name": "伊犁河谷国家薰衣草公园",
+      "category": "nature",
+      "tags": [
+        "公园",
+        "公园",
+        "公园"
+      ],
+      "lat": 43.7569,
+      "lng": 81.0604,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;公园广场;公园；距片区中心 32.6km；坐标/评分/营业时间来自高德；opentime2=00:00-24:00,仅供参考,实际以商家为准",
+      "closed_days": []
+    },
+    {
+      "id": "YL014",
+      "name": "果子沟大桥",
+      "category": "view",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 44.3586,
+      "lng": 80.9047,
+      "duration_h": 1.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 36.2km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YL015",
+      "name": "果子沟瀑布",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 44.4585,
+      "lng": 81.1798,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "21:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 46.6km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-21:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL016",
+      "name": "伊犁果子沟",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 44.4654,
+      "lng": 81.1665,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 47.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL017",
+      "name": "果子沟观景台",
+      "category": "view",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 44.4745,
+      "lng": 81.164,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 48.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL018",
+      "name": "赛里木湖灯塔",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 44.5237,
+      "lng": 81.0935,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 52.8km；坐标/评分/营业时间来自高德；opentime2=1月至2月,11月至12月 周一至周日 全天关闭；3月至10月 周一至周日 08:00-21:00；售票时间:08:00-21:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL019",
+      "name": "霍尔果斯中哈国际旅游区",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 44.2128,
+      "lng": 80.4084,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 54.3km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL020",
+      "name": "霍尔果斯国门景区",
+      "category": "view",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 44.2129,
+      "lng": 80.4056,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 54.5km；坐标/评分/营业时间来自高德；opentime2=1月至4月,10月至12月 周一至周日 10:00-19:00 最晚进入18:30；5月至9月 周一至周日 09:00-21:00 最晚进入20:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL021",
+      "name": "天鹅泉景区",
+      "category": "nature",
+      "tags": [
+        "体育休闲服务场所",
+        "体育休闲服务场所",
+        "体育休闲服务场所"
+      ],
+      "lat": 43.708,
+      "lng": 81.6307,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=体育休闲服务;体育休闲服务场所;体育休闲服务场所；距片区中心 60.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "YL022",
+      "name": "赛里木湖",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 44.6069,
+      "lng": 81.1833,
+      "duration_h": 4.0,
+      "open": "08:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 62.8km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YL023",
+      "name": "赛里木湖点将台",
+      "category": "view",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 44.6882,
+      "lng": 81.0702,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 71.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    }
+  ]
+}

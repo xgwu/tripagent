@@ -1,0 +1,312 @@
+{
+  "city": "克拉玛依",
+  "province": "新疆",
+  "center": {
+    "lat": 45.8,
+    "lng": 85.3
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "KM001",
+      "name": "白杨河大峡谷景区",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 45.98,
+      "lng": 85.22,
+      "duration_h": 3.0,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 21.0km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "KM002",
+      "name": "九龙潭",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 45.6119,
+      "lng": 84.9139,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 36.6km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "KM003",
+      "name": "黑油山景区",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 45.6195,
+      "lng": 84.8944,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 37.3km；坐标/评分/营业时间来自高德；opentime2=10-10至12-31 周一至周日 10:00-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "KM004",
+      "name": "克拉玛依文博院",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 45.6065,
+      "lng": 84.9023,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 37.6km；坐标/评分/营业时间来自高德；opentime2=周二至周日 10:00-19:00；节假日营业时间以官方通知为准",
+      "closed_days": []
+    },
+    {
+      "id": "KM005",
+      "name": "白杨河大峡谷",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 46.107,
+      "lng": 85.5194,
+      "duration_h": 3.0,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 38.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "KM006",
+      "name": "石油纪念广场-克一号井",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 45.5699,
+      "lng": 84.9158,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 39.3km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "KM007",
+      "name": "克拉玛依河景区",
+      "category": "view",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 45.5865,
+      "lng": 84.8857,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 40.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "KM008",
+      "name": "艾里克湖(水上魔鬼城)",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 45.9514,
+      "lng": 85.7681,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 40.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "KM009",
+      "name": "克拉玛依音乐博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 45.5752,
+      "lng": 84.8889,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 40.6km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "KM010",
+      "name": "乌尔禾影视城",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 46.1415,
+      "lng": 85.5392,
+      "duration_h": 2.5,
+      "open": "10:30",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 42.2km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:30-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "KM011",
+      "name": "乌尔禾影视基地",
+      "category": "culture",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 46.1,
+      "lng": 85.65,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 43.0km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "KM012",
+      "name": "乌尔禾魔鬼城",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 46.15,
+      "lng": 85.7,
+      "duration_h": 5.0,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 49.7km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "KM013",
+      "name": "世界魔鬼城",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 46.1351,
+      "lng": 85.7332,
+      "duration_h": 5.0,
+      "open": "09:30",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 50.1km；坐标/评分/营业时间来自高德；opentime2=09:30-19:00",
+      "closed_days": []
+    }
+  ]
+}

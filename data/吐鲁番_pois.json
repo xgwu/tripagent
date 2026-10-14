@@ -1,0 +1,620 @@
+{
+  "city": "吐鲁番",
+  "province": "新疆",
+  "center": {
+    "lat": 42.93,
+    "lng": 89.35
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "TL001",
+      "name": "吐鲁番郡王府",
+      "category": "history",
+      "tags": [
+        "省级景点",
+        "省级景点",
+        "省级景点"
+      ],
+      "lat": 42.9366,
+      "lng": 89.2092,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;省级景点；距片区中心 11.5km；坐标/评分/营业时间来自高德；opentime2=9:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL002",
+      "name": "吐鲁番葡萄沟风景区",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 43.0007,
+      "lng": 89.2442,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 11.7km；坐标/评分/营业时间来自高德；opentime2=9:30-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL003",
+      "name": "苏公塔",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 42.9358,
+      "lng": 89.2064,
+      "duration_h": 1.5,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 11.7km；坐标/评分/营业时间来自高德；opentime2=9:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL004",
+      "name": "火焰山大景区",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.9212,
+      "lng": 89.5082,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 12.9km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL005",
+      "name": "吐鲁番博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 42.9428,
+      "lng": 89.1913,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 13.0km；坐标/评分/营业时间来自高德；opentime2=春节,国庆节 10:00–18:30开放；01/01-12/31 周二–周日 10:00–18:30开放；1/1-12/31 周一 全天不开放； 说明:古尔邦节10:00-18:30最晚入园:18:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL006",
+      "name": "葡萄沟游乐园",
+      "category": "family",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 43.027,
+      "lng": 89.2576,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 13.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL007",
+      "name": "火焰山景区",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 42.9188,
+      "lng": 89.5133,
+      "duration_h": 3.0,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 13.4km；坐标/评分/营业时间来自高德；opentime2=10月8日至次年3月31日 周一至周日 10:00-19:30；4月1日至10月7日 周一至周日 08:00-21:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL008",
+      "name": "台藏塔遗址",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.87,
+      "lng": 89.5209,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 15.4km；坐标/评分/营业时间来自高德；opentime2=10:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL009",
+      "name": "阿斯塔那古墓群",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.8818,
+      "lng": 89.5298,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 15.6km；坐标/评分/营业时间来自高德；opentime2=10:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL010",
+      "name": "柏孜克里克千佛洞",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 42.9573,
+      "lng": 89.5421,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "18:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 15.9km；坐标/评分/营业时间来自高德；opentime2=10-08至04-30 周一至周日 10:00-18:30 最晚进入18:30；18:30停止售票,停票后不再入园,请合理安排抵达时间",
+      "closed_days": []
+    },
+    {
+      "id": "TL011",
+      "name": "火焰山万佛宫",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.9501,
+      "lng": 89.5475,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 16.2km；坐标/评分/营业时间来自高德；opentime2=9:30-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL012",
+      "name": "吐鲁番坎儿井民俗园",
+      "category": "culture",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 42.9526,
+      "lng": 89.1485,
+      "duration_h": 1.5,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 16.6km；坐标/评分/营业时间来自高德；opentime2=9:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL013",
+      "name": "吐鲁番坎儿井博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 42.9528,
+      "lng": 89.1488,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "21:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 16.6km；坐标/评分/营业时间来自高德；opentime2=4月30日-9月30日 09:00-21:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL014",
+      "name": "高昌故城",
+      "category": "history",
+      "tags": [
+        "世界遗产",
+        "世界遗产",
+        "世界遗产"
+      ],
+      "lat": 42.8526,
+      "lng": 89.5289,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;世界遗产；距片区中心 16.9km；坐标/评分/营业时间来自高德；opentime2=10:00-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL015",
+      "name": "胜金口石窟",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.9146,
+      "lng": 89.5588,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "17:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 17.1km；坐标/评分/营业时间来自高德；opentime2=10:00-17:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL016",
+      "name": "坎儿井乐园",
+      "category": "culture",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 42.9813,
+      "lng": 89.1308,
+      "duration_h": 2.0,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 18.7km；坐标/评分/营业时间来自高德；opentime2=9:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL017",
+      "name": "吐鲁番艾丁湖景区",
+      "category": "nature",
+      "tags": [
+        "省级景点",
+        "省级景点",
+        "省级景点"
+      ],
+      "lat": 42.7598,
+      "lng": 89.2836,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;省级景点；距片区中心 19.7km；坐标/评分/营业时间来自高德；opentime2=10:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL018",
+      "name": "坎儿井源·交河驿",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.9956,
+      "lng": 89.1219,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 19.9km；坐标/评分/营业时间来自高德；opentime2=9:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL019",
+      "name": "吐峪沟麻扎村",
+      "category": "culture",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 42.86,
+      "lng": 89.58,
+      "duration_h": 2.0,
+      "open": "09:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 20.3km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "TL020",
+      "name": "交河古村",
+      "category": "culture",
+      "tags": [
+        "植物园",
+        "植物园",
+        "植物园"
+      ],
+      "lat": 42.9471,
+      "lng": 89.0795,
+      "duration_h": 1.5,
+      "open": "09:30",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;公园广场;植物园；距片区中心 22.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:30-19:00 停止售票19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL021",
+      "name": "官署遗址",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.9513,
+      "lng": 89.0686,
+      "duration_h": 1.5,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 23.0km；坐标/评分/营业时间来自高德；opentime2=09:30-19:30, 具体开放时间以现场公示为准",
+      "closed_days": []
+    },
+    {
+      "id": "TL022",
+      "name": "交河故城",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 42.9539,
+      "lng": 89.0654,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 23.3km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:30-19:00 停止售票19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL023",
+      "name": "雅尔湖石窟",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.9561,
+      "lng": 89.0549,
+      "duration_h": 1.5,
+      "open": "10:30",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 24.2km；坐标/评分/营业时间来自高德；opentime2=10:30-18:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL024",
+      "name": "吐峪沟石窟",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 42.8666,
+      "lng": 89.6972,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 29.1km；坐标/评分/营业时间来自高德；opentime2=10:00-18:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL025",
+      "name": "吐峪沟景区",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 42.8786,
+      "lng": 89.7118,
+      "duration_h": 2.5,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 30.0km；坐标/评分/营业时间来自高德；opentime2=9:30-19:30",
+      "closed_days": []
+    },
+    {
+      "id": "TL026",
+      "name": "火焰山山脉·火云谷景区",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 43.1821,
+      "lng": 89.1611,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 32.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "TL027",
+      "name": "库木塔格沙漠景区",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 42.87,
+      "lng": 90.22,
+      "duration_h": 4.0,
+      "open": "08:00",
+      "close": "21:00",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 71.2km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    }
+  ]
+}

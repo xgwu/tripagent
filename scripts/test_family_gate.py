@@ -83,11 +83,12 @@ for b in blocked:
 # 口径：原 12 城 722 点（573 + 西安 54 + 重庆 48 + 长沙 47）
 #      + 贵州 19 个目的地（2026-09-17 方案B 开城）471 点
 #      + 苏州二期扩容 12 点（2026-10-12：环秀山庄等 5 园林 + 7 博物馆/湿地）
-#      + 新疆片区化开城（2026-10-14 起）：喀纳斯 40 点（首个片区，后续 5 片区持续叠加）
+#      + 新疆片区化开城（2026-10-14）：喀纳斯 40 + 乌鲁木齐 45 + 伊犁 23
+#        + 那拉提 11 + 吐鲁番 27 + 克拉玛依 13 = 159 点（6 个片区）
 BASE_CITIES, GZ_DESTS = 734, 471
-XJ_DESTS = 40          # 喀纳斯（2026-10-14 新疆开城第 1 个片区）
+XJ_DESTS = 159         # 新疆 6 片区（喀纳斯40/乌鲁木齐45/伊犁23/那拉提11/吐鲁番27/克拉玛依13）
 case(f"3a 全库点位数与口径一致（{BASE_CITIES}[原12城+苏州12] + {GZ_DESTS}[贵州19目的地]"
-     f" + {XJ_DESTS}[新疆喀纳斯] = {BASE_CITIES + GZ_DESTS + XJ_DESTS}）",
+     f" + {XJ_DESTS}[新疆6片区] = {BASE_CITIES + GZ_DESTS + XJ_DESTS}）",
      n_total == BASE_CITIES + GZ_DESTS + XJ_DESTS, f"实测 {n_total}")
 case("3b family_ok=false 恰为 18 个（新增点位应显式评估该字段）",
      len(blocked) == 18, f"实测 {len(blocked)}")
