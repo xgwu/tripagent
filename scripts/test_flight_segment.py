@@ -142,6 +142,29 @@ case("5f 飞机段不做夜间转移（夜间无航班）",
 case("5g transfer 行带 mode 字段（渲染/测试据此区分方式）",
      '"mode": _smode' in src)
 
+# ==================== 用例 5.5：归一化层透出 transfer 字段 ====================
+print("\n== 用例 5.5：plan_view 归一化透出 transfer 字段 ==")
+# 🔴 归一化是「内核 → 面板」的唯一通道：若它把 mode/km/detail 剥掉，
+#    面板就只能把飞机段画成 🚗（2026-10-14 云端实测暴露的最后一环）。
+from src import plan_view  # noqa: E402
+
+_nd = plan_view.normalize_day({
+    "day": 3, "theme": "城际转移",
+    "timeline": [{"type": "transfer", "name": "飞机 乌鲁木齐 → 喀什（URC→KHG）",
+                  "start": "09:00", "end": "13:21", "min": 261, "km": 1066.0,
+                  "mode": "flight", "from": "乌鲁木齐", "to": "喀什",
+                  "source": "flight-model", "leg": 1, "n_legs": 1,
+                  "detail": "URC→KHG｜空中 1066km"}]}, coords={})
+_t0 = (_nd.get("timeline") or [{}])[0]
+case("5.5a 归一化后 transfer.mode 仍在（面板据此选图标）",
+     _t0.get("mode") == "flight", f"实测 {_t0}")
+case("5.5b 归一化后 transfer 带 min/km（行程单显时长）",
+     _t0.get("min") == 261 and _t0.get("km") == 1066.0, f"实测 {_t0}")
+case("5.5c 归一化后 transfer 带 detail（门到门明细）",
+     _t0.get("detail", "").startswith("URC→KHG"), f"实测 {_t0.get('detail')}")
+case("5.5d 归一化后 transfer 带 from/to", 
+     _t0.get("from") == "乌鲁木齐" and _t0.get("to") == "喀什")
+
 # ==================== 用例 6：端到端（真实内核，无 LLM） ====================
 print("\n== 用例 6：端到端（plan_multi，无 LLM）==")
 try:

@@ -112,6 +112,23 @@ def normalize_day(d: dict, coords: dict | None = None) -> dict:
         if s.get("type") == "hop":
             item["min"] = s.get("min")
             item["km"] = s.get("km")
+        if s.get("type") == "transfer":
+            # 🔴 城际转移行必须透出 mode/km/min/detail —— 面板与 webui 都要靠
+            #    `mode` 决定图标（✈️/🚄/🚗）与配色，靠 `detail` 显示门到门明细。
+            #    原先只透出 type/name/start/end ⇒ 面板把飞机段一律画成 🚗、
+            #    且看不到「候机+起降+巡航」拆解（2026-10-14 飞机段实测暴露）。
+            item["mode"] = s.get("mode")
+            item["min"] = s.get("min")
+            item["km"] = s.get("km")
+            item["from"] = s.get("from")
+            item["to"] = s.get("to")
+            item["source"] = s.get("source")
+            item["leg"] = s.get("leg")
+            item["n_legs"] = s.get("n_legs")
+            if s.get("night"):
+                item["night"] = True
+            if s.get("detail"):
+                item["detail"] = s.get("detail")
         tl.append(item)
     return {
         "day": d.get("day"),
