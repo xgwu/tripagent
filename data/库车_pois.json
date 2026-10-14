@@ -1,0 +1,356 @@
+{
+  "city": "库车",
+  "province": "新疆",
+  "center": {
+    "lat": 41.8,
+    "lng": 83.0
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "KC001",
+      "name": "苏巴什佛寺遗址",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.8571,
+      "lng": 83.0503,
+      "duration_h": 2.0,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 7.6km；坐标/评分/营业时间来自高德；opentime2=1月至4月,11月至12月 周一至周日 10:00-19:30 最晚进入19:00；5月至10月 周一至周日 09:30-20:00 最晚进入19:30",
+      "closed_days": []
+    },
+    {
+      "id": "KC002",
+      "name": "克孜尔尕哈石窟寺",
+      "category": "religion",
+      "tags": [
+        "寺庙道观",
+        "寺庙道观",
+        "寺庙道观"
+      ],
+      "lat": 41.8019,
+      "lng": 82.9057,
+      "duration_h": 1.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;寺庙道观；距片区中心 7.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC003",
+      "name": "克孜尔尕哈烽燧",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.793,
+      "lng": 82.9015,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 8.2km；坐标/评分/营业时间来自高德；opentime2=1月至4月,11月至12月 周一至周日 10:00-19:00 最晚进入19:00；5月至10月 周一至周日 09:30-19:30 最晚进入19:30",
+      "closed_days": []
+    },
+    {
+      "id": "KC004",
+      "name": "龟兹绿洲生态园",
+      "category": "park",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 41.7219,
+      "lng": 83.0168,
+      "duration_h": 1.5,
+      "open": "11:00",
+      "close": "23:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 8.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 11:00-23:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC005",
+      "name": "库车大馕城",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 41.7225,
+      "lng": 82.9587,
+      "duration_h": 2.5,
+      "open": "10:30",
+      "close": "21:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 9.3km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:30-21:00 最晚进入20:30",
+      "closed_days": []
+    },
+    {
+      "id": "KC006",
+      "name": "龟兹故城",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.7224,
+      "lng": 82.9478,
+      "duration_h": 1.5,
+      "open": "08:00",
+      "close": "17:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 9.7km；坐标/评分/营业时间来自高德；opentime2=周一至周日 08:00-17:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC007",
+      "name": "龟兹博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 41.7139,
+      "lng": 82.96,
+      "duration_h": 1.5,
+      "open": "10:30",
+      "close": "18:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 10.1km；坐标/评分/营业时间来自高德；opentime2=周一 关闭(法定节假日除外),夏季:周二至周日:10:30-19:30(18:30停止入馆),冬季:周二至周日:10:30-18:30(18:00停止入馆)；2026年2月15日至2026年2月23日:10:30-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC008",
+      "name": "龟兹魏晋古墓博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 41.7136,
+      "lng": 82.9599,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 10.2km；坐标/评分/营业时间来自高德；opentime2=05-01至10-08 周一至周日 09:30-20:00 最晚进入19:30；10-09至04-30 周一至周日 10:00-19:00 最晚进入19:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC009",
+      "name": "龟兹文化广场",
+      "category": "family",
+      "tags": [
+        "游乐场",
+        "游乐场",
+        "游乐场"
+      ],
+      "lat": 41.7089,
+      "lng": 82.9755,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 3,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=体育休闲服务;休闲场所;游乐场；距片区中心 10.3km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "KC010",
+      "name": "库车老城",
+      "category": "culture",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.7165,
+      "lng": 82.9308,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 10.9km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC011",
+      "name": "库车王府",
+      "category": "history",
+      "tags": [
+        "省级景点",
+        "省级景点",
+        "省级景点"
+      ],
+      "lat": 41.7188,
+      "lng": 82.9209,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;省级景点；距片区中心 11.2km；坐标/评分/营业时间来自高德；opentime2=1月至4月,11月至12月 周一至周日 10:00-20:00；5月至6月 周一至周日 09:30-21:30；7月至8月 周一至周日 09:30-22:00 09-01至10-08 周一至周日 09:30-21:30；10-09至12-31 周一至周日 10:00-20:00；10-13至10-31 周一至周日 09:30-22:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC012",
+      "name": "盐水沟",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 41.89,
+      "lng": 83.28,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 25.3km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "KC013",
+      "name": "阿艾石窟",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 42.1099,
+      "lng": 83.0597,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 34.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC014",
+      "name": "天山神秘大峡谷",
+      "category": "nature",
+      "tags": [
+        "省级景点",
+        "省级景点",
+        "省级景点"
+      ],
+      "lat": 42.1221,
+      "lng": 83.0659,
+      "duration_h": 4.0,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;省级景点；距片区中心 36.2km；坐标/评分/营业时间来自高德；opentime2=05-01至10-10 周一至周日 09:00-20:00 最晚进入20:00；10-11至04-30 周一至周日 10:00-19:00 最晚进入19:00",
+      "closed_days": []
+    },
+    {
+      "id": "KC015",
+      "name": "克孜尔千佛洞",
+      "category": "history",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 41.75,
+      "lng": 82.29,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 59.1km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    }
+  ]
+}

@@ -1,0 +1,290 @@
+{
+  "city": "帕米尔",
+  "province": "新疆",
+  "center": {
+    "lat": 38.1,
+    "lng": 75.15
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "PM001",
+      "name": "慕士塔格峰观景台",
+      "category": "view",
+      "tags": [
+        "观景点",
+        "观景点",
+        "观景点"
+      ],
+      "lat": 37.9696,
+      "lng": 75.1437,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "23:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;观景点；距片区中心 14.5km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-23:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM002",
+      "name": "塔合曼湿地",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 37.9234,
+      "lng": 75.1889,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 19.9km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM003",
+      "name": "慕士塔格峰",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 38.2855,
+      "lng": 74.9507,
+      "duration_h": 3.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 27.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM004",
+      "name": "慕士塔格冰川公园",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 38.2746,
+      "lng": 74.9199,
+      "duration_h": 2.5,
+      "open": "10:30",
+      "close": "18:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 28.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:30-18:30 最晚进入18:30",
+      "closed_days": []
+    },
+    {
+      "id": "PM005",
+      "name": "金草滩景区",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 37.7857,
+      "lng": 75.2389,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 35.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM006",
+      "name": "帕米尔高原",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 37.782,
+      "lng": 75.2239,
+      "duration_h": 4.0,
+      "open": "09:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 35.9km；坐标/评分/营业时间来自高德；opentime2=9:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM007",
+      "name": "塔什库尔干石头城",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 37.7828,
+      "lng": 75.238,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 36.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-20:00 最晚进入20:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM008",
+      "name": "卡拉库里湖",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 38.4564,
+      "lng": 75.0504,
+      "duration_h": 2.0,
+      "open": "10:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 40.6km；坐标/评分/营业时间来自高德；opentime2=10:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM009",
+      "name": "白沙湖",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 38.6,
+      "lng": 75.28,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 56.7km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "PM010",
+      "name": "公格尔九别峰",
+      "category": "nature",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 38.6266,
+      "lng": 75.1602,
+      "duration_h": 2.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 58.6km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM011",
+      "name": "盘龙古道",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 37.5986,
+      "lng": 75.3725,
+      "duration_h": 2.5,
+      "open": "10:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 59.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-19:00",
+      "closed_days": []
+    },
+    {
+      "id": "PM012",
+      "name": "公格尔峰",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 38.63,
+      "lng": 75.25,
+      "duration_h": 3.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 59.6km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    }
+  ]
+}

@@ -33,3 +33,6 @@ mcp/_rt_*.py
 
 # WorkBuddy 发布应用追踪标记（内部产物）
 .wbapp_*.genie
+
+# 落盘脚本的自动备份（每次开城重跑都会生成，勿入库）
+*_pois.json.bak

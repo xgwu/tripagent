@@ -1,0 +1,246 @@
+{
+  "city": "叶尔羌",
+  "province": "新疆",
+  "center": {
+    "lat": 38.25,
+    "lng": 77.32
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "YE001",
+      "name": "叶尔羌河国家湿地公园",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 38.4,
+      "lng": 77.25,
+      "duration_h": 2.0,
+      "open": "09:00",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 17.8km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YE002",
+      "name": "泽普金湖杨景区",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 38.13,
+      "lng": 77.18,
+      "duration_h": 4.0,
+      "open": "09:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 18.1km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YE003",
+      "name": "莎车博物馆",
+      "category": "museum",
+      "tags": [
+        "博物馆",
+        "博物馆",
+        "博物馆"
+      ],
+      "lat": 38.4121,
+      "lng": 77.2531,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆；距片区中心 18.9km；坐标/评分/营业时间来自高德；opentime2=周二至周日 10:00-19:30；节假日营业时间以官方通知为准",
+      "closed_days": []
+    },
+    {
+      "id": "YE004",
+      "name": "莎车老城景区喀赞其街",
+      "category": "culture",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 38.4145,
+      "lng": 77.2582,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 19.1km；坐标/评分/营业时间来自高德；opentime2=周一至周日 00:00-24:00",
+      "closed_days": []
+    },
+    {
+      "id": "YE005",
+      "name": "叶尔羌汗国王陵",
+      "category": "history",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 38.4169,
+      "lng": 77.2601,
+      "duration_h": 1.5,
+      "open": "10:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 19.3km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "YE006",
+      "name": "莎车古城门",
+      "category": "history",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 38.4228,
+      "lng": 77.2633,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 19.8km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YE007",
+      "name": "阿曼尼沙汗纪念陵",
+      "category": "history",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 38.42,
+      "lng": 77.235,
+      "duration_h": 1.0,
+      "open": "09:30",
+      "close": "19:30",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 20.3km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YE008",
+      "name": "金湖杨国家森林公园",
+      "category": "park",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 38.0327,
+      "lng": 76.9703,
+      "duration_h": 3.5,
+      "open": "10:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 39.0km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "YE009",
+      "name": "叶城锡提亚迷城",
+      "category": "history",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 37.88,
+      "lng": 77.42,
+      "duration_h": 2.0,
+      "open": "09:30",
+      "close": "20:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 42.1km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "YE010",
+      "name": "西夜迷城景区",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 37.8718,
+      "lng": 77.5466,
+      "duration_h": 1.5,
+      "open": "10:30",
+      "close": "19:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 46.5km；坐标/评分/营业时间来自高德；opentime2=1月至4月,11月至12月 周一至周日 10:30-19:00 最晚进入19:00；5月至10月 周一至周日 10:00-20:00 最晚进入20:00",
+      "closed_days": []
+    }
+  ]
+}

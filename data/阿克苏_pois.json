@@ -1,0 +1,224 @@
+{
+  "city": "阿克苏",
+  "province": "新疆",
+  "center": {
+    "lat": 41.25,
+    "lng": 80.5
+  },
+  "day_start": "09:00",
+  "day_end": "20:00",
+  "meal_slots": {
+    "lunch": [
+      "12:30",
+      "13:30"
+    ],
+    "dinner": [
+      "18:30",
+      "19:30"
+    ]
+  },
+  "meal_cost": {
+    "lunch": 50,
+    "dinner": 80
+  },
+  "pois": [
+    {
+      "id": "AK001",
+      "name": "天山神木园",
+      "category": "nature",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 41.3,
+      "lng": 80.4,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "19:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 4,
+      "area": "central",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 10.0km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "AK002",
+      "name": "柯柯牙纪念馆",
+      "category": "museum",
+      "tags": [
+        "纪念馆",
+        "纪念馆",
+        "纪念馆"
+      ],
+      "lat": 41.3175,
+      "lng": 80.2698,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;纪念馆；距片区中心 20.7km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "AK003",
+      "name": "温宿古城",
+      "category": "history",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.2761,
+      "lng": 80.2498,
+      "duration_h": 1.5,
+      "open": "09:00",
+      "close": "18:00",
+      "best_time": "any",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 21.1km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "AK004",
+      "name": "多浪公园",
+      "category": "park",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.1638,
+      "lng": 80.2533,
+      "duration_h": 2.0,
+      "open": "10:00",
+      "close": "22:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 22.8km；坐标/评分/营业时间来自高德；opentime2=周一至周日 10:00-22:00",
+      "closed_days": []
+    },
+    {
+      "id": "AK005",
+      "name": "阿克苏多浪河国家湿地公园",
+      "category": "nature",
+      "tags": [
+        "国家级景点",
+        "国家级景点",
+        "国家级景点"
+      ],
+      "lat": 41.2096,
+      "lng": 80.2312,
+      "duration_h": 2.5,
+      "open": "09:00",
+      "close": "22:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;国家级景点；距片区中心 22.9km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-22:30",
+      "closed_days": []
+    },
+    {
+      "id": "AK006",
+      "name": "多浪河景观带",
+      "category": "view",
+      "tags": [
+        "人工精修",
+        "人工精修",
+        "人工精修"
+      ],
+      "lat": 41.16,
+      "lng": 80.25,
+      "duration_h": 2.0,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "evening",
+      "price": 0,
+      "rating": 4,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=人工精修；距片区中心 23.2km；坐标/评分/营业时间来自高德",
+      "closed_days": []
+    },
+    {
+      "id": "AK007",
+      "name": "阿克苏地区博物馆",
+      "category": "museum",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 41.1723,
+      "lng": 80.2403,
+      "duration_h": 1.5,
+      "open": "00:00",
+      "close": "23:59",
+      "best_time": "any",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=科教文化服务;博物馆;博物馆|风景名胜;风景名胜相关;旅游景点；距片区中心 23.4km；坐标/评分/营业时间来自高德；opentime2=周二至周日 10:00-19:30；周一 全天关闭",
+      "closed_days": []
+    },
+    {
+      "id": "AK008",
+      "name": "天山托木尔大峡谷",
+      "category": "nature",
+      "tags": [
+        "风景名胜",
+        "风景名胜",
+        "风景名胜"
+      ],
+      "lat": 41.4205,
+      "lng": 80.6825,
+      "duration_h": 4.0,
+      "open": "09:00",
+      "close": "20:00",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜;风景名胜；距片区中心 24.3km；坐标/评分/营业时间来自高德；opentime2=周一至周日 09:00-20:00",
+      "closed_days": []
+    },
+    {
+      "id": "AK009",
+      "name": "刀郎部落",
+      "category": "culture",
+      "tags": [
+        "旅游景点",
+        "旅游景点",
+        "旅游景点"
+      ],
+      "lat": 40.7614,
+      "lng": 80.2552,
+      "duration_h": 3.0,
+      "open": "09:00",
+      "close": "21:30",
+      "best_time": "morning",
+      "price": 0,
+      "rating": 5,
+      "area": "suburb",
+      "family_ok": true,
+      "note": "高德采集+人工精修 2026-10-14；源 type=风景名胜;风景名胜相关;旅游景点；距片区中心 58.1km；坐标/评分/营业时间来自高德；opentime2=9:00-21:30",
+      "closed_days": []
+    }
+  ]
+}
