@@ -83,7 +83,7 @@ import threading
 import time
 
 SERVER_NAME = "tripplanner"
-SERVER_VERSION = "0.6.0-m5"
+SERVER_VERSION = "0.6.1-m5"
 DEFAULT_PROTOCOL = "2025-06-18"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -118,7 +118,7 @@ PANEL_PATH = os.path.join(bundle_dir(), "panel", "plan_panel.html")
 # ⚠️ uri 里带版本号是**刻意的**：宿主按 uri 缓存面板 HTML（resolver.resolve.cacheHit），
 # 改了 panel/plan_panel.html 却沿用旧 uri，用户看到的仍是旧面板。
 # 之后每次改面板 → 把 PANEL_VERSION +1，即可保证宿主重新拉取。
-PANEL_VERSION = "m23"
+PANEL_VERSION = "m24"
 VIEWER_URI = f"ui://tripplanner/plan-{PANEL_VERSION}"
 UI_MIME = "text/html;profile=mcp-app"
 

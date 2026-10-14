@@ -60,9 +60,13 @@ case("3a 驾车是本色，不必额外披露", S.intercity_disclaim("driving") 
 case("3b 未指定方式必须披露「按驾车口径估算」",
      "驾车口径" in S.intercity_disclaim(None) and "未指定" in S.intercity_disclaim(None),
      S.intercity_disclaim(None))
-case("3c 指定高铁/飞机时披露「以购票为准」",
-     "购票为准" in S.intercity_disclaim("rail")
-     and "购票为准" in S.intercity_disclaim("flight"))
+case("3c 指定高铁时披露「以购票为准」",
+     "购票为准" in S.intercity_disclaim("rail"))
+# 飞机段（2026-10-14 Roadmap ③）：不再套用「按驾车口径估算」，而是给门到门口径明细
+case("3c2 指定飞机时披露门到门口径（不是「按驾车口径估算」）",
+     "门到门口径" in S.intercity_disclaim("flight", {"detail": "URC→KHG｜候机 90min"})
+     and "驾车口径" not in S.intercity_disclaim("flight", {"detail": "URC→KHG｜候机 90min"}),
+     S.intercity_disclaim("flight", {"detail": "URC→KHG｜候机 90min"}))
 case("3d 短语前缀随 mode 变",
      S.intercity_verb("driving") == "驾车约" and S.intercity_verb(None) == "城际交通约")
 
@@ -126,9 +130,9 @@ case("5a 旧的硬编码转移行名已不存在",
      and 'f"自驾 {use[i - 1]} → {cname}' not in src)
 case("5b 三处行名都走 intercity_leg_name",
      src.count("intercity_leg_name(") >= 4, f"命中 {src.count('intercity_leg_name(')} 处")
-case("5c 三处通知都带口径披露",
-     src.count("intercity_disclaim(_mode)") >= 3,
-     f"命中 {src.count('intercity_disclaim(_mode)')} 处")
+case("5c 三处通知都带口径披露（段级 _smode + tr）",
+     src.count("intercity_disclaim(_smode, tr)") >= 3,
+     f"命中 {src.count('intercity_disclaim(_smode, tr)')} 处")
 case("5d plan_multi 里解析了一次 mode",
      "_mode = intercity_mode(query)" in src)
 

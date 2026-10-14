@@ -34,5 +34,29 @@
   "km": 335.4,
   "source": "amap-driving",
   "pair": "黄果树→西江千户苗寨"
+ },
+ "flight:乌鲁木齐|喀什": {
+  "minutes": 260.8,
+  "km": 1066.0,
+  "source": "flight-model",
+  "detail": "URC→KHG｜空中 1066km；候机 90min + 起降 30min + 巡航 85min + 落地 30min + 地面接驳 26min",
+  "codes": "URC→KHG",
+  "pair": "乌鲁木齐→喀什"
+ },
+ "flight:上海|乌鲁木齐": {
+  "minutes": 451.1,
+  "km": 3272.3,
+  "source": "flight-model",
+  "detail": "SHA→URC｜空中 3272km；候机 90min + 起降 30min + 巡航 262min + 落地 30min + 地面接驳 39min",
+  "codes": "SHA→URC",
+  "pair": "上海→乌鲁木齐"
+ },
+ "flight:乌鲁木齐|伊犁": {
+  "minutes": 245.0,
+  "km": 491.9,
+  "source": "flight-model",
+  "detail": "URC→YIN｜空中 492km；候机 90min + 起降 30min + 巡航 39min + 落地 30min + 地面接驳 56min",
+  "codes": "URC→YIN",
+  "pair": "乌鲁木齐→伊犁"
  }
 }

@@ -137,7 +137,7 @@ case("B5 normalize_plan 透传 planSource", '"planSource": raw.get("plan_source"
 
 # ==================== 用例 C：webui /api/plan 接线 ====================
 print("\n== 用例 C：webui 接线")
-case("C1 WEBUI_VERSION = m13（多城 lazy）", sv.WEBUI_VERSION == "m13", sv.WEBUI_VERSION)
+case("C1 WEBUI_VERSION = m14（飞机段）", sv.WEBUI_VERSION == "m14", sv.WEBUI_VERSION)
 _sv = open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
 case("C2 do_POST 合并 /api/plan 的 JSON body（提案走 POST，不受 URL 长度限制）",
      'if u.path == "/api/plan":' in _sv and "return self.do_GET()" in _sv)
@@ -164,8 +164,8 @@ case("C9 mode!=m7 / 内核缺失时显式报错（不静默丢提案）",
 # 只要对外 schema 里还有 proposal，agent 就有机会走提案。故从 schema 直接拿掉。
 print("\n== 用例 D：MCP 工具面（proposal/dry_run 对外已退役）")
 srv = _load_mcp()
-case("D1 SERVER_VERSION = 0.6.0-m5（移除 proposal/dry_run）",
-     srv.SERVER_VERSION == "0.6.0-m5", srv.SERVER_VERSION)
+case("D1 SERVER_VERSION = 0.6.1-m5（移除 proposal/dry_run）",
+     srv.SERVER_VERSION == "0.6.1-m5", srv.SERVER_VERSION)
 _plan_tool = next(t for t in srv.TOOLS if t["name"] == srv.PLAN_TOOL)
 _props = _plan_tool["inputSchema"]["properties"]
 case("D2 schema 已无 proposal（agent 无从传提案）", "proposal" not in _props)
@@ -240,7 +240,7 @@ case("F1 面板徽标：planSource=agent → 「Agent 提案」",
      and "modeBadge + srcBadge + violBadge" in _html)
 # ⚠️ 版本号随面板改动递增，本用例是「改了面板要记得 +1」的检查器，不是钉死某一版。
 #   2026-10-13 面板改到 m22（移除行程种子 + 会话改为运行时索取）⇒ 同步期望。
-case("F2 PANEL_VERSION 已 +1（= m23）", 'PANEL_VERSION = "m23"' in
+case("F2 PANEL_VERSION 已 +1（= m24）", 'PANEL_VERSION = "m24"' in
      open(os.path.join(ROOT, "mcp", "tripplanner_mcp_server.py"),
           encoding="utf-8").read())
 case("F3 plan_summary 文本带「提案来源=」", "提案来源=" in
@@ -281,7 +281,7 @@ case("G7 PLAN_TOOL 描述不再硬化（无「默认应该走这条路」/「56%
      "默认应该走这条路" not in _pd and "56%" not in _pd)
 case("G8 PLAN_TOOL 描述已无任何提案话术（proposal/dry_run 全清）",
      "proposal" not in _pd and "dry_run" not in _pd)
-case("G9 SERVER_VERSION = 0.6.0-m5", srv.SERVER_VERSION == "0.6.0-m5")
+case("G9 SERVER_VERSION = 0.6.1-m5", srv.SERVER_VERSION == "0.6.1-m5")
 
 print("\n" + "=" * 56)
 if FAIL:

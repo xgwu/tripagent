@@ -451,7 +451,10 @@ def main() -> int:
                 and all(_d == "dashed" for _d in (_j.get("dash") or []))
                 and _j.get("nOk") == 4
                 and _j.get("legs2") == 1 and _j.get("city2") is True
-                and _j.get("mode2") == "driving" and _j.get("color2") == "#6b46c1"
+                and _j.get("mode2") == "driving"
+                # 城际腿按方式配色（2026-10-14 飞机段）：测试桩的 transfer 无 mode
+                # ⇒ 落 IC_LINE 的兜底灰 #6b7280（原先是写死的紫 #6b46c1）
+                and _j.get("color2") == "#6b7280"
                 and _j.get("pts2") == 2
             )
             chk("地图逐段真实路网 + 酒店腿 + 城际腿 + 按天归组（node 真跑）", _ok,
@@ -595,6 +598,67 @@ def main() -> int:
                 and _wj.get("tipsLen") == 0 and _wj.get("day2") == "金鸡湖夜色",
                 f"实测={_wj}｜期望 theme=姑苏园林漫步 reason='' km=4.0 id=SZ007 "
                 f"tips 清空 day2 不受影响")
+
+    # 3.11) 城际转移行按方式渲染（飞机✈️/高铁🚄/自驾🚗/待定🚌）—— 2026-10-14（Roadmap ③）
+    #   飞机段上线后面板必须能区分「飞」与「开车」：原先 transfer 一律渲染成 🚗，
+    #   用户在行程单里看不出这段是飞过去的。
+    #   ⚠️ 必须**真跑**：`TRANSFER_ICON[s.mode]` 是运行时查表，grep 字符串验不出来。
+    if _ta is None:
+        pass
+    else:
+        _fp = os.path.join(HERE, "_transfer_icon_check.js")
+        _fsrc = (
+            "var TRANSFER_ICON = {driving: '\\ud83d\\ude97', rail: '\\ud83d\\ude84',"
+            " flight: '\\u2708\\ufe0f'};\n"
+            "function pick(s){\n"
+            "  var icon = s.type === 'hop' ? '\\u2192'\n"
+            "           : (s.type === 'meal' ? '\\ud83c\\udf7d'\n"
+            "           : (s.type === 'transfer' ? (TRANSFER_ICON[s.mode] || '\\ud83d\\ude8c')"
+            " : '\\ud83d\\udccd'));\n"
+            "  return icon;\n"
+            "}\n"
+            "console.log(JSON.stringify({\n"
+            "  fl: pick({type:'transfer', mode:'flight'}),\n"
+            "  rail: pick({type:'transfer', mode:'rail'}),\n"
+            "  drv: pick({type:'transfer', mode:'driving'}),\n"
+            "  none: pick({type:'transfer', mode:null}),\n"
+            "  poi: pick({type:'poi'}) }));\n"
+        )
+        # 把面板里的真实查表逻辑抽出来跑（不重复写一份，避免守卫自己漂移）
+        _freal = re.search(r"var TRANSFER_ICON = \{[^}]*\};", html)
+        if not _freal:
+            chk("面板定义 TRANSFER_ICON（飞机/高铁/自驾）", False,
+                "未找到 `var TRANSFER_ICON = {...}`")
+        else:
+            _fsrc = _freal.group(0) + "\n" + _fsrc.split("\n", 1)[1]
+            with open(_fp, "w", encoding="utf-8") as f:
+                f.write(_fsrc)
+            try:
+                _fr = subprocess.run([NODE, _fp], capture_output=True, text=True,
+                                     encoding="utf-8", errors="replace", timeout=60)
+                _fout = (_fr.stdout or "").strip()
+            except Exception as e:                                # noqa: BLE001
+                _fout = ""
+                print(f"  (转移图标探针执行失败: {e})")
+            finally:
+                if os.path.exists(_fp):
+                    os.remove(_fp)
+            _fj = None
+            for _line in reversed(_fout.splitlines()):
+                try:
+                    _fj = json.loads(_line)
+                    break
+                except Exception:                                 # noqa: BLE001
+                    continue
+            if not _fj:
+                chk("城际转移按方式换图标（面板，node 真跑）", False,
+                    f"探针无 JSON：{_fout[:200]!r}")
+            else:
+                chk("城际转移按方式换图标（飞机✈️/高铁🚄/自驾🚗/待定🚌）",
+                    _fj.get("fl") == "✈️" and _fj.get("rail") == "🚄"
+                    and _fj.get("drv") == "🚗" and _fj.get("none") == "🚌"
+                    and _fj.get("poi") == "📍",
+                    f"实测={_fj}｜期望 fl=✈️ rail=🚄 drv=🚗 none=🚌 poi=📍")
 
     # 4) 内联 JS 语法
     m = re.search(r"<script>(.*?)</script>", html, re.S)

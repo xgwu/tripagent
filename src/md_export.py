@@ -10,6 +10,8 @@
 from __future__ import annotations
 
 TYPE_ICON = {"poi": "📍", "hop": "→", "meal": "🍽", "hotel": "🏨"}
+# 城际转移按方式换图标（与 webui / MCP 面板同口径）：飞机✈️ / 高铁🚄 / 自驾🚗 / 待定🚌
+TRANSFER_ICON = {"driving": "🚗", "rail": "🚄", "flight": "✈️"}
 
 # 降级关键词：只要 mode 里出现这些，就说明**没走到**该模式的原生路径
 _DEGRADED_KEYS = ("degrad", "fallback", "offline")
@@ -103,7 +105,10 @@ def plan_to_markdown(plan: dict) -> str:
         md.append("")
         for s in d.get("timeline") or []:
             t = s.get("type")
-            icon = TYPE_ICON.get(t, "·")
+            if t == "transfer":
+                icon = TRANSFER_ICON.get(s.get("mode") or "", "🚌")
+            else:
+                icon = TYPE_ICON.get(t, "·")
             span = f"`{s.get('start') or ''}`"
             if s.get("end"):
                 span = f"`{s.get('start')}–{s.get('end')}`"
@@ -114,6 +119,14 @@ def plan_to_markdown(plan: dict) -> str:
                 #    「→ 前往 车程 15 分钟 · 3.7km（3.7 km · 15 分钟）」重复显示。
                 #    与 MCP 面板是同一个坑（2026-10-10 报障，两处一起修）。
                 md.append(f"- {span} {icon} {name}")
+            elif t == "transfer":
+                # 城际段：附时长 + 门到门明细（飞机段 detail 有候机/起降/巡航/接驳拆解，
+                # 不加会在行程单里被误以为「飞行 4 小时」）
+                dur = _dur_text(s.get("start"), s.get("end"))
+                det = s.get("detail") or ""
+                md.append(f"- {span} {icon} **{name}**"
+                          + (f"（{dur}）" if dur else "")
+                          + (f"\n  - <sub>{det}</sub>" if det else ""))
             else:
                 dur = _dur_text(s.get("start"), s.get("end")) if t in ("poi", "meal") else ""
                 md.append(f"- {span} {icon} **{name}**" + (f"（{dur}）" if dur else ""))

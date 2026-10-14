@@ -144,7 +144,7 @@ case("C7 POST /api/copy 端点存在", '"/api/copy"' in _sv and "文案生成失
 case("C8 幂等分支（full 原样返回）", '"regenerated": False' in _sv)
 case("C9 补完置 full + 会话回写",
      'plan["copyMode"] = "full"' in _sv and "_session_put(sess, plan)" in _sv)
-case("C10 WEBUI_VERSION = m13", 'WEBUI_VERSION = "m13"' in _sv)
+case("C10 WEBUI_VERSION = m14", 'WEBUI_VERSION = "m14"' in _sv)
 
 print("\n== 用例 D：MCP 工具契约与行为")
 _spec = importlib.util.spec_from_file_location(
@@ -246,7 +246,7 @@ case("D10 摘要标注 lazy 模式与下一步", "文案懒生成" in _sm and "o
 _sm2 = srv.plan_summary({"city": "苏州", "days": 1, "dayList": [], "latency_s": 1})
 case("D11 无 copyMode 旧数据摘要不受影响", "文案懒生成" not in _sm2)
 
-case("D12 SERVER_VERSION = 0.6.0-m5", srv.SERVER_VERSION == "0.6.0-m5")
+case("D12 SERVER_VERSION = 0.6.1-m5", srv.SERVER_VERSION == "0.6.1-m5")
 
 # ========== G 组：换点/挪时段后自动补当天文案（2026-10-11 报障） ==========
 # 报障「点击更换 POI 点位后，当天文案在面板上消失了」——keep_day_meta 刻意只保
@@ -264,7 +264,7 @@ case("G3 三端点对称接线：/api/replace + /api/move + /api/remove（各 1 
      _sv_txt.count("entry = _regen_one_day_copy(") == 3)
 case("G4 fail-open：异常吞掉返回 None 不拖垮换点",
      "except Exception:  # noqa: BLE001\n        pass\n    return None" in _sv_txt)
-case("G5 WEBUI_VERSION = m13", 'WEBUI_VERSION = "m13"' in _sv_txt)
+case("G5 WEBUI_VERSION = m14", 'WEBUI_VERSION = "m14"' in _sv_txt)
 # 行为级：_regen_one_day_copy 用归一化 day 真跑（打桩 LLM）
 _ws = importlib.util.spec_from_file_location(
     "_webui_lazy_g", os.path.join(ROOT, "webui", "server.py"))

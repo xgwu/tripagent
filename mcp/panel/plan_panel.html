@@ -59,6 +59,7 @@
   .nm{font-weight:500}
   .hop .nm{color:var(--muted);font-weight:400;font-size:12px}
   .meal .nm{color:var(--warn);font-weight:500;font-size:12px}
+  .transfer .nm{color:var(--blue);font-weight:600;font-size:12px}
   .thumb{width:44px;height:44px;border-radius:6px;object-fit:cover;flex:0 0 44px;border:1px solid var(--line)}
   .sub-reason{color:var(--muted);font-size:11.5px;margin-top:6px;padding-top:6px;border-top:1px solid #eef0f3}
   .drop{margin-top:8px;padding:8px 10px;background:var(--badbg);border-radius:8px;font-size:11.5px;color:#5f2020}
@@ -763,8 +764,13 @@
         + '</div></div><div class="day-b"><ul class="tl">';
 
       (d.timeline || []).forEach(function(s){
-        var cls = s.type === "hop" ? "hop" : (s.type === "meal" ? "meal" : "poi");
-        var icon = s.type === "hop" ? "→" : (s.type === "meal" ? "🍽" : "📍");
+        var cls = s.type === "hop" ? "hop" : (s.type === "meal" ? "meal"
+                  : (s.type === "transfer" ? "transfer" : "poi"));
+        // 城际转移按方式换图标（飞机✈️/高铁🚄/自驾🚗/未指定🚌）——与 webui 同口径。
+        var TRANSFER_ICON = {driving:"🚗", rail:"🚄", flight:"✈️"};
+        var icon = s.type === "hop" ? "→"
+                 : (s.type === "meal" ? "🍽"
+                 : (s.type === "transfer" ? (TRANSFER_ICON[s.mode] || "🚌") : "📍"));
         var isPoi = (cls === "poi");
         var pIdx = -1;
         if (isPoi){
@@ -929,17 +935,24 @@
   // 收集要画的「腿」——口径对齐 webui/index.html::drawRealRoutes：
   //   ① 城际转移腿：某天时间轴里有 type=transfer ⇒ 画「上一天最后一个 POI → 本天第一个 POI」
   //      的 **driving** 真实路网（跨城 150km+ 用 walking 会得到荒谬折线）。
-  //      ⚠️ 当前内核 `src/intercity.transfer()` **无任何调用点** ⇒ 实际不触发；
-  //      这一段是 webapp 同款的**兼容位**（多城联游一旦产出 transfer 行即自动生效）。
+  //      ⚠️ 2026-10-14 更新：`src/intercity.transfer()` 早已被 plan_multi 调用
+  //      （多城联游的城际段），此行**确实会触发**；原注释「无任何调用点」是
+  //      多城功能上线前的过期说法。飞机段（mode=flight）同样走这里，只换颜色。
   //   ② 每天的腿：酒店锚点（仅当该天时间轴有 type=hotel 行）→ 各 POI → 回酒店。
   function buildLegs(plan){
     var days = plan.dayList || [];
     var mode = routeMode(plan.query);
     var legs = [];
+    // 城际腿按方式配色：飞机→紫、高铁→蓝、自驾→橙、未指定→灰（与图标同口径）
+    var IC_LINE = {driving: "#d97706", rail: "#1a5fb4", flight: "#6b46c1"};
 
     days.forEach(function(d, k){
       var tl = d.timeline || [];
-      if (!tl.some(function(x){ return x.type === "transfer"; })) return;
+      var trLine = null;
+      for (var t = 0; t < tl.length; t++){
+        if (tl[t].type === "transfer"){ trLine = tl[t]; break; }
+      }
+      if (!trLine) return;
       var prev = null;
       for (var j = k - 1; j >= 0 && !prev; j--){
         var ps = (days[j].timeline || []).filter(function(x){
@@ -951,7 +964,8 @@
         if (tl[i2].type === "poi" && tl[i2].lat != null && tl[i2].lng != null) next = tl[i2];
       }
       if (prev && next){
-        legs.push({ day: +d.day, color: "#6b46c1", intercity: true, mode: "driving",
+        legs.push({ day: +d.day, color: IC_LINE[trLine.mode] || "#6b7280",
+                    intercity: true, mode: "driving",
                     pts: [[+prev.lng, +prev.lat], [+next.lng, +next.lat]] });
       }
     });

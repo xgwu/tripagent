@@ -87,8 +87,8 @@ chk("B10 /api/remove 要求真子集（不做增点/换点）",
 
 print()
 print("=== C. 版本闸门（新增工具必须 +1）===")
-chk("C1 SERVER_VERSION 已 +1（0.6.0-m5）", 'SERVER_VERSION = "0.6.0-m5"' in sv_src)
-chk("C2 PANEL_VERSION 已 +1（m23）", 'PANEL_VERSION = "m23"' in sv_src)
+chk("C1 SERVER_VERSION 已 +1（0.6.1-m5）", 'SERVER_VERSION = "0.6.1-m5"' in sv_src)
+chk("C2 PANEL_VERSION 已 +1（m24）", 'PANEL_VERSION = "m24"' in sv_src)
 _st = open(os.path.join(ROOT, "mcp", "selftest.py"), encoding="utf-8").read()
 chk("C3 selftest 工具数期望同步为 11", "len(tools) == 11" in _st)
 

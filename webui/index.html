@@ -116,6 +116,14 @@ button:disabled{background:#9db8d9;cursor:not-allowed}
 <script>
 const DAY_COLORS=["#1a5fb4","#1d7a4c","#b7791f","#c0392b","#6b46c1"];
 const ICON={poi:"📍",meal:"🍽",hotel:"🏨",transfer:"🚗"};
+// 城际转移按方式换图标：飞机✈️ / 高铁🚄 / 自驾🚗 / 未指定🚌（待定）。
+// 时刻表里「今天怎么跨的城」是第一位信息，图标必须与 mode 一致，
+// 否则用户在行程单里分不清这段是飞还是开车。
+const TRANSFER_ICON={driving:"🚗",rail:"🚄",flight:"✈️"};
+function transferIcon(s){
+  if(s&&s.type==="transfer")return TRANSFER_ICON[s.mode]||"🚌";
+  return ICON[(s&&s.type)||""]||"";
+}
 let CITY={};let LAST=null; // 最近一次规划结果（导出行程单用）
 const $=id=>document.getElementById(id);
 
@@ -321,7 +329,7 @@ function dayCard(d,meta,wdrops){
     const img=isPoi?poiThumb(p):"";
     const swap=isPoi?`<button class="swapbtn" title="不喜欢？换成附近的同类地点" onclick="swapPoi(${d.day},'${s.id}')">🔁 换一个</button>`:"";
     const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="opacity:.55;font-size:12px">（途中）</span>`:"";
-    const tag=s.type==="poi"?foodMark(s,meta):(ICON[s.type]||"");
+    const tag=s.type==="poi"?foodMark(s,meta):transferIcon(s);
     // 住宿锚点出发行是 0 时长（start===end）→ 只显示单个时刻，避免「09:00–09:00」误读
     const tspan=(s.start&&s.start===s.end)?s.start:`${s.start}–${s.end}`;
     return `<div class="tlrow"><span class="time">${tspan}</span><span style="flex:1">${tag?tag+" ":""}${s.name}${onway}</span>${img}${swap}</div>`;
@@ -459,9 +467,12 @@ async function drawRealRoutes(map,meta,r,token){
   // 用 driving 真实路网画出来（跨城 150km+ 用 walking 画会得到荒谬折线）。
   // 多城模式下 meta.pois 是各城合并集，两端坐标都取得到。
   const days=r.itinerary.days||[];
+  // 城际腿按方式配色（飞机→紫、高铁→蓝、自驾→橙、未指定→灰）
+  const IC_LINE={driving:"#d97706",rail:"#1a5fb4",flight:"#6b46c1"};
   for(let k=0;k<days.length;k++){
     const d=days[k];
-    if(!(d.timeline||[]).some(x=>x.type==="transfer"))continue;
+    const trLine=(d.timeline||[]).find(x=>x.type==="transfer");
+    if(!trLine)continue;
     const prevPois=[];
     for(let j=k-1;j>=0;j--){
       const ps=(days[j].timeline||[]).filter(x=>x.type==="poi"&&meta.pois[x.id]);
@@ -470,7 +481,7 @@ async function drawRealRoutes(map,meta,r,token){
     const nextPoi=(d.timeline||[]).find(x=>x.type==="poi"&&meta.pois[x.id]);
     if(prevPois.length&&nextPoi){
       const a=meta.pois[prevPois[0].id],b=meta.pois[nextPoi.id];
-      legs.push({day:d.day,color:"#6b46c1",mode:"driving",
+      legs.push({day:d.day,color:IC_LINE[trLine.mode]||"#6b7280",mode:"driving",
                  pts:[[a.lng,a.lat],[b.lng,b.lat]],intercity:true});
     }
   }
@@ -522,7 +533,7 @@ function buildDoc(meta,r){
       const p=s.type==="poi"&&meta&&meta.pois[s.id];
       const img=s.type==="poi"?poiThumb(p):"";
       const onway=s.type==="meal"&&idx>0&&tl[idx-1].type==="hop"?`<span style="color:#9ca3af;font-size:12px">（途中）</span>`:"";
-      const tag=s.type==="poi"?foodMark(s,meta):(ICON[s.type]||"");
+      const tag=s.type==="poi"?foodMark(s,meta):transferIcon(s);
       const tspan=(s.start&&s.start===s.end)?s.start:`${s.start}–${s.end}`;
       return `<tr><td class="t">${tspan}</td><td class="i">${s.type==="poi"?"":tag}</td><td>${s.type==="poi"&&tag?tag+" ":""}${s.name}${onway}</td><td class="pic">${img}</td></tr>`;
     }).join("");
