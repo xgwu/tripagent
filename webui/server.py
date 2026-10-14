@@ -262,7 +262,8 @@ def _amap_route(mode: str, o: str, d: str, key: str) -> dict | None:
             "points": points}
 
 # 天数提取公共化：实现移至 src/query_days.py（CLI main.py 共用同一实现）
-from src.query_days import extract_days, clamp_days, MAX_DAYS, DEFAULT_DAYS  # noqa: E402
+from src.query_days import (extract_days, clamp_days, days_cap_for, MAX_DAYS,  # noqa: E402
+                            DAYS_CAP_MULTI_CITY, DEFAULT_DAYS)
 
 
 # P2-2 多城联游：查询中出现 ≥2 个城市（或「苏杭」类别名）→ 跨城规划
@@ -641,7 +642,10 @@ def _llm_preflight(query: str) -> dict | None:
         if isinstance(ur, str) and ur.strip() and ur.strip() not in CITIES:
             nl["unsupported_region"] = ur.strip()[:12]
         d = obj.get("days")
-        if isinstance(d, int) and 1 <= d <= 5:
+        # 上界用 DAYS_CAP_MULTI_CITY（最宽的天数上限）——这里只做**合法性**过滤，
+        # 真正的「按目的地类型收窄」由 days_cap_for/clamp_days 在规划时做。
+        # ⚠️ 原硬编码 `1 <= d <= 5` 会让 LLM 提取的「8天」被静默丢弃（新疆线必然踩）。
+        if isinstance(d, int) and 1 <= d <= DAYS_CAP_MULTI_CITY:
             nl["days"] = d
         dt = obj.get("date0")
         if isinstance(dt, str):
@@ -1985,10 +1989,11 @@ class Handler(BaseHTTPRequestHandler):
                     # 逐段各自 compose 时透传 skip_copy（段段懒成）；定稿 /api/copy 按天
                     # 反查城市分组补文案（_day_city + _ID_PREFIX_CITY，与 /api/photo 同源）。
                     d = extract_days(query) or (nl or {}).get("days")
-                    days, _clamped, _want = clamp_days(d)
+                    _cap_m = days_cap_for(cities, query)   # 多城/自驾 → 放宽（新疆线）
+                    days, _clamped, _want = clamp_days(d, cap=_cap_m)
                     _days_notice = ([{"kind": "days_clamped", "message":
-                                      f"需求是 {_want} 天，当前单次规划上限 {MAX_DAYS} 天，"
-                                      f"已按 {MAX_DAYS} 天安排"}] if _clamped else [])
+                                      f"需求是 {_want} 天，当前单次规划上限 {_cap_m} 天，"
+                                      f"已按 {_cap_m} 天安排"}] if _clamped else [])
                     use_llm_m = q.get("llm", "1") == "1" and llm_client.llm_available()
                     try:
                         from src import proposal_planner as _pp
@@ -2036,23 +2041,25 @@ class Handler(BaseHTTPRequestHandler):
                 # 天数优先从需求文字里识别（「3天」「两日」…）；显式 days 参数仅作兼容保留；都没有则默认 2 天
                 days_param = (q.get("days") or "").strip()
                 _clamped, _want = False, None
+                # 🔴 2026-10-14：天数上限按目的地类型动态（自驾/多城放宽，见 days_cap_for）
+                _cap_1 = days_cap_for([cname], query)
                 if days_param:
-                    days, days_src = max(1, min(MAX_DAYS, int(days_param))), "param"
+                    days, days_src = max(1, min(_cap_1, int(days_param))), "param"
                 else:
                     d = extract_days(query)
                     if d:
                         # 2026-09-17：此前这里直接 days=d **没有 clamp**（多城路径反而
                         # clamp 了），「8天」会把 8 一路传进求解层
-                        days, _clamped, _want = clamp_days(d)
+                        days, _clamped, _want = clamp_days(d, cap=_cap_1)
                         days_src = "query"
                     elif (nl or {}).get("days"):
-                        days, _clamped, _want = clamp_days(nl["days"])
+                        days, _clamped, _want = clamp_days(nl["days"], cap=_cap_1)
                         days_src = "llm"
                     else:
                         days, days_src = DEFAULT_DAYS, "default"
                 _days_notice = ([{"kind": "days_clamped", "message":
-                                  f"需求是 {_want} 天，当前单次规划上限 {MAX_DAYS} 天，"
-                                  f"已按 {MAX_DAYS} 天安排"}] if _clamped else [])
+                                  f"需求是 {_want} 天，当前单次规划上限 {_cap_1} 天，"
+                                  f"已按 {_cap_1} 天安排"}] if _clamped else [])
                 # P4：日期/住宿优先显式参数，缺省时从需求文字提取（正则 miss 再用 LLM 兜底）
                 date0 = q.get("date") or extract_date(query) or (nl or {}).get("date0")
                 # 住宿意图防线：NL LLM 抽取会把行程范围/主题描述（「都在太湖边」）误判为

@@ -184,7 +184,10 @@ case("6g 回归对照：非天数量词不误匹配",
      extract_days("6人同行去上海") is None and extract_days("下午8点到上海") is None)
 _ssrc = open(os.path.join(ROOT, "webui", "server.py"), encoding="utf-8").read()
 case("6h server 单城路径已接 clamp_days（旧实现完全没 clamp）",
-     "days, _clamped, _want = clamp_days(d)" in _ssrc)
+     # 2026-10-14：调用点加了动态上限 cap（按目的地类型放宽，见 days_cap_for）
+     # ⇒ 判据放宽为「单城路径调了 clamp_days 且带 cap」
+     "clamp_days(d, cap=_cap_1)" in _ssrc
+     or "days, _clamped, _want = clamp_days(d)" in _ssrc)
 case("6i 截断会作为 notice 透出给用户", '"kind": "days_clamped"' in _ssrc)
 
 # ==================== 缺陷 7：prompt 规则堆积（v10 按需注入） ====================
