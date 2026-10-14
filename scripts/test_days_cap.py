@@ -81,6 +81,16 @@ case("D5 MCP 天数上限不再是旧的 7（改指真相 + 取最宽 15）",
      "MIN_DAYS, MAX_DAYS = 1, 7" not in _srv
      and "DAYS_CAP_MULTI_CITY" in _srv and "MIN_DAYS, MAX_DAYS = 1, 15" in _srv)
 
+# 🔴 D6：多城分支必须用 `multi`，不能写 `cities`。
+#    2026-10-14 引入 days_cap_for 时在多城分支误写 `days_cap_for(cities, query)`，
+#    而 `cities` 只是**单城分支**的局部变量 ⇒ 任何多城规划 NameError 500。
+#    当时只用单城验证，漏了这个分支；云端 MCP 实测才暴露（P0）。
+_web_lines = _web.splitlines()
+_bad = [i + 1 for i, ln in enumerate(_web_lines)
+        if "days_cap_for(cities" in ln and not ln.lstrip().startswith("#")]
+case("D6 多城分支用 multi（不得写 days_cap_for(cities...)）",
+     not _bad, f"违规行={_bad}")
+
 print()
 print("=== E. 8 天真能跑（天数不被截断）===")
 _r = subprocess.run(
@@ -95,6 +105,29 @@ _r = subprocess.run(
     cwd=ROOT, capture_output=True, text=True, timeout=180)
 got = (_r.stdout or "").strip().splitlines()[-1] if _r.stdout.strip() else "?"
 case("E1 8 天规划返回 8 天（不受旧 5 天上限拦截）", got == "8", f"返回 {got}")
+
+print()
+print("=== F. 多城路径真能跑（D6 的 P0 回归守卫：NameError ⇒ 多城 500）===")
+# 直接调 plan_multi（webui handler 的多城分支就是调它）。当年只用单城验证
+# ⇒ 多城分支的 `cities` NameError 逃过全部本地测试，云端 MCP 实测才暴露。
+_r2 = subprocess.run(
+    [sys.executable, "-c",
+     "import sys; sys.path.insert(0,'.');"
+     "from src.config import apply_env; apply_env();"
+     "from src import m1_planner;"
+     "from webui import server as S;"
+     "r=S.plan_multi(['乌鲁木齐','喀什'],'乌鲁木齐飞喀什5日游',5,None,False,m1_planner);"
+     "d=(r.get('itinerary') or {}).get('days') or [];"
+     "trs=[s for x in d for s in x.get('timeline',[]) if s.get('type')=='transfer'];"
+     "print(len(d), len(trs), (trs[0].get('mode') if trs else 'none'))"],
+    cwd=ROOT, capture_output=True, text=True, timeout=300)
+_out2 = (_r2.stdout or "").strip().splitlines()
+_last2 = _out2[-1] if _out2 else "?"
+case("F1 多城规划跑通（不抛 NameError）", _r2.returncode == 0 and "NameError" not in (_r2.stderr or ""),
+     f"rc={_r2.returncode} stderr尾部={(_r2.stderr or '').strip().splitlines()[-1:] }")
+case("F2 多城返回 5 天 + 1 段 transfer（飞机段 mode=flight）",
+     _last2.startswith("5 1 "), f"实测 {_last2!r}")
+case("F3 多城 transfer 段为飞机（mode=flight）", "flight" in _last2, f"实测 {_last2!r}")
 
 print()
 print("=" * 50)

@@ -2058,7 +2058,11 @@ class Handler(BaseHTTPRequestHandler):
                     # 逐段各自 compose 时透传 skip_copy（段段懒成）；定稿 /api/copy 按天
                     # 反查城市分组补文案（_day_city + _ID_PREFIX_CITY，与 /api/photo 同源）。
                     d = extract_days(query) or (nl or {}).get("days")
-                    _cap_m = days_cap_for(cities, query)   # 多城/自驾 → 放宽（新疆线）
+                    # ⚠️ 这里必须用 `multi`（本作用域的城市列表），不是 `cities`
+                    # （`cities` 是单城分支里的局部变量，多城路径从未定义过 ⇒
+                    #  NameError 让**任何多城规划 500**。2026-10-14 引入 `days_cap_for`
+                    #  时漏测多城路径，MCP 云端实测才暴露）。
+                    _cap_m = days_cap_for(multi, query)   # 多城/自驾 → 放宽（新疆线）
                     days, _clamped, _want = clamp_days(d, cap=_cap_m)
                     _days_notice = ([{"kind": "days_clamped", "message":
                                       f"需求是 {_want} 天，当前单次规划上限 {_cap_m} 天，"
