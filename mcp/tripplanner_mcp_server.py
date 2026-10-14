@@ -221,7 +221,7 @@ PANEL_OPEN_HINT = (
 #     真正的按类型收窄在云端规划层做，schema 仅用于让模型知道合法范围。
 #   ⚠️ 此处曾写 `1, 7` 而 webui 写 5 —— **两套口径漂移**（本项目老坑）。改动时
 #     请同步 `src/query_days.py::DAYS_CAP_MULTI_CITY`。
-MIN_DAYS, MAX_DAYS = 1, 12
+MIN_DAYS, MAX_DAYS = 1, 15
 
 # ---------------------------------------------------------------------------
 # `initialize.instructions`（MCP 标准字段）—— 注入宿主系统提示的「用法总纲」。

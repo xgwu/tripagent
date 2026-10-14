@@ -171,9 +171,12 @@ print("\n== 缺陷 6（低）：天数解析不再静默改需求")
 case("6a 「6天」解析出真实值 6（旧实现返回 None）", extract_days("上海和成都6天自驾联游") == 6)
 case("6b 「8天」「十天」也能解析",
      extract_days("上海8天深度游") == 8 and extract_days("十天环游贵州") == 10)
-d6, c6, w6 = clamp_days(extract_days("上海和成都6天自驾联游"))
+# 2026-10-14：默认上限 5 → 8（按目的地类型动态，见 query_days.days_cap_for）
+# ⇒ 原「6 天超上限」场景已不成立（6 < 8）。改用真正超上限的 20 天，保住原意：
+#   「需求 > 上限 → 收敛到上限并标记截断」。
+d6, c6, w6 = clamp_days(20)
 case("6c 超上限收敛到 MAX_DAYS 且标记截断",
-     d6 == MAX_DAYS and c6 is True and w6 == 6, f"days={d6} clamped={c6} want={w6}")
+     d6 == MAX_DAYS and c6 is True and w6 == 20, f"days={d6} clamped={c6} want={w6}")
 d4, c4, _ = clamp_days(extract_days("苏杭4天自驾联游"))
 case("6d 上限内不标记截断", d4 == 4 and c4 is False)
 dN, cN, _ = clamp_days(extract_days("上海随便玩玩"))
